@@ -9,3 +9,6 @@ test_*.py
 *.tmp
 imports/
 scripts/tmp_*
+
+# Excel temp files
+~$*.xlsx
