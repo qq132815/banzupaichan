@@ -1,47 +1,89 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-header"><h1>📈 完成率统计</h1></div>
-<div class="card">
-<div class="card-header"><h2>班组完成率</h2></div>
+<div class="page-header">
+<h1>📈 完成率统计</h1>
+</div>
+<div class="toolbar">
+<label>日期范围：</label>
+<input type="date" id="date-from" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<span style="color:#9ca3af">至</span>
+<input type="date" id="date-to" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<button class="btn btn-primary" onclick="loadData()" style="margin-left:8px">查询</button>
+</div>
+<div class="tabs" style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;padding:0 16px">
+<button class="tab-btn active" onclick="switchTab(1,this)">前段</button>
+<button class="tab-btn" onclick="switchTab(2,this)">焊接</button>
+<button class="tab-btn" onclick="switchTab(3,this)">扣压</button>
+<button class="tab-btn" onclick="switchTab(4,this)">装配包装</button>
+</div>
+<div class="card" style="border-top:none;border-radius:0 0 8px 8px">
 <div class="card-body">
 <div class="table-wrap">
 <table>
-<thead><tr><th>班组</th><th>计划数量</th><th>完成数量</th><th>完成率</th><th>任务数</th></tr></thead>
+<thead><tr><th>日期</th><th>计划量</th><th>完成量</th><th>完成率</th><th>生产效率</th></tr></thead>
 <tbody id="stats-tbody"></tbody>
 </table>
-<div id="stats-empty" class="table-empty" style="display:none">暂无排班数据</div>
 </div>
 </div>
 </div>
-<div class="card">
-<div class="card-header"><h2>近7天趋势</h2></div>
-<div class="card-body">
-<div class="table-wrap">
-<table>
-<thead><tr><th>日期</th><th>计划数量</th><th>完成数量</th><th>完成率</th></tr></thead>
-<tbody id="daily-tbody"></tbody>
-</table>
-</div>
-</div>
-</div>
+
+<style>
+.tab-btn{padding:10px 20px;border:none;background:none;font-size:14px;font-weight:500;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s}
+.tab-btn:hover{color:#3b82f6}
+.tab-btn.active{color:#3b82f6;border-bottom-color:#3b82f6}
+</style>
 {% endblock %}
 {% block scripts %}
 <script>
-fetch("/api/statistics").then(function(r){return r.json()}).then(function(d){
-var tb=document.getElementById("stats-tbody");
-var empty=document.getElementById("stats-empty");
-if(!d.length){empty.style.display='block';return;}
-d.forEach(function(s){
-var rate=s.planned_qty?Math.round(s.completed_qty/s.planned_qty*100):0;
-var tr=document.createElement("tr");
-tr.innerHTML='<td><strong>'+(s.team_name||'')+'</strong></td><td>'+s.planned_qty+'</td><td>'+s.completed_qty+'</td><td><span class="badge '+(rate>=80?'badge-green':rate>=50?'badge-yellow':'badge-red')+'">'+rate+'%</span></td><td>'+s.task_count+'</td>';
-tb.appendChild(tr);});});
-fetch("/api/statistics/daily").then(function(r){return r.json()}).then(function(d){
-var tb=document.getElementById("daily-tbody");
-d.forEach(function(s){
-var rate=s.planned?Math.round(s.completed/s.planned*100):0;
-var tr=document.createElement("tr");
-tr.innerHTML='<td>'+s.date+'</td><td>'+s.planned+'</td><td>'+s.completed+'</td><td><span class="badge '+(rate>=80?'badge-green':rate>=50?'badge-yellow':'badge-gray')+'">'+rate+'%</span></td>';
-tb.appendChild(tr);});});
+var currentTeam=1;
+var statsData={};
+
+// Set default dates
+(function(){
+    var today=new Date();
+    var from=new Date(today);from.setDate(from.getDate()-6);
+    document.getElementById("date-to").value=today.toISOString().split('T')[0];
+    document.getElementById("date-from").value=from.toISOString().split('T')[0];
+    loadData();
+})();
+
+function switchTab(teamId, btn){
+    currentTeam=teamId;
+    document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active');});
+    btn.classList.add('active');
+    renderTable();
+}
+
+function loadData(){
+    var df=document.getElementById("date-from").value;
+    var dt=document.getElementById("date-to").value;
+    var url="/api/statistics?date_from="+df+"&date_to="+dt;
+    fetch(url).then(function(r){return r.json()}).then(function(d){
+        statsData=d;
+        renderTable();
+    });
+}
+
+function renderTable(){
+    var tb=document.getElementById("stats-tbody");tb.innerHTML="";
+    var team=statsData[currentTeam];
+    if(!team||!team.days||!team.days.length){
+        tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:40px">暂无数据</td></tr>';
+        return;
+    }
+    team.days.forEach(function(d){
+        var tr=document.createElement("tr");
+        var crClass=d.completion_rate>=100?'color:#059669':d.completion_rate>=80?'color:#d97706':'color:#dc2626';
+        var effClass=d.efficiency>=100?'color:#059669':d.efficiency>=80?'color:#d97706':'color:#dc2626';
+        var crText=d.planned_qty>0?d.completion_rate+'%':'<span style="color:#9ca3af">-</span>';
+        var effText=d.efficiency>0?'<span style="'+effClass+'">'+d.efficiency+'%</span>':'<span style="color:#9ca3af">-</span>';
+        tr.innerHTML='<td>'+d.date+'</td>'
+            +'<td>'+(d.planned_qty||0)+'</td>'
+            +'<td>'+(d.completed_qty||0)+'</td>'
+            +'<td><span style="'+crClass+';font-weight:600">'+crText+'</span></td>'
+            +'<td>'+effText+'</td>';
+        tb.appendChild(tr);
+    });
+}
 </script>
 {% endblock %}

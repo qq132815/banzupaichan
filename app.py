@@ -1502,27 +1502,86 @@ def api_shipping_plan():
 @app.route('/api/statistics')
 @login_required
 def api_statistics():
+    team_id = request.args.get('team_id', type=int)
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+    if not date_from:
+        date_from = (datetime.now() - timedelta(days=6)).strftime('%Y-%m-%d')
+    if not date_to:
+        date_to = datetime.now().strftime('%Y-%m-%d')
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT s.team_id, t.name as team_name, SUM(s.quantity) as planned_qty, SUM(CASE WHEN s.task_status='completed' THEN s.quantity ELSE 0 END) as completed_qty, COUNT(*) as task_count FROM schedules s LEFT JOIN teams t ON s.team_id = t.id GROUP BY s.team_id")
-    stats = [dict(row) for row in c.fetchall()]
+    
+    # Get team info
+    if team_id:
+        c.execute("SELECT id, name FROM teams WHERE id=?", (team_id,))
+    else:
+        c.execute("SELECT id, name FROM teams ORDER BY id")
+    teams = [dict(row) for row in c.fetchall()]
+    
+    result = {}
+    for team in teams:
+        tid = team['id']
+        tname = team['name']
+        # Map team_name to process names
+        c.execute("SELECT process_name FROM processes WHERE team_name=?", (tname,))
+        proc_names = [r[0] for r in c.fetchall()]
+        
+        days = []
+        current = datetime.strptime(date_from, '%Y-%m-%d').date()
+        end = datetime.strptime(date_to, '%Y-%m-%d').date()
+        while current <= end:
+            date_str = current.strftime('%Y-%m-%d')
+            
+            # 计划量: from schedules
+            c.execute("SELECT COALESCE(SUM(quantity), 0) FROM schedules WHERE team_id=? AND schedule_date=?", (tid, date_str))
+            planned_qty = c.fetchone()[0] or 0
+            
+            # 完成率: from work_reports, group by product_code + process_name, sum qty
+            if proc_names:
+                placeholders = ','.join(['?' for _ in proc_names])
+                c.execute(f"""SELECT product_code, process_name, SUM(report_qty) as total_qty 
+                    FROM work_reports WHERE process_name IN ({placeholders}) AND create_time LIKE ? 
+                    GROUP BY product_code, process_name""", proc_names + [date_str + '%'])
+                report_groups = c.fetchall()
+                completed_qty = sum(r[2] for r in report_groups) if report_groups else 0
+                completion_rate = round(completed_qty / planned_qty * 100, 1) if planned_qty > 0 else 0
+                
+                # 生产效率: for each product+process, calc actual rate vs schedule capacity
+                efficiencies = []
+                for rg in report_groups:
+                    pc, pn, qty = rg[0], rg[1], rg[2]
+                    # Get report hours for this combo
+                    c.execute("SELECT SUM(report_hours) FROM work_reports WHERE product_code=? AND process_name=? AND create_time LIKE ? AND report_hours > 0", (pc, pn, date_str + '%'))
+                    hrs_row = c.fetchone()
+                    hrs = hrs_row[0] if hrs_row and hrs_row[0] else 0
+                    if hrs > 0:
+                        actual_rate = qty / hrs
+                        # Get schedule capacity
+                        c.execute("SELECT capacity_per_hour FROM schedules WHERE product_code=? AND process_name=? AND schedule_date=? AND capacity_per_hour > 0", (pc, pn, date_str))
+                        cap_row = c.fetchone()
+                        if cap_row and cap_row[0] > 0:
+                            eff = round(actual_rate / cap_row[0] * 100, 1)
+                            efficiencies.append(eff)
+                avg_eff = round(sum(efficiencies) / len(efficiencies), 1) if efficiencies else 0
+            else:
+                completed_qty = 0
+                completion_rate = 0
+                avg_eff = 0
+            
+            days.append({
+                'date': date_str,
+                'planned_qty': planned_qty,
+                'completed_qty': completed_qty,
+                'completion_rate': completion_rate,
+                'efficiency': avg_eff
+            })
+            current += timedelta(days=1)
+        
+        result[tid] = {'team_name': tname, 'days': days}
+    
     conn.close()
-    return jsonify(stats)
-
-@app.route('/api/statistics/daily')
-@login_required
-def api_statistics_daily():
-    conn = get_connection()
-    c = conn.cursor()
-    today = datetime.now().date()
-    days = []
-    for i in range(6, -1, -1):
-        d = (today - timedelta(days=i)).strftime('%Y-%m-%d')
-        c.execute("SELECT COALESCE(SUM(quantity),0), COALESCE(SUM(CASE WHEN task_status='completed' THEN quantity ELSE 0 END),0) FROM schedules WHERE schedule_date=?", (d,))
-        row = c.fetchone()
-        days.append({'date': d, 'planned': row[0], 'completed': row[1]})
-    conn.close()
-    return jsonify(days)
+    return jsonify(result)
 
 if __name__ == "__main__":
     init_database()
