@@ -2,18 +2,9 @@
 {% block content %}
 <div class="page-header">
 <h1>📦 订单管理</h1>
-<div class="page-actions">
-<label class="btn btn-outline" style="cursor:pointer">
-📥 导入工单
-<input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="importOrders(this)">
-</label>
-<button class="btn btn-outline" onclick="exportOrders()">📤 导出</button>
-<button class="btn btn-primary" onclick="showAddOrder()">＋ 新增订单</button>
-</div>
 </div>
 <div class="toolbar">
-<label>搜索：</label>
-<input type="text" id="order-search" placeholder="工单号/产品名称" oninput="window._page=1;loadOrders()">
+<input type="text" id="order-search" placeholder="搜索工单号/产品名称..." oninput="window._page=1;loadOrders()" style="width:220px">
 <label>状态：</label>
 <select id="status-filter" onchange="window._page=1;loadOrders()">
 <option value="">全部</option>
@@ -21,6 +12,11 @@
 <option value="in_progress">进行中</option>
 <option value="completed">已完成</option>
 </select>
+<div style="margin-left:auto;display:flex;gap:8px">
+<button class="btn btn-outline readonly-hide" onclick="exportOrders()">📤 导出</button>
+<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/work_orders', function(){setTimeout(function(){loadOrders();}, 500);})">📥 导入</button>
+<button class="btn btn-primary readonly-hide" onclick="showAddOrder()">＋ 新增</button>
+</div>
 </div>
 <div class="card">
 <div class="card-body">
