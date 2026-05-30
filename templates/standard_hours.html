@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>⏱️ 标准工时</h1>
+</div>
+<div class="toolbar">
+<input type="text" id="search" placeholder="搜索产品编号/名称/工序..." oninput="loadData()" style="width:240px">
+<div style="margin-left:auto;display:flex;gap:8px">
+<button class="btn btn-outline readonly-hide" onclick="initFromRoutes()">🔄 从工艺路线初始化</button>
+<button class="btn btn-outline readonly-hide" onclick="doExport()">📤 导出</button>
+<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/standard_hours', function(){setTimeout(function(){loadData();}, 500);})">📥 导入</button>
+<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>
+</div>
+</div>
+<div class="card">
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>产品编号</th><th>产品名称</th><th>工序</th><th>班组</th><th>标准工时(分)</th><th>换线时间(分)</th><th>备注</th><th>操作</th></tr></thead>
+<tbody id="tbody"></tbody>
+</table>
+<div id="empty-msg" class="table-empty" style="display:none">暂无数据，点击"从工艺路线初始化"生成基础数据</div>
+</div>
+</div>
+</div>
+<div class="modal-overlay" id="modal">
+<div class="modal" style="max-width:560px">
+<div class="modal-header"><h3 id="m-title">新增标准工时</h3><button class="modal-close" onclick="closeM()">&times;</button></div>
+<div class="modal-body">
+<div class="form-row">
+<div class="form-group"><label>产品编号</label><input type="text" class="form-control" id="m-product-code" list="dl-product-code" oninput="onProductInput()"></div>
+<div class="form-group"><label>产品名称</label><input type="text" class="form-control" id="m-product-name" list="dl-product-name" oninput="onProductNameInput()"></div>
+</div>
+<datalist id="dl-product-code"></datalist>
+<datalist id="dl-product-name"></datalist>
+<div class="form-row">
+<div class="form-group"><label>工序</label><select class="form-control" id="m-process"></select></div>
+<div class="form-group"><label>班组</label><input type="text" class="form-control" id="m-team" readonly></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>标准工时(分钟/件)</label><input type="number" class="form-control" id="m-hours" step="0.1" min="0"></div>
+<div class="form-group"><label>换线时间(分钟)</label><input type="number" class="form-control" id="m-setup" step="1" min="0"></div>
+</div>
+<div class="form-group"><label>备注</label><input type="text" class="form-control" id="m-remark"></div>
+</div>
+<div class="modal-footer">
+<button class="btn btn-secondary" onclick="closeM()">取消</button>
+<button class="btn btn-primary" onclick="save()">保存</button>
+</div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var USER_ROLE="{{ session.get('role','') }}";
+document.addEventListener("DOMContentLoaded", function(){
+    if(USER_ROLE !== "planner"){
+        document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});
+    }
+});
+
+var editId=null;
+var allRoutes=[];
+
+// Load process routes for product autocomplete
+fetch("/api/process-routes").then(function(r){return r.json()}).then(function(d){allRoutes=d;});
+
+function loadProducts(){
+    var seen={};
+    var products=[];
+    allRoutes.forEach(function(r){
+        if(r.product_code && !seen[r.product_code]){
+            seen[r.product_code]=true;
+            products.push({code:r.product_code, name:r.route_name||''});
+        }
+    });
+    return products;
+}
+
+function onProductInput(){
+    var code=document.getElementById("m-product-code").value;
+    var dl=document.getElementById("dl-product-code");
+    dl.innerHTML="";
+    var products=loadProducts();
+    products.forEach(function(p){
+        if(p.code.toLowerCase().indexOf(code.toLowerCase())>=0){
+            var opt=document.createElement("option");
+            opt.value=p.code;
+            dl.appendChild(opt);
+        }
+    });
+    updateProcessList();
+}
+
+function onProductNameInput(){
+    var name=document.getElementById("m-product-name").value;
+    var dl=document.getElementById("dl-product-name");
+    dl.innerHTML="";
+    var products=loadProducts();
+    products.forEach(function(p){
+        if(p.name.toLowerCase().indexOf(name.toLowerCase())>=0){
+            var opt=document.createElement("option");
+            opt.value=p.name;
+            dl.appendChild(opt);
+        }
+    });
+    // Find matching product and set code
+    var found=products.find(function(p){return p.name===name;});
+    if(found){
+        document.getElementById("m-product-code").value=found.code;
+        updateProcessList();
+    }
+}
+
+function updateProcessList(){
+    var code=document.getElementById("m-product-code").value;
+    var sel=document.getElementById("m-process");
+    sel.innerHTML='<option value="">-- 选择工序 --</option>';
+    var teamInput=document.getElementById("m-team");
+    teamInput.value="";
+    // Find all routes for this product
+    var matched=allRoutes.filter(function(r){return r.product_code===code;});
+    var seen={};
+    matched.forEach(function(r){
+        var processes=(r.process_list||"").split(",");
+        processes.forEach(function(p){
+            p=p.trim();
+            if(p && !seen[p]){
+                seen[p]=true;
+                var opt=document.createElement("option");
+                opt.value=p;
+                opt.textContent=p;
+                opt.dataset.team=r.remark||"";
+                sel.appendChild(opt);
+            }
+        });
+    });
+    sel.onchange=function(){
+        var opt=sel.options[sel.selectedIndex];
+        teamInput.value=opt?opt.dataset.team:"";
+    };
+}
+
+function loadData(){
+    var q=document.getElementById("search").value;
+    var url="/api/standard-hours";
+    if(q)url+="?q="+encodeURIComponent(q);
+    fetch(url).then(function(r){return r.json()}).then(function(d){
+        var tb=document.getElementById("tbody");tb.innerHTML="";
+        var empty=document.getElementById("empty-msg");
+        if(!d.length){empty.style.display="block";return;}
+        empty.style.display="none";
+        d.forEach(function(r){
+            var tr=document.createElement("tr");
+            tr.innerHTML='<td>'+r.product_code+'</td>'
+                +'<td>'+(r.product_name||'')+'</td>'
+                +'<td>'+r.process_name+'</td>'
+                +'<td>'+(r.team_name||'')+'</td>'
+                +'<td><strong>'+(r.standard_hours||0)+'</strong></td>'
+                +'<td>'+(r.setup_time||0)+'</td>'
+                +'<td>'+(r.remark||'')+'</td>'
+                +'<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editItem('+r.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="deleteItem('+r.id+')">删除</button></div></td>';
+            tb.appendChild(tr);
+        });
+    });
+}
+
+function showAdd(){
+    editId=null;
+    document.getElementById("m-title").textContent="新增标准工时";
+    ["m-product-code","m-product-name","m-team","m-hours","m-setup","m-remark"].forEach(function(id){document.getElementById(id).value=""});
+    document.getElementById("m-process").innerHTML='<option value="">-- 先输入产品编号 --</option>';
+    document.getElementById("modal").classList.add("show");
+}
+function closeM(){document.getElementById("modal").classList.remove("show");}
+
+function editItem(id){
+    fetch("/api/standard-hours").then(function(r){return r.json()}).then(function(d){
+        var item=d.find(function(x){return x.id===id});
+        if(!item)return;
+        editId=id;
+        document.getElementById("m-title").textContent="编辑标准工时";
+        document.getElementById("m-product-code").value=item.product_code;
+        document.getElementById("m-product-name").value=item.product_name||"";
+        updateProcessList();
+        // Set process after list is populated
+        setTimeout(function(){
+            document.getElementById("m-process").value=item.process_name;
+            document.getElementById("m-team").value=item.team_name||"";
+        },100);
+        document.getElementById("m-hours").value=item.standard_hours||"";
+        document.getElementById("m-setup").value=item.setup_time||"";
+        document.getElementById("m-remark").value=item.remark||"";
+        document.getElementById("modal").classList.add("show");
+    });
+}
+
+function save(){
+    var data={
+        product_code:document.getElementById("m-product-code").value.trim(),
+        product_name:document.getElementById("m-product-name").value.trim(),
+        process_name:document.getElementById("m-process").value,
+        team_name:document.getElementById("m-team").value,
+        standard_hours:parseFloat(document.getElementById("m-hours").value)||0,
+        setup_time:parseFloat(document.getElementById("m-setup").value)||0,
+        remark:document.getElementById("m-remark").value
+    };
+    if(!data.product_code||!data.process_name){toast("产品编号和工序必填","warning");return;}
+    var url=editId?"/api/standard-hours/"+editId:"/api/standard-hours";
+    api(url,{method:editId?"PUT":"POST",body:data}).then(function(){toast("保存成功","success");closeM();loadData();}).catch(function(e){toast(e.error||"保存失败","error");});
+}
+
+function deleteItem(id){if(!confirm("确定删除？"))return;api("/api/standard-hours/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadData();}).catch(function(e){toast(e.error||"删除失败","error");});}
+
+function initFromRoutes(){
+    if(!confirm("将从工艺路线中提取所有产品+工序组合生成标准工时记录（已有数据不会重复），是否继续？"))return;
+    api("/api/standard-hours/init",{method:"POST"}).then(function(d){
+        toast("初始化完成，新增 "+d.count+" 条记录","success");
+        loadData();
+    }).catch(function(e){toast("初始化失败","error");});
+}
+
+function doExport(){
+    fetch("/api/standard-hours").then(function(r){return r.json()}).then(function(d){
+        if(!d.length){toast("无数据可导出","warning");return;}
+        var headers=["产品编号","产品名称","工序","班组","标准工时(分)","换线时间(分)","备注"];
+        var csv=headers.join(",")+"\n";
+        d.forEach(function(r){
+            var row=['"'+r.product_code+'"','"'+(r.product_name||'')+'"','"'+r.process_name+'"','"'+(r.team_name||'')+'"',r.standard_hours||0,r.setup_time||0,'"'+(r.remark||'')+'"'];
+            csv+=row.join(",")+"\n";
+        });
+        var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+        var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="标准工时.csv";a.click();
+    });
+}
+
+loadData();
+</script>
+{% endblock %}

@@ -134,6 +134,11 @@ def personnel_page():
 def molds_page():
     return render_template('molds.html')
 
+@app.route('/standard-hours-page')
+@login_required
+def standard_hours_page():
+    return render_template('standard_hours.html')
+
 @app.route('/statistics-page')
 @login_required
 def statistics_page():
@@ -1128,6 +1133,89 @@ def api_import_molds():
         return jsonify({'ok': True, 'count': count})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+# ========== Standard Hours API ==========
+@app.route('/api/standard-hours')
+@login_required
+def api_standard_hours():
+    q = request.args.get('q', '').strip()
+    conn = get_connection()
+    c = conn.cursor()
+    sql = "SELECT * FROM standard_hours WHERE 1=1"
+    params = []
+    if q:
+        like = "%" + q + "%"
+        sql += " AND (product_code LIKE ? OR product_name LIKE ? OR process_name LIKE ?)"
+        params.extend([like, like, like])
+    sql += " ORDER BY product_code, process_name"
+    c.execute(sql, params)
+    r = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return jsonify(r)
+
+@app.route('/api/standard-hours', methods=['POST'])
+@login_required
+def api_standard_hours_create():
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO standard_hours (product_code, product_name, process_name, team_name, standard_hours, setup_time, remark) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                  (data['product_code'], data.get('product_name',''), data['process_name'], data.get('team_name',''), data.get('standard_hours',0), data.get('setup_time',0), data.get('remark','')))
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 400
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/standard-hours/<int:sid>', methods=['PUT'])
+@login_required
+def api_standard_hours_update(sid):
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE standard_hours SET product_code=?, product_name=?, process_name=?, team_name=?, standard_hours=?, setup_time=?, remark=? WHERE id=?",
+              (data['product_code'], data.get('product_name',''), data['process_name'], data.get('team_name',''), data.get('standard_hours',0), data.get('setup_time',0), data.get('remark',''), sid))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/standard-hours/<int:sid>', methods=['DELETE'])
+@login_required
+def api_standard_hours_delete(sid):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM standard_hours WHERE id=?", (sid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/standard-hours/init', methods=['POST'])
+@login_required
+def api_standard_hours_init():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT DISTINCT product_code, route_name, process_list, remark FROM process_routes WHERE process_list IS NOT NULL AND process_list != ''")
+    routes = c.fetchall()
+    count = 0
+    for route in routes:
+        product_code = route[0] or ''
+        product_name = route[1] or ''
+        process_list = route[2] or ''
+        team_name = route[3] or ''
+        processes = [p.strip() for p in process_list.split(',') if p.strip()]
+        for proc in processes:
+            try:
+                c.execute("INSERT OR IGNORE INTO standard_hours (product_code, product_name, process_name, team_name) VALUES (?, ?, ?, ?)",
+                          (product_code, product_name, proc, team_name))
+                if c.rowcount > 0:
+                    count += 1
+            except:
+                pass
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'count': count})
 
 # ========== Export API ==========
 @app.route('/api/export/<data_type>')
