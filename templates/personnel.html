@@ -54,7 +54,7 @@
 
 window._page=1;window._pageSize=50;window._total=0;
 var editPlId=null;var teams=[];
-fetch("/api/teams").then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('pl-pagination',resp.page||1,resp.total_pages||1,'loadPersonnel');return r.json()}).then(function(d){
+fetch("/api/teams").then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('pl-pagination',resp.page||1,resp.total_pages||1,'loadPersonnel');return r.json()}).then(function(resp){var d=resp.data||resp;window._total=resp.total||d.length;renderPagination('pl-pagination',resp.page||1,resp.total_pages||1,'loadPersonnel');
 teams=d;
 var sel1=document.getElementById("pl-team-filter");
 var sel2=document.getElementById("plm-team");

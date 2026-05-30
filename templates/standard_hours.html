@@ -66,7 +66,7 @@ var editId=null;
 var allRoutes=[];
 
 // Load process routes for product autocomplete
-fetch("/api/process-routes").then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('sh-pagination',resp.page||1,resp.total_pages||1,'loadData');return r.json()}).then(function(d){allRoutes=d;});
+fetch("/api/process-routes").then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('sh-pagination',resp.page||1,resp.total_pages||1,'loadData');return r.json()}).then(function(resp){var d=resp.data||resp;window._total=resp.total||d.length;renderPagination('sh-pagination',resp.page||1,resp.total_pages||1,'loadData');allRoutes=d;});
 
 function loadProducts(){
     var seen={};

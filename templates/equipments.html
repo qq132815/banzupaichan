@@ -54,7 +54,7 @@
 
 window._page=1;window._pageSize=50;window._total=0;
 var editEqId=null;var teams=[];
-fetch("/api/teams").then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('eq-pagination',resp.page||1,resp.total_pages||1,'loadEquipments');return r.json()}).then(function(d){
+fetch("/api/teams").then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('eq-pagination',resp.page||1,resp.total_pages||1,'loadEquipments');return r.json()}).then(function(resp){var d=resp.data||resp;window._total=resp.total||d.length;renderPagination('eq-pagination',resp.page||1,resp.total_pages||1,'loadEquipments');
 teams=d;
 var sel1=document.getElementById("eq-team-filter");
 var sel2=document.getElementById("eqm-team");
@@ -68,12 +68,14 @@ function loadEquipments(){
 var q=document.getElementById("eq-search").value;
 var tid=document.getElementById("eq-team-filter").value;
 var url="/api/equipments";
-    url+=(url.indexOf('?')>=0?'&':'?')+'page='+window._page+'&page_size='+window._pageSize;
 var params=[];
 if(tid)params.push("team_id="+tid);
 if(q)params.push("q="+encodeURIComponent(q));
+params.push("page="+window._page);
+params.push("page_size="+window._pageSize);
 if(params.length)url+="?"+params.join("&");
-fetch(url).then(function(r){return r.json()}).then(function(d){
+fetch(url).then(function(r){return r.json()}).then(function(resp){
+var d=resp.data||resp;window._total=resp.total||d.length;renderPagination("eq-pagination",resp.page||1,resp.total_pages||1,"loadEquipments");
 var tb=document.getElementById("eq-tbody");tb.innerHTML="";
 var teamMap={};teams.forEach(function(t){teamMap[t.id]=t.name;});
 d.forEach(function(eq){
