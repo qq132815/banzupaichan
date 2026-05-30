@@ -13,9 +13,9 @@
 </div>
 <div class="toolbar">
 <label>搜索：</label>
-<input type="text" id="order-search" placeholder="工单号/产品名称" oninput="loadOrders()">
+<input type="text" id="order-search" placeholder="工单号/产品名称" oninput="window._page=1;loadOrders()">
 <label>状态：</label>
-<select id="status-filter" onchange="loadOrders()">
+<select id="status-filter" onchange="window._page=1;loadOrders()">
 <option value="">全部</option>
 <option value="pending">待排</option>
 <option value="in_progress">进行中</option>
@@ -34,6 +34,7 @@
 </div>
 </div>
 
+<div id="orders-pagination"></div>
 <div class="modal-overlay" id="order-modal">
 <div class="modal">
 <div class="modal-header"><h3 id="om-title">新增订单</h3><button class="modal-close" onclick="closeOrderModal()">&times;</button></div>
@@ -62,6 +63,8 @@
 {% endblock %}
 {% block scripts %}
 <script>
+
+window._page=1;window._pageSize=50;window._total=0;
 var editOrderId = null;
 
 function loadOrders(){
@@ -70,7 +73,7 @@ function loadOrders(){
     var url = "/api/orders?";
     if(q) url += "q="+encodeURIComponent(q)+"&";
     if(s) url += "status="+s;
-    fetch(url).then(function(r){return r.json()}).then(function(d){
+    fetch(url).then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('orders-pagination',resp.page||1,resp.total_pages||1,'loadOrders');return r.json()}).then(function(d){
         var tb = document.getElementById("orders-tbody");
         var empty = document.getElementById("orders-empty");
         tb.innerHTML = "";

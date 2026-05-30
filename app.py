@@ -17,6 +17,28 @@ from utils.calc import (calculate_alerts, back_calculate_semi, calculate_quantit
                        calculate_production_requirements, publish_requirements, get_published_requirements)
 
 app = Flask(__name__)
+
+def paginate_query(sql, params, page=1, page_size=50):
+    """Execute a paginated query. Returns dict with data, total, page info."""
+    conn = get_connection()
+    c = conn.cursor()
+    # Count total
+    count_sql = "SELECT COUNT(*) FROM (" + sql + ")"
+    c.execute(count_sql, params)
+    total = c.fetchone()[0]
+    # Apply pagination
+    page = max(1, int(page or 1))
+    page_size = min(200, max(1, int(page_size or 50)))
+    offset = (page - 1) * page_size
+    sql += " LIMIT ? OFFSET ?"
+    params.extend([page_size, offset])
+    c.execute(sql, params)
+    data = [dict(row) for row in c.fetchall()]
+    conn.close()
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    return {"data": data, "total": total, "page": page, "page_size": page_size, "total_pages": total_pages}
+
+
 app.secret_key = 'mes-scheduling-secret-2026'
 app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(__file__), "imports")
 
@@ -220,7 +242,19 @@ def api_teams():
 def api_equipments():
     team_id = request.args.get('team_id', type=int)
     q = request.args.get('q', '').strip()
-    return jsonify(get_all_equipments(team_id, q))
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
+    sql = "SELECT * FROM equipments WHERE 1=1"
+    params = []
+    if team_id:
+        sql += " AND team_id=?"
+        params.append(team_id)
+    if q:
+        like = "%" + q + "%"
+        sql += " AND (equipment_code LIKE ? OR equipment_name LIKE ? OR location LIKE ?)"
+        params.extend([like, like, like])
+    sql += " ORDER BY team_id, equipment_code"
+    return jsonify(paginate_query(sql, params, page, page_size))
 
 @app.route('/api/equipments', methods=['POST'])
 @login_required
@@ -512,20 +546,21 @@ def api_schedule_delete(sid):
 @app.route('/api/orders')
 @login_required
 def api_orders():
-    conn = get_connection()
-    c = conn.cursor()
     status = request.args.get('status')
     keyword = request.args.get('q', '')
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
+    sql = "SELECT * FROM work_orders WHERE 1=1"
+    params = []
     if status:
-        c.execute("SELECT * FROM work_orders WHERE status=? ORDER BY due_date", (status,))
-    elif keyword:
-        c.execute("SELECT * FROM work_orders WHERE order_no LIKE ? OR product_code LIKE ? OR product_name LIKE ? ORDER BY due_date",
-                  ('%' + keyword + '%', '%' + keyword + '%', '%' + keyword + '%'))
-    else:
-        c.execute("SELECT * FROM work_orders ORDER BY due_date")
-    r = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return jsonify(r)
+        sql += " AND status=?"
+        params.append(status)
+    if keyword:
+        like = "%" + keyword + "%"
+        sql += " AND (order_no LIKE ? OR product_code LIKE ? OR product_name LIKE ?)"
+        params.extend([like, like, like])
+    sql += " ORDER BY due_date"
+    return jsonify(paginate_query(sql, params, page, page_size))
 
 @app.route('/api/orders', methods=['POST'])
 @login_required
@@ -661,24 +696,20 @@ def api_process_equipment():
 @app.route('/api/processes')
 @login_required
 def api_processes():
-    conn = get_connection()
-    c = conn.cursor()
     q = request.args.get('q', '')
     team = request.args.get('team', '')
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
     sql = "SELECT * FROM processes WHERE 1=1"
     params = []
     if q:
         sql += " AND (process_name LIKE ? OR process_code LIKE ?)"
         params.extend(['%'+q+'%', '%'+q+'%'])
     if team:
-        # Support comma-separated team names
         sql += " AND team_name LIKE ?"
         params.append('%' + team + '%')
     sql += " ORDER BY team_name, process_code"
-    c.execute(sql, params)
-    r = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return jsonify(r)
+    return jsonify(paginate_query(sql, params, page, page_size))
 
 @app.route('/api/processes', methods=['POST'])
 @login_required
@@ -847,12 +878,17 @@ def api_delete_requirement(rid):
 @app.route('/api/process-routes')
 @login_required
 def api_process_routes():
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM process_routes ORDER BY route_code")
-    r = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return jsonify(r)
+    q = request.args.get('q', '').strip()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
+    sql = "SELECT * FROM process_routes WHERE 1=1"
+    params = []
+    if q:
+        like = "%" + q + "%"
+        sql += " AND (route_code LIKE ? OR route_name LIKE ? OR product_code LIKE ? OR process_list LIKE ?)"
+        params.extend([like, like, like, like])
+    sql += " ORDER BY route_code"
+    return jsonify(paginate_query(sql, params, page, page_size))
 
 @app.route('/api/process-routes', methods=['POST'])
 @login_required
@@ -993,8 +1029,8 @@ def api_bom_delete(bid):
 def api_personnel():
     team_id = request.args.get('team_id', type=int)
     q = request.args.get('q', '').strip()
-    conn = get_connection()
-    c = conn.cursor()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
     sql = "SELECT * FROM personnel WHERE 1=1"
     params = []
     if team_id:
@@ -1005,10 +1041,7 @@ def api_personnel():
         sql += " AND (name LIKE ? OR user_id LIKE ? OR department LIKE ? OR position LIKE ?)"
         params.extend([like, like, like, like])
     sql += " ORDER BY team_id, name"
-    c.execute(sql, params)
-    r = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return jsonify(r)
+    return jsonify(paginate_query(sql, params, page, page_size))
 
 @app.route('/api/personnel', methods=['POST'])
 @login_required
@@ -1050,8 +1083,8 @@ def api_personnel_delete(pid):
 def api_molds():
     team_id = request.args.get('team_id', type=int)
     q = request.args.get('q', '').strip()
-    conn = get_connection()
-    c = conn.cursor()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
     sql = "SELECT * FROM molds WHERE 1=1"
     params = []
     if team_id:
@@ -1062,10 +1095,7 @@ def api_molds():
         sql += " AND (mold_code LIKE ? OR mold_name LIKE ? OR product_code LIKE ? OR location LIKE ?)"
         params.extend([like, like, like, like])
     sql += " ORDER BY mold_code"
-    c.execute(sql, params)
-    r = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return jsonify(r)
+    return jsonify(paginate_query(sql, params, page, page_size))
 
 @app.route('/api/molds', methods=['POST'])
 @login_required
@@ -1139,8 +1169,8 @@ def api_import_molds():
 @login_required
 def api_standard_hours():
     q = request.args.get('q', '').strip()
-    conn = get_connection()
-    c = conn.cursor()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
     sql = "SELECT * FROM standard_hours WHERE 1=1"
     params = []
     if q:
@@ -1148,10 +1178,7 @@ def api_standard_hours():
         sql += " AND (product_code LIKE ? OR product_name LIKE ? OR process_name LIKE ?)"
         params.extend([like, like, like])
     sql += " ORDER BY product_code, process_name"
-    c.execute(sql, params)
-    r = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return jsonify(r)
+    return jsonify(paginate_query(sql, params, page, page_size))
 
 @app.route('/api/standard-hours', methods=['POST'])
 @login_required

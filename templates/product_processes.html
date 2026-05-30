@@ -4,8 +4,8 @@
 <h1>⚙️ 工序管理</h1>
 </div>
 <div class="toolbar">
-<input type="text" id="search" placeholder="搜索工序..." oninput="loadData()" style="width:200px">
-<select id="team-filter" onchange="loadData()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"><option value="">全部班组</option></select>
+<input type="text" id="search" placeholder="搜索工序..." oninput="window._page=1;loadData()" style="width:200px">
+<select id="team-filter" onchange="window._page=1;loadData()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"><option value="">全部班组</option></select>
 <div style="margin-left:auto;display:flex;gap:8px">
 <button class="btn btn-outline readonly-hide" onclick="exportProcesses()">📥 导出</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/processes', function(){setTimeout(function(){loadData();}, 500);})">📤 导入</button>
@@ -23,6 +23,7 @@
 </div>
 </div>
 </div>
+<div id="proc-pagination"></div>
 <div class="modal-overlay" id="edit-modal">
 <div class="modal" style="max-width:500px">
 <div class="modal-header"><h3 id="modal-title">新增工序</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
@@ -49,11 +50,13 @@ document.addEventListener("DOMContentLoaded", function(){
 {% endblock %}
 {% block scripts %}
 <script>var USER_ROLE="{{ session.get('role','') }}";</script>
+
+window._page=1;window._pageSize=50;window._total=0;
 <script>
 var editId=null;
 var teams=[];
 (function(){
-    fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
+    fetch("/api/teams").then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('proc-pagination',resp.page||1,resp.total_pages||1,'loadData');return r.json()}).then(function(d){
         teams=d;
         var sel=document.getElementById("f-team");
         var filter=document.getElementById("team-filter");
@@ -69,6 +72,7 @@ function loadData(){
     var q=document.getElementById("search").value;
     var team=document.getElementById("team-filter").value;
     var url="/api/processes?q="+encodeURIComponent(q);
+    url+=(url.indexOf('?')>=0?'&':'?')+'page='+window._page+'&page_size='+window._pageSize;
     if(team)url+="&team="+encodeURIComponent(team);
     fetch(url).then(function(r){return r.json()}).then(function(d){
         var tb=document.getElementById("data-tbody");tb.innerHTML="";

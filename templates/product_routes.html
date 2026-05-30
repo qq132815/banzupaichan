@@ -18,6 +18,7 @@
 <tbody id="tbody"></tbody>
 </table></div>
 </div></div>
+<div id="routes-pagination"></div>
 <div class="modal-overlay" id="modal"><div class="modal">
 <div class="modal-header"><h3 id="m-title">新增</h3><button class="modal-close" onclick="closeM()">&times;</button></div>
 <div class="modal-body">
@@ -43,10 +44,12 @@ document.addEventListener("DOMContentLoaded", function(){
 {% endblock %}
 {% block scripts %}
 <script>var USER_ROLE="{{ session.get('role','') }}";</script>
+
+window._page=1;window._pageSize=50;window._total=0;
 <script>
 var editId=null;
 var allData=[];
-function load(){fetch("/api/process-routes").then(function(r){return r.json()}).then(function(d){allData=d;renderRoutes(d);});}
+function load(){fetch("/api/process-routes").then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('routes-pagination',resp.page||1,resp.total_pages||1,'load');return r.json()}).then(function(d){allData=d;renderRoutes(d);});}
 function doSearch(){var q=document.getElementById("search").value.toLowerCase();if(!q){renderRoutes(allData);return;}var filtered=allData.filter(function(r){return (r.route_code||"").toLowerCase().indexOf(q)>=0||(r.route_name||"").toLowerCase().indexOf(q)>=0||(r.product_code||"").toLowerCase().indexOf(q)>=0||(r.process_list||"").toLowerCase().indexOf(q)>=0;});renderRoutes(filtered);}
 function renderRoutes(d){var tb=document.getElementById("tbody");tb.innerHTML="";d.forEach(function(r){var tr=document.createElement("tr");var ops="";if(USER_ROLE==="planner"){ops="<td><div class='btn-group'><button class='btn btn-outline btn-sm' onclick='edit("+r.id+")'>编辑</button><button class='btn btn-danger btn-sm' onclick='deleteRoute("+r.id+")'>删除</button></div></td>";}tr.innerHTML="<td>"+r.route_code+"</td><td>"+(r.route_name||"")+"</td><td>"+(r.product_code||"")+"</td><td>"+(r.process_list||"")+"</td><td>"+(r.remark||"")+"</td>"+ops;tb.appendChild(tr);});}
 function showAdd(){editId=null;document.getElementById("m-title").textContent="新增工艺路线";["m-code","m-name","m-product","m-processes","m-remark"].forEach(function(id){document.getElementById(id).value=""});document.getElementById("modal").classList.add("show");}

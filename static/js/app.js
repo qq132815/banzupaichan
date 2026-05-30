@@ -53,6 +53,42 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 
+// ========== Pagination ==========
+function renderPagination(containerId, currentPage, totalPages, onPageChange, onPageSizeChange) {
+    var c = document.getElementById(containerId);
+    if (!c) return;
+    if (totalPages <= 1 && !onPageSizeChange) { c.innerHTML = ""; return; }
+    var html = '<div class="pagination-wrap">';
+    // Page size selector
+    if (onPageSizeChange) {
+        html += '<select class="pagination-size" onchange="' + onPageSizeChange + '(this.value)">';
+        [20,50,100,200].forEach(function(n){
+            html += '<option value="'+n+'"'+(window._pageSize===n?' selected':'')+'>'+n+'/页</option>';
+        });
+        html += '</select>';
+    }
+    html += '<div class="pagination-btns">';
+    html += '<button class="btn-page" '+ (currentPage<=1?'disabled':'') +' onclick="'+onPageChange+'('+(currentPage-1)+')">‹</button>';
+    var start = Math.max(1, currentPage - 2);
+    var end = Math.min(totalPages, currentPage + 2);
+    if (start > 1) {
+        html += '<button class="btn-page" onclick="'+onPageChange+'(1)">1</button>';
+        if (start > 2) html += '<span class="page-ellipsis">...</span>';
+    }
+    for (var i = start; i <= end; i++) {
+        html += '<button class="btn-page'+(i===currentPage?' active':'')+'" onclick="'+onPageChange+'('+i+')">'+i+'</button>';
+    }
+    if (end < totalPages) {
+        if (end < totalPages - 1) html += '<span class="page-ellipsis">...</span>';
+        html += '<button class="btn-page" onclick="'+onPageChange+'('+totalPages+')">'+totalPages+'</button>';
+    }
+    html += '<button class="btn-page" '+ (currentPage>=totalPages?'disabled':'') +' onclick="'+onPageChange+'('+(currentPage+1)+')">›</button>';
+    html += '</div>';
+    html += '<span class="pagination-info">共 '+window._total+' 条</span>';
+    html += '</div>';
+    c.innerHTML = html;
+}
+
 // ========== Import Modal ==========
 function showImportModal(apiUrl, onSuccess) {
     // Create modal if not exists

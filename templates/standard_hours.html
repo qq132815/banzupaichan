@@ -4,7 +4,7 @@
 <h1>⏱️ 标准工时</h1>
 </div>
 <div class="toolbar">
-<input type="text" id="search" placeholder="搜索产品编号/名称/工序..." oninput="loadData()" style="width:240px">
+<input type="text" id="search" placeholder="搜索产品编号/名称/工序..." oninput="window._page=1;loadData()" style="width:240px">
 <div style="margin-left:auto;display:flex;gap:8px">
 <button class="btn btn-outline readonly-hide" onclick="initFromRoutes()">🔄 从工艺路线初始化</button>
 <button class="btn btn-outline readonly-hide" onclick="doExport()">📤 导出</button>
@@ -23,6 +23,7 @@
 </div>
 </div>
 </div>
+<div id="sh-pagination"></div>
 <div class="modal-overlay" id="modal">
 <div class="modal" style="max-width:560px">
 <div class="modal-header"><h3 id="m-title">新增标准工时</h3><button class="modal-close" onclick="closeM()">&times;</button></div>
@@ -52,6 +53,8 @@
 {% endblock %}
 {% block scripts %}
 <script>
+
+window._page=1;window._pageSize=50;window._total=0;
 var USER_ROLE="{{ session.get('role','') }}";
 document.addEventListener("DOMContentLoaded", function(){
     if(USER_ROLE !== "planner"){
@@ -63,7 +66,7 @@ var editId=null;
 var allRoutes=[];
 
 // Load process routes for product autocomplete
-fetch("/api/process-routes").then(function(r){return r.json()}).then(function(d){allRoutes=d;});
+fetch("/api/process-routes").then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('sh-pagination',resp.page||1,resp.total_pages||1,'loadData');return r.json()}).then(function(d){allRoutes=d;});
 
 function loadProducts(){
     var seen={};
@@ -144,6 +147,7 @@ function updateProcessList(){
 function loadData(){
     var q=document.getElementById("search").value;
     var url="/api/standard-hours";
+    url+=(url.indexOf('?')>=0?'&':'?')+'page='+window._page+'&page_size='+window._pageSize;
     if(q)url+="?q="+encodeURIComponent(q);
     fetch(url).then(function(r){return r.json()}).then(function(d){
         var tb=document.getElementById("tbody");tb.innerHTML="";

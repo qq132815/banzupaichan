@@ -4,8 +4,8 @@
 <h1>⚙️ 设备管理</h1>
 </div>
 <div class="toolbar">
-<input type="text" id="eq-search" placeholder="搜索设备编码/名称/位置..." oninput="loadEquipments()" style="width:200px">
-<select id="eq-team-filter" onchange="loadEquipments()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<input type="text" id="eq-search" placeholder="搜索设备编码/名称/位置..." oninput="window._page=1;loadEquipments()" style="width:200px">
+<select id="eq-team-filter" onchange="window._page=1;loadEquipments()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
 <option value="">全部班组</option>
 </select>
 <div style="margin-left:auto;display:flex;gap:8px">
@@ -24,6 +24,7 @@
 </div>
 </div>
 </div>
+<div id="eq-pagination"></div>
 <div class="modal-overlay" id="eq-modal">
 <div class="modal">
 <div class="modal-header"><h3 id="eqm-title">新增设备</h3><button class="modal-close" onclick="closeEqModal()">&times;</button></div>
@@ -50,8 +51,10 @@
 {% endblock %}
 {% block scripts %}
 <script>
+
+window._page=1;window._pageSize=50;window._total=0;
 var editEqId=null;var teams=[];
-fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
+fetch("/api/teams").then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('eq-pagination',resp.page||1,resp.total_pages||1,'loadEquipments');return r.json()}).then(function(d){
 teams=d;
 var sel1=document.getElementById("eq-team-filter");
 var sel2=document.getElementById("eqm-team");
@@ -65,6 +68,7 @@ function loadEquipments(){
 var q=document.getElementById("eq-search").value;
 var tid=document.getElementById("eq-team-filter").value;
 var url="/api/equipments";
+    url+=(url.indexOf('?')>=0?'&':'?')+'page='+window._page+'&page_size='+window._pageSize;
 var params=[];
 if(tid)params.push("team_id="+tid);
 if(q)params.push("q="+encodeURIComponent(q));

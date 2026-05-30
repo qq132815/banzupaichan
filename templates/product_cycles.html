@@ -4,7 +4,7 @@
 <div class="page-actions">
 </div></div>
 <div class="toolbar">
-<input type="text" id="search" placeholder="搜索产品编码" oninput="load()">
+<input type="text" id="search" placeholder="搜索产品编码" oninput="window._page=1;load()">
 <div style="margin-left:auto;display:flex;gap:8px"><button class="btn btn-outline readonly-hide" onclick="doExport()">📥 导出</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/cycles', function(){setTimeout(function(){load();}, 500);})">📤 导入</button>
 {% if session.get('role') == 'planner' %}<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>{% endif %}</div>
@@ -13,6 +13,7 @@
 <thead><tr><th>产品编码</th><th>生产周期(天)</th><th>提前时间(天)</th>{% if session.get('role') == 'planner' %}<th>操作</th>{% endif %}</tr></thead>
 <tbody id="tbody"></tbody>
 </table></div></div></div>
+<div id="cycle-pagination"></div>
 <div class="modal-overlay" id="modal"><div class="modal">
 <div class="modal-header"><h3 id="m-title">新增</h3><button class="modal-close" onclick="closeM()">&times;</button></div>
 <div class="modal-body"><div class="form-row">
@@ -37,9 +38,11 @@ document.addEventListener("DOMContentLoaded", function(){
 {% endblock %}
 {% block scripts %}
 <script>var USER_ROLE="{{ session.get('role','') }}";</script>
+
+window._page=1;window._pageSize=50;window._total=0;
 <script>
 var editId=null;
-function load(){var q=document.getElementById("search").value;fetch("/api/production-cycles?q="+encodeURIComponent(q)).then(function(r){return r.json()}).then(function(d){var tb=document.getElementById("tbody");tb.innerHTML="";d.forEach(function(c){var tr=document.createElement("tr");var ops='';if("{{ session.get('role','') }}"==="planner"){ops='<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="edit('+c.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="deleteCycle('+c.id+')">删除</button></div></td>';}tr.innerHTML='<td>'+c.product_code+'</td><td>'+(c.production_days||'')+'</td><td>'+(c.lead_days||'')+'</td>'+ops;tb.appendChild(tr);});});}
+function load(){var q=document.getElementById("search").value;fetch("/api/production-cycles?q="+encodeURIComponent(q)).then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('cycle-pagination',resp.page||1,resp.total_pages||1,'load');return r.json()}).then(function(d){var tb=document.getElementById("tbody");tb.innerHTML="";d.forEach(function(c){var tr=document.createElement("tr");var ops='';if("{{ session.get('role','') }}"==="planner"){ops='<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="edit('+c.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="deleteCycle('+c.id+')">删除</button></div></td>';}tr.innerHTML='<td>'+c.product_code+'</td><td>'+(c.production_days||'')+'</td><td>'+(c.lead_days||'')+'</td>'+ops;tb.appendChild(tr);});});}
 function showAdd(){editId=null;document.getElementById("m-title").textContent="新增";["m-code","m-days","m-lead"].forEach(function(id){document.getElementById(id).value=""});document.getElementById("modal").classList.add("show");}
 function closeM(){document.getElementById("modal").classList.remove("show");}
 function edit(id){fetch("/api/production-cycles").then(function(r){return r.json()}).then(function(d){var c=d.find(function(x){return x.id===id});if(!c)return;editId=id;document.getElementById("m-title").textContent="编辑";document.getElementById("m-code").value=c.product_code;document.getElementById("m-days").value=c.production_days||"";document.getElementById("m-lead").value=c.lead_days||"";document.getElementById("modal").classList.add("show");});}

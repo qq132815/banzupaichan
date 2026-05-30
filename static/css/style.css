@@ -237,3 +237,14 @@ select.form-control{appearance:auto}
 .has-sub.open .arrow{transform:rotate(90deg)}
 .nav-link.sub{padding-left:40px;font-size:13px}
 .has-sub-link{cursor:pointer;user-select:none}
+
+/* ========== Pagination ========== */
+.pagination-wrap{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid #e5e7eb;flex-wrap:wrap;gap:8px}
+.pagination-size{padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;background:#fff}
+.pagination-btns{display:flex;align-items:center;gap:4px}
+.btn-page{min-width:32px;height:32px;padding:0 8px;border:1px solid #d1d5db;border-radius:6px;background:#fff;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.btn-page:hover:not(:disabled){background:#f3f4f6}
+.btn-page.active{background:#3b82f6;color:#fff;border-color:#3b82f6}
+.btn-page:disabled{opacity:0.4;cursor:not-allowed}
+.page-ellipsis{padding:0 4px;color:#9ca3af}
+.pagination-info{font-size:13px;color:#6b7280}
