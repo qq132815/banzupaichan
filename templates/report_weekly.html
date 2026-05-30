@@ -9,19 +9,27 @@
 <div class="card"><div class="card-body">
 <div class="table-wrap">
 <table class="report-table">
-<thead><tr><th>姓名</th><th>班组</th><th>出勤天数</th><th>打卡工时</th><th>生产工时</th><th>总产量</th><th>良品率</th><th>平均效率</th><th>加班天数</th><th>工时利用率</th><th>日均产量</th></tr></thead>
+<thead><tr>
+<th style="min-width:80px">姓名</th>
+<th style="min-width:70px">班组</th>
+<th style="min-width:60px">出勤天数</th>
+<th style="min-width:70px">打卡工时</th>
+<th style="min-width:70px">生产工时</th>
+<th style="min-width:60px">总产量</th>
+<th style="min-width:60px">良品率</th>
+<th style="min-width:70px">平均效率</th>
+<th style="min-width:60px">加班天数</th>
+<th style="min-width:70px">工时利用率</th>
+<th style="min-width:70px">日均产量</th>
+</tr></thead>
 <tbody id="tbody"></tbody>
 </table>
 </div>
 </div></div>
 <style>
-.tab-btn{padding:10px 20px;border:none;background:none;font-size:14px;font-weight:500;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s}
-.tab-btn:hover{color:#3b82f6}
-.tab-btn.active{color:#3b82f6;border-bottom-color:#3b82f6}
-.overtime{background:#fef2f2;color:#dc2626;font-weight:600}
-.report-table th{position:sticky;top:0;z-index:2}
-.report-table td{text-align:center}
-.report-table td:first-child,.report-table th:first-child{text-align:left;position:sticky;left:0;background:#fff;z-index:1}
+.report-table th{position:sticky;top:0;z-index:2;background:#f8fafc;border-bottom:2px solid #e5e7eb;font-size:12px;font-weight:600;color:#374151;white-space:nowrap}
+.report-table td{text-align:center;padding:10px 14px;border-bottom:1px solid #f3f4f6;font-size:13px;white-space:nowrap}
+.report-table td:first-child,.report-table th:first-child{text-align:left;position:sticky;left:0;background:inherit;z-index:3}
 </style>
 {% endblock %}
 {% block scripts %}
@@ -42,10 +50,11 @@ function loadData(){
     if(tid)url+="&team_id="+tid;
     fetch(url).then(function(r){return r.json()}).then(function(d){
         var tb=document.getElementById("tbody");tb.innerHTML="";
+        if(!d.data||d.data.length===0){tb.innerHTML='<tr><td colspan="11" style="text-align:center;color:#9ca3af;padding:40px">暂无数据</td></tr>';return;}
         d.data.forEach(function(r){
             var tr=document.createElement("tr");
-            var gr=r.good_rate>0?r.good_rate+'%':'-';
-            var eff=r.avg_efficiency>0?(r.avg_efficiency>=100?'<span style="color:#059669">'+r.avg_efficiency+'%</span>':'<span style="color:#dc2626">'+r.avg_efficiency+'%</span>'):'-';
+            var gr=r.good_rate>0?r.good_rate+'%':'<span style="color:#9ca3af">-</span>';
+            var eff=r.avg_efficiency>0?(r.avg_efficiency>=100?'<span style="color:#059669">'+r.avg_efficiency+'%</span>':'<span style="color:#dc2626">'+r.avg_efficiency+'%</span>'):'<span style="color:#9ca3af">-</span>';
             tr.innerHTML='<td><strong>'+r.name+'</strong></td><td>'+(r.department||'')+'</td><td>'+r.work_days+'</td><td>'+(r.total_attendance_hours||0)+'h</td><td>'+(r.total_production_hours||0)+'h</td><td>'+(r.total_qty||0)+'</td><td>'+gr+'</td><td>'+eff+'</td><td>'+(r.overtime_days||0)+'</td><td>'+(r.utilization_rate||0)+'%</td><td>'+(r.daily_avg_qty||0)+'</td>';
             tb.appendChild(tr);
         });
