@@ -1502,7 +1502,6 @@ def api_shipping_plan():
 @app.route('/api/statistics')
 @login_required
 def api_statistics():
-    team_id = request.args.get('team_id', type=int)
     date_from = request.args.get('date_from', '')
     date_to = request.args.get('date_to', '')
     if not date_from:
@@ -1511,76 +1510,85 @@ def api_statistics():
         date_to = datetime.now().strftime('%Y-%m-%d')
     conn = get_connection()
     c = conn.cursor()
-    
-    # Get team info
-    if team_id:
-        c.execute("SELECT id, name FROM teams WHERE id=?", (team_id,))
-    else:
-        c.execute("SELECT id, name FROM teams ORDER BY id")
+
+    # 1. Load all teams
+    c.execute("SELECT id, name FROM teams ORDER BY id")
     teams = [dict(row) for row in c.fetchall()]
-    
+
+    # 2. Load all process->team mapping once
+    c.execute("SELECT process_name, team_name FROM processes WHERE team_name IS NOT NULL AND team_name != '' AND team_name != '报工权限'")
+    proc_team_map = {}
+    for r in c.fetchall():
+        proc_team_map[r[0]] = r[1]
+
+    # 3. Bulk load schedules for date range
+    c.execute("SELECT team_id, schedule_date, product_code, process_name, quantity, capacity_per_hour FROM schedules WHERE schedule_date BETWEEN ? AND ?", (date_from, date_to))
+    all_schedules = c.fetchall()
+
+    # 4. Bulk load work_reports for date range
+    c.execute("SELECT product_code, process_name, report_qty, report_hours, create_time FROM work_reports WHERE create_time BETWEEN ? AND ?",
+              (date_from + ' 00:00:00', date_to + ' 23:59:59'))
+    all_reports = c.fetchall()
+    conn.close()
+
+    # 5. Build schedule index: (team_id, date) -> total_qty
+    sched_by_team_date = {}
+    # Build schedule capacity index: (product_code, process_name, date) -> capacity
+    sched_capacity = {}
+    for s in all_schedules:
+        tid, dt, pc, pn, qty, cap = s[0], s[1], s[2], s[3], s[4] or 0, s[5] or 0
+        key = (tid, dt)
+        sched_by_team_date[key] = sched_by_team_date.get(key, 0) + qty
+        if cap > 0:
+            sched_capacity[(pc, pn, dt)] = cap
+
+    # 6. Build report index: (product_code, process_name, date) -> {qty, hours}
+    report_by_key = {}
+    for r in all_reports:
+        pc, pn, qty, hrs, ct = r[0], r[1], r[2] or 0, r[3] or 0, r[4] or ''
+        dt = ct[:10] if ct else ''
+        key = (pc, pn, dt)
+        if key not in report_by_key:
+            report_by_key[key] = {'qty': 0, 'hours': 0}
+        report_by_key[key]['qty'] += qty
+        report_by_key[key]['hours'] += hrs
+
+    # 7. Build team->process set
+    team_procs = {}
+    for pn, tn in proc_team_map.items():
+        for team in teams:
+            if team['name'] in tn:
+                team_procs.setdefault(team['id'], set()).add(pn)
+
+    # 8. Generate result
     result = {}
     for team in teams:
         tid = team['id']
         tname = team['name']
-        # Map team_name to process names (team_name may be comma-separated)
-        c.execute("SELECT process_name FROM processes WHERE team_name LIKE ?", ('%' + tname + '%',))
-        proc_names = [r[0] for r in c.fetchall()]
-        
+        procs = team_procs.get(tid, set())
         days = []
         current = datetime.strptime(date_from, '%Y-%m-%d').date()
         end = datetime.strptime(date_to, '%Y-%m-%d').date()
         while current <= end:
-            date_str = current.strftime('%Y-%m-%d')
-            
-            # 计划量: from schedules
-            c.execute("SELECT COALESCE(SUM(quantity), 0) FROM schedules WHERE team_id=? AND schedule_date=?", (tid, date_str))
-            planned_qty = c.fetchone()[0] or 0
-            
-            # 完成率: from work_reports, group by product_code + process_name, sum qty
-            if proc_names:
-                placeholders = ','.join(['?' for _ in proc_names])
-                c.execute(f"""SELECT product_code, process_name, SUM(report_qty) as total_qty 
-                    FROM work_reports WHERE process_name IN ({placeholders}) AND create_time LIKE ? 
-                    GROUP BY product_code, process_name""", proc_names + [date_str + '%'])
-                report_groups = c.fetchall()
-                completed_qty = sum(r[2] for r in report_groups) if report_groups else 0
-                completion_rate = round(completed_qty / planned_qty * 100, 1) if planned_qty > 0 else 0
-                
-                # 生产效率: for each product+process, calc actual rate vs schedule capacity
-                efficiencies = []
-                for rg in report_groups:
-                    pc, pn, qty = rg[0], rg[1], rg[2]
-                    # Get report hours for this combo
-                    c.execute("SELECT SUM(report_hours) FROM work_reports WHERE product_code=? AND process_name=? AND create_time LIKE ? AND report_hours > 0", (pc, pn, date_str + '%'))
-                    hrs_row = c.fetchone()
-                    hrs = hrs_row[0] if hrs_row and hrs_row[0] else 0
-                    if hrs > 0:
-                        actual_rate = qty / hrs
-                        # Get schedule capacity
-                        c.execute("SELECT capacity_per_hour FROM schedules WHERE product_code=? AND process_name=? AND schedule_date=? AND capacity_per_hour > 0", (pc, pn, date_str))
-                        cap_row = c.fetchone()
-                        if cap_row and cap_row[0] > 0:
-                            eff = round(actual_rate / cap_row[0] * 100, 1)
+            ds = current.strftime('%Y-%m-%d')
+            planned = sched_by_team_date.get((tid, ds), 0)
+            # Sum completed qty for this team's processes on this date
+            completed = 0
+            efficiencies = []
+            for (pc, pn, dt), data in report_by_key.items():
+                if dt == ds and pn in procs:
+                    completed += data['qty']
+                    if data['hours'] > 0:
+                        cap = sched_capacity.get((pc, pn, ds), 0)
+                        if cap > 0:
+                            eff = round((data['qty'] / data['hours']) / cap * 100, 1)
                             efficiencies.append(eff)
-                avg_eff = round(sum(efficiencies) / len(efficiencies), 1) if efficiencies else 0
-            else:
-                completed_qty = 0
-                completion_rate = 0
-                avg_eff = 0
-            
-            days.append({
-                'date': date_str,
-                'planned_qty': planned_qty,
-                'completed_qty': completed_qty,
-                'completion_rate': completion_rate,
-                'efficiency': avg_eff
-            })
+            rate = round(completed / planned * 100, 1) if planned > 0 else 0
+            eff_avg = round(sum(efficiencies) / len(efficiencies), 1) if efficiencies else 0
+            days.append({'date': ds, 'planned_qty': planned, 'completed_qty': completed, 'completion_rate': rate, 'efficiency': eff_avg})
             current += timedelta(days=1)
-        
         result[tid] = {'team_name': tname, 'days': days}
-    
-    conn.close()
+
     return jsonify(result)
 
 if __name__ == "__main__":
