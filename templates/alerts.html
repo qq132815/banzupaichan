@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>🔔 预警中心</h1>
+<div class="page-actions">
+<button class="btn btn-warning" onclick="calcAlerts()">🔄 重新计算预警</button>
+<button class="btn btn-primary" onclick="backCalc()">📥 倒推半成品需求</button>
+</div>
+</div>
+<div class="toolbar">
+<label>筛选：</label>
+<select id="level-filter" onchange="loadAlerts()">
+<option value="">全部</option>
+<option value="red">🔴 红色预警</option>
+<option value="yellow">🟡 黄色预警</option>
+<option value="green">🟢 正常</option>
+</select>
+</div>
+<div class="card">
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>产品编码</th><th>等级</th><th>交期</th><th>需求数</th><th>已排数</th><th>缺口</th><th>剩余天</th><th>说明</th></tr></thead>
+<tbody id="alert-tbody"></tbody>
+</table>
+<div id="alert-empty" class="table-empty" style="display:none">暂无预警数据</div>
+</div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function loadAlerts(){
+var lv=document.getElementById("level-filter").value;
+fetch("/api/alerts?level="+lv).then(function(r){return r.json()}).then(function(alerts){
+var tb=document.getElementById("alert-tbody");
+var empty=document.getElementById("alert-empty");
+tb.innerHTML='';
+if(!alerts.length){empty.style.display='block';return;}
+empty.style.display='none';
+alerts.forEach(function(a){
+var tr=document.createElement("tr");
+tr.className="alert-"+a.alert_level;
+tr.innerHTML='<td>'+a.product_code+'</td><td><span class="badge badge-'+a.alert_level+'">'+a.alert_level.toUpperCase()+'</span></td><td>'+(a.due_date||'')+'</td><td>'+a.quantity+'</td><td>'+(a.scheduled_qty||0)+'</td><td>'+(a.shortage_qty||0)+'</td><td>'+(a.days_remaining||0)+'</td><td>'+(a.message||'')+'</td>';
+tb.appendChild(tr);});});
+}
+function calcAlerts(){fetch("/api/alerts/calculate",{method:"POST"}).then(function(r){return r.json()}).then(function(d){toast("预警计算完成","success");loadAlerts();});}
+function backCalc(){fetch("/api/back-calculate",{method:"POST"}).then(function(r){return r.json()}).then(function(d){toast("倒推完成，新增 "+d.new_orders+" 个工单","success");});}
+loadAlerts();
+</script>
+{% endblock %}

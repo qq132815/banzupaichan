@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>📦 成品发货计划</h1>
+<div class="page-actions">
+<label class="btn btn-outline" style="cursor:pointer">
+📥 导入计划
+<input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="importPlan(this)">
+</label>
+<button class="btn btn-outline" onclick="downloadTemplate()">📄 下载模板</button>
+<button class="btn btn-outline" onclick="exportMatrix()">📤 导出</button>
+</div>
+</div>
+
+<div class="card">
+<div class="card-header">
+<h2>📋 发货计划矩阵</h2>
+<span id="plan-count" style="color:#6b7280;font-size:13px"></span>
+</div>
+<div class="card-body" style="padding:0;overflow-x:auto">
+<div id="matrix-container"></div>
+<div id="matrix-empty" class="table-empty" style="display:none">暂无发货计划，请先导入</div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var today = new Date().toISOString().split("T")[0];
+
+(function(){ loadShippingMatrix(); })();
+
+function loadShippingMatrix(){
+    fetch("/api/shipping-plan").then(function(r){return r.json()}).then(function(d){
+        var container = document.getElementById("matrix-container");
+        var empty = document.getElementById("matrix-empty");
+        document.getElementById("plan-count").textContent = d.length + " 条记录";
+        if(!d.length){ container.innerHTML=""; empty.style.display="block"; return; }
+        empty.style.display="none";
+        var dates={}, products={}, dataMap={};
+        d.forEach(function(r){
+            dates[r.ship_date]=true;
+            if(!products[r.product_code]) products[r.product_code]={name:r.product_code};
+            var key=r.product_code+'|'+r.ship_date;
+            if(!dataMap[key]) dataMap[key]=0;
+            dataMap[key]+=r.quantity;
+        });
+        var dateArr=Object.keys(dates).sort();
+        var prodArr=Object.keys(products).sort(function(a,b){return a.localeCompare(b);});
+        var html='<table class="matrix-table"><thead><tr><th class="sticky-col">产品编码</th>';
+        dateArr.forEach(function(d){
+            var cls=d<today?'past':d===today?'today':'';
+            html+='<th class="date-header '+cls+'">'+d.substring(5)+'</th>';
+        });
+        html+='<th class="total-col">合计</th></tr></thead><tbody>';
+        prodArr.forEach(function(code){
+            html+='<tr><td class="sticky-col"><strong>'+products[code].name+'</strong></td>';
+            var total=0;
+            dateArr.forEach(function(date){
+                var key=code+'|'+date; var val=dataMap[key]||0; total+=val;
+                var cls=val>0?'has-value':'';
+                if(date<today) cls+=' past'; else if(date===today) cls+=' today';
+                html+='<td class="data-cell '+cls+'">'+(val>0?val:'')+'</td>';
+            });
+            html+='<td class="total-col"><strong>'+total+'</strong></td></tr>';
+        });
+        html+='</tbody></table>';
+        container.innerHTML=html;
+    });
+}
+
+function importPlan(input){
+    if(!input.files.length) return;
+    var fd = new FormData();
+    fd.append("file", input.files[0]);
+    toast("正在导入...", "info");
+    fetch("/api/import/shipping", {method:"POST", body:fd}).then(function(r){return r.json()}).then(function(d){
+        if(d.error){ toast(d.error, "error"); return; }
+        toast("导入成功，共 "+d.count+" 条", "success");
+        loadShippingMatrix();
+    }).catch(function(e){ toast("导入失败", "error"); });
+    input.value = "";
+}
+
+function downloadTemplate(){
+    window.location.href = "/api/shipping-plan/template";
+}
+
+function exportMatrix(){
+    var table = document.querySelector('.matrix-table');
+    if(!table){toast("无数据可导出","warning");return;}
+    var csv="";
+    table.querySelectorAll('tr').forEach(function(row){
+        var cols=[];
+        row.querySelectorAll('th,td').forEach(function(cell){
+            cols.push('"'+cell.textContent.replace(/"/g,'""')+'"');
+        });
+        csv+=cols.join(',')+"\n";
+    });
+    var blob = new Blob(["\ufeff"+csv], {type:"text/csv;charset=utf-8"});
+    var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "成品发货计划.csv"; a.click();
+}
+</script>
+<style>
+.matrix-table{border-collapse:collapse;font-size:12px;white-space:nowrap}
+.matrix-table th,.matrix-table td{padding:6px 10px;border:1px solid #e5e7eb;text-align:center}
+.matrix-table th{background:#f9fafb;font-weight:600;position:sticky;top:0;z-index:10}
+.sticky-col{position:sticky;left:0;background:#fff;z-index:5;text-align:left;min-width:200px;max-width:280px;overflow:hidden;text-overflow:ellipsis}
+.date-header{min-width:60px;font-size:11px}
+.data-cell{min-width:60px}
+.data-cell.has-value{background:#dbeafe;font-weight:600;color:#1e40af}
+.data-cell.has-value.past{background:#fee2e2;color:#991b1b}
+.data-cell.has-value.today{background:#dcfce7;color:#065f46}
+.date-header.past{color:#9ca3af}
+.date-header.today{background:#dcfce7;color:#065f46}
+.total-col{background:#f3f4f6;font-weight:600;min-width:70px;position:sticky;right:0;z-index:5}
+</style>
+{% endblock %}

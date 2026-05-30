@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>🔄 半成品推算</h1>
+<div class="page-actions">
+<select id="team-filter" class="form-control" onchange="loadMatrix()" style="width:150px">
+<option value="">全部班组</option>
+</select>
+<button class="btn btn-primary" onclick="calculate()">🔄 计算需求</button>
+<button class="btn btn-success" onclick="publishAll()">📤 发布全部</button>
+<button class="btn btn-outline" onclick="exportMatrix()">📤 导出</button>
+</div>
+</div>
+<div class="card">
+<div class="card-body" style="padding:0;overflow-x:auto">
+<div style="padding:8px 16px;color:#6b7280;font-size:12px">📅 日期列为<b>完成时间</b>（各层级需在此日期前完成生产）</div><div id="matrix-container"></div>
+<div id="matrix-empty" class="table-empty" style="display:none">暂无已发布的半成品需求，请先在「成品计划」页面计算并发布</div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function(){
+    fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
+        var sel=document.getElementById("team-filter");
+        d.forEach(function(t){
+            var o=document.createElement("option");o.value=t.name;o.textContent=t.name;sel.appendChild(o);
+        });
+        loadMatrix();
+    });
+})();
+
+function loadMatrix(){
+    var team=document.getElementById("team-filter").value;
+    var url="/api/production-requirements?status=published";
+    fetch(url).then(function(r){return r.json()}).then(function(d){
+        // Filter by team if selected
+        if(team){
+            d=d.filter(function(r){
+                if(!r.team_name)return false;
+                var teams=r.team_name.split(",");
+                return teams.some(function(t){return t.trim()===team});
+            });
+        }
+        
+        var container=document.getElementById("matrix-container");
+        var empty=document.getElementById("matrix-empty");
+        
+        if(!d.length){
+            container.innerHTML="";
+            empty.style.display="block";
+            return;
+        }
+        empty.style.display="none";
+        
+        // Collect all unique dates and product codes
+        var dates={};
+        var products={};
+        var dataMap={};
+        
+        d.forEach(function(r){
+            var date=r.required_date;
+            var code=r.product_code;
+            dates[date]=true;
+            if(!products[code]){
+                products[code]={
+                    name:r.product_name||code,
+                    team:r.team_name||'-',
+                    level:r.bom_level||0,
+                    root:r.root_product||code,
+                    chain:r.parent_chain||code
+                };
+            }
+            var key=code+'|'+date;
+            if(!dataMap[key])dataMap[key]=0;
+            dataMap[key]+=r.required_quantity;
+        });
+        
+        // Sort dates
+        var dateArr=Object.keys(dates).sort();
+        // Sort by root product first, then by BOM level (staircase pattern)
+        var prodArr=Object.keys(products).sort(function(a,b){
+            var ca=products[a].chain||a, cb=products[b].chain||b;
+            return ca.localeCompare(cb);
+        });
+        
+        // Build table
+        var html='<table class="matrix-table"><thead><tr>';
+        html+='<th class="sticky-col">产品名称</th>';
+        html+='<th class="sticky-col2">件号</th>';
+        html+='<th class="sticky-col3">层级</th>';
+        html+='<th class="sticky-col4">班组</th>';
+        dateArr.forEach(function(d){
+            var today=new Date().toISOString().split("T")[0];
+            var cls=d<today?'past':d===today?'today':'';
+            html+='<th class="date-header '+cls+'">'+d.substring(5)+'</th>';
+        });
+        html+='<th class="total-col">合计</th></tr></thead><tbody>';
+        
+        prodArr.forEach(function(code){
+            var p=products[code];
+            html+='<tr>';
+            var displayName=p.name;
+            var levelLabel=p.level+'级';
+            html+='<td class="sticky-col"><strong>'+displayName+'</strong></td>';
+            html+='<td class="sticky-col2">'+code+'</td>';
+            html+='<td class="sticky-col3">'+levelLabel+'</td>';
+            html+='<td class="sticky-col3">'+p.team+'</td>';
+            var total=0;
+            dateArr.forEach(function(date){
+                var key=code+'|'+date;
+                var val=dataMap[key]||0;
+                total+=val;
+                var cellClass=val>0?'has-value':'';
+                var today=new Date().toISOString().split("T")[0];
+                if(date<today)cellClass+=' past';
+                else if(date===today)cellClass+=' today';
+                html+='<td class="data-cell '+cellClass+'">'+(val>0?val:'')+'</td>';
+            });
+            html+='<td class="total-col"><strong>'+total+'</strong></td>';
+            html+='</tr>';
+        });
+        
+        html+='</tbody></table>';
+        container.innerHTML=html;
+    });
+}
+
+function calculate(){
+    if(!confirm("将根据发货计划和BOM重新计算生产需求，现有草稿将被覆盖。继续？")) return;
+    toast("正在计算...", "info");
+    api("/api/production-requirements/calculate", {method:"POST"}).then(function(d){
+        toast("计算完成，生成 " + d.count + " 条需求", "success");
+        loadMatrix();
+    }).catch(function(e){toast(e.error || "计算失败", "error");});
+}
+
+function publishAll(){
+    if(!confirm("发布所有草稿需求？发布后班组可见。")) return;
+    api("/api/production-requirements/publish", {method:"POST", body:{}}).then(function(d){
+        toast("已发布 " + d.published + " 条", "success");
+        loadMatrix();
+    });
+}
+
+function exportMatrix(){
+    var table=document.querySelector('.matrix-table');
+    if(!table){toast("无数据可导出","warning");return;}
+    var csv="";
+    var rows=table.querySelectorAll('tr');
+    rows.forEach(function(row){
+        var cols=[];
+        row.querySelectorAll('th,td').forEach(function(cell){
+            cols.push('"'+cell.textContent.replace(/"/g,'""')+'"');
+        });
+        csv+=cols.join(',')+"\n";
+    });
+    var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+    var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="半成品推算.csv";a.click();
+}
+</script>
+<style>
+.matrix-table{border-collapse:collapse;font-size:12px;white-space:nowrap}
+.matrix-table th,.matrix-table td{padding:6px 10px;border:1px solid #e5e7eb;text-align:center}
+.matrix-table th{background:#f9fafb;font-weight:600;position:sticky;top:0;z-index:10}
+.sticky-col{position:sticky;left:0;background:#fff;z-index:5;text-align:left;min-width:220px;max-width:280px;overflow:hidden;text-overflow:ellipsis}
+.sticky-col2{position:sticky;left:220px;background:#fff;z-index:5;text-align:left;min-width:160px;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.sticky-col3{position:sticky;left:380px;background:#fff;z-index:5;text-align:center;min-width:60px}
+.sticky-col4{position:sticky;left:440px;background:#fff;z-index:5;text-align:center;min-width:80px}
+.date-header{min-width:60px;font-size:11px}
+.data-cell{min-width:60px}
+.data-cell.has-value{background:#fef3c7;font-weight:600;color:#92400e}
+.data-cell.has-value.past{background:#fee2e2;color:#991b1b}
+.data-cell.has-value.today{background:#dcfce7;color:#065f46}
+.date-header.past{color:#9ca3af}
+.date-header.today{background:#dcfce7;color:#065f46}
+.total-col{background:#f3f4f6;font-weight:600;min-width:70px;position:sticky;right:0;z-index:5}
+</style>
+{% endblock %}

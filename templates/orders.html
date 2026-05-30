@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>📦 订单管理</h1>
+<div class="page-actions">
+<label class="btn btn-outline" style="cursor:pointer">
+📥 导入工单
+<input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="importOrders(this)">
+</label>
+<button class="btn btn-outline" onclick="exportOrders()">📤 导出</button>
+<button class="btn btn-primary" onclick="showAddOrder()">＋ 新增订单</button>
+</div>
+</div>
+<div class="toolbar">
+<label>搜索：</label>
+<input type="text" id="order-search" placeholder="工单号/产品名称" oninput="loadOrders()">
+<label>状态：</label>
+<select id="status-filter" onchange="loadOrders()">
+<option value="">全部</option>
+<option value="pending">待排</option>
+<option value="in_progress">进行中</option>
+<option value="completed">已完成</option>
+</select>
+</div>
+<div class="card">
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>工单号</th><th>产品名称</th><th>数量</th><th>完成数</th><th>交期</th><th>优先级</th><th>状态</th><th>工序进度</th><th>操作</th></tr></thead>
+<tbody id="orders-tbody"></tbody>
+</table>
+<div id="orders-empty" class="table-empty" style="display:none">暂无订单数据，请导入工单</div>
+</div>
+</div>
+</div>
+
+<div class="modal-overlay" id="order-modal">
+<div class="modal">
+<div class="modal-header"><h3 id="om-title">新增订单</h3><button class="modal-close" onclick="closeOrderModal()">&times;</button></div>
+<div class="modal-body">
+<div class="form-row">
+<div class="form-group"><label>工单号</label><input type="text" class="form-control" id="om-order-no"></div>
+<div class="form-group"><label>产品编码</label><input type="text" class="form-control" id="om-product-code"></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>产品名称</label><input type="text" class="form-control" id="om-product-name"></div>
+<div class="form-group"><label>数量</label><input type="number" class="form-control" id="om-quantity"></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>交期</label><input type="date" class="form-control" id="om-due-date"></div>
+<div class="form-group"><label>优先级</label>
+<select class="form-control" id="om-priority"><option value="P0">P0 主机厂</option><option value="P1">P1 加工单</option><option value="P2" selected>P2 库存</option></select>
+</div>
+</div>
+</div>
+<div class="modal-footer">
+<button class="btn btn-secondary" onclick="closeOrderModal()">取消</button>
+<button class="btn btn-primary" onclick="saveOrder()">保存</button>
+</div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var editOrderId = null;
+
+function loadOrders(){
+    var q = document.getElementById("order-search").value;
+    var s = document.getElementById("status-filter").value;
+    var url = "/api/orders?";
+    if(q) url += "q="+encodeURIComponent(q)+"&";
+    if(s) url += "status="+s;
+    fetch(url).then(function(r){return r.json()}).then(function(d){
+        var tb = document.getElementById("orders-tbody");
+        var empty = document.getElementById("orders-empty");
+        tb.innerHTML = "";
+        if(!d.length){empty.style.display='block';return;}
+        empty.style.display='none';
+        d.forEach(function(o){
+            var tr = document.createElement("tr");
+            var statusText = o.status==='completed'?'已完成':(o.status==='in_progress'||o.status.indexOf('\u6267')>=0)?'进行中':'待排';
+            var statusColor = o.status==='completed'?'green':statusText==='进行中'?'blue':'gray';
+            tr.innerHTML='<td><strong>'+o.order_no+'</strong></td>'
+                +'<td>'+(o.product_name||o.product_code||'')+'</td>'
+                +'<td>'+o.quantity+'</td>'
+                +'<td>'+(o.completed_qty||0)+'</td>'
+                +'<td>'+(o.due_date||'')+'</td>'
+                +'<td>'+priorityLabel(o.priority)+'</td>'
+                +'<td><span class="badge badge-'+statusColor+'">'+statusText+'</span></td>'
+                +'<td>'+renderProcessProgress(o.process_progress)+'</td>'
+                +'<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editOrder('+o.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="deleteOrder('+o.id+')">删除</button></div></td>';
+            tb.appendChild(tr);
+        });
+    });
+}
+
+function renderProcessProgress(progressStr){
+    if(!progressStr) return '<span style="color:#9ca3af">-</span>';
+    var steps = progressStr.split("->");
+    var html = '<div class="progress-rings">';
+    steps.forEach(function(step){
+        var m = step.match(/(.+?)\u3010(\d+)\/(\d+)\u3011\uff08(\d+)%?\uff09/);
+        if(m){
+            var name = m[1].trim();
+            var done = parseInt(m[2]);
+            var total = parseInt(m[3]);
+            var pct = parseInt(m[4]);
+            var color = pct>=100?'#10b981':pct>=50?'#3b82f6':pct>0?'#f59e0b':'#d1d5db';
+            var shortName = name.length>4?name.substring(0,4):name;
+            html+='<div class="ring-item" title="'+name+': '+done+'/'+total+' ('+pct+'%)">'
+                +'<svg viewBox="0 0 36 36" class="ring-svg">'
+                +'<path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#e5e7eb" stroke-width="3"/>'
+                +'<path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="'+color+'" stroke-width="3" stroke-dasharray="'+pct+', 100" stroke-linecap="round"/>'
+                +'<text x="18" y="18" text-anchor="middle" dominant-baseline="central" font-size="8" font-weight="600" fill="'+color+'">'+pct+'%</text>'
+                +'</svg>'
+                +'<span class="ring-label">'+shortName+'</span>'
+                +'</div>';
+        } else {
+            var cleanName = step.replace(/[\[\]\u3010\u3011\uff08\uff09\(\)【】]/g,'').replace(/\d+\/\d+/g,'').replace(/\d+%/g,'').trim();
+            if(cleanName){
+                html+='<div class="ring-item" title="'+cleanName+'">'
+                    +'<svg viewBox="0 0 36 36" class="ring-svg">'
+                    +'<path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#e5e7eb" stroke-width="3"/>'
+                    +'<text x="18" y="18" text-anchor="middle" dominant-baseline="central" font-size="8" fill="#9ca3af">0%</text>'
+                    +'</svg>'
+                    +'<span class="ring-label">'+(cleanName.length>4?cleanName.substring(0,4):cleanName)+'</span>'
+                    +'</div>';
+            }
+        }
+    });
+    html += '</div>';
+    return html;
+}
+
+function importOrders(input){
+    if(!input.files.length) return;
+    var fd = new FormData();
+    fd.append("file", input.files[0]);
+    toast("正在导入...", "info");
+    fetch("/api/import/orders", {method:"POST", body:fd}).then(function(r){return r.json()}).then(function(d){
+        if(d.error){toast(d.error,"error");return;}
+        toast("导入成功，共 "+d.count+" 条","success");
+        loadOrders();
+    }).catch(function(){toast("导入失败","error");});
+    input.value = "";
+}
+
+function exportOrders(){
+    fetch("/api/orders").then(function(r){return r.json()}).then(function(d){
+        if(!d.length){toast("无数据可导出","warning");return;}
+        var headers=["工单号","产品编码","产品名称","数量","完成数","交期","优先级","状态","工序进度"];
+        var csv=headers.join(",")+"\n";
+        d.forEach(function(o){
+            var row=[o.order_no,o.product_code,'"'+(o.product_name||'')+'"',o.quantity,o.completed_qty||0,o.due_date||'',o.priority||'',o.status||'"'+(o.process_progress||'').replace(/,/g,';')+'"'];
+            csv+=row.join(",")+"\n";
+        });
+        var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+        var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="订单导出.csv";a.click();
+    });
+}
+
+function showAddOrder(){
+    editOrderId=null;
+    document.getElementById("om-title").textContent="新增订单";
+    ["om-order-no","om-product-code","om-product-name","om-quantity","om-due-date"].forEach(function(id){document.getElementById(id).value=""});
+    document.getElementById("om-priority").value="P2";
+    document.getElementById("order-modal").classList.add("show");
+}
+function closeOrderModal(){document.getElementById("order-modal").classList.remove("show");}
+function editOrder(id){
+    fetch("/api/orders").then(function(r){return r.json()}).then(function(d){
+        var o=d.find(function(x){return x.id===id});
+        if(!o)return;
+        editOrderId=id;
+        document.getElementById("om-title").textContent="编辑订单";
+        document.getElementById("om-order-no").value=o.order_no;
+        document.getElementById("om-product-code").value=o.product_code;
+        document.getElementById("om-product-name").value=o.product_name||"";
+        document.getElementById("om-quantity").value=o.quantity;
+        document.getElementById("om-due-date").value=o.due_date||"";
+        document.getElementById("om-priority").value=o.priority||"P2";
+        document.getElementById("order-modal").classList.add("show");
+    });
+}
+function saveOrder(){
+    var data={order_no:document.getElementById("om-order-no").value,product_code:document.getElementById("om-product-code").value,product_name:document.getElementById("om-product-name").value,quantity:parseFloat(document.getElementById("om-quantity").value)||0,due_date:document.getElementById("om-due-date").value,priority:document.getElementById("om-priority").value,status:'pending'};
+    if(!data.order_no||!data.product_code){toast("工单号和产品编码必填","warning");return;}
+    var url=editOrderId?"/api/orders/"+editOrderId:"/api/orders";
+    api(url,{method:editOrderId?"PUT":"POST",body:data}).then(function(){toast("保存成功","success");closeOrderModal();loadOrders();}).catch(function(){toast("保存失败","error");});
+}
+function deleteOrder(id){if(!confirm("确定删除？"))return;api("/api/orders/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadOrders();});}
+loadOrders();
+</script>
+<style>
+.progress-rings{display:flex;gap:4px;align-items:flex-end;flex-wrap:wrap}
+.ring-item{display:flex;flex-direction:column;align-items:center;gap:2px}
+.ring-svg{width:36px;height:36px}
+.ring-label{font-size:10px;color:#6b7280;line-height:1;white-space:nowrap}
+</style>
+{% endblock %}

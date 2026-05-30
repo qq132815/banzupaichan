@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>⚙️ 工序管理</h1>
+<div class="page-actions">
+<input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="importProcesses()">
+<button class="btn btn-outline readonly-hide" onclick="document.getElementById('import-file').click()">📥 导入</button>
+<button class="btn btn-outline readonly-hide" onclick="exportProcesses()">📤 导出</button>
+<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>
+</div>
+</div>
+<div class="card">
+<div class="card-body">
+<div class="toolbar">
+<input type="text" class="form-control" id="search" placeholder="搜索工序名称/编码..." oninput="loadData()" style="width:260px">
+<select id="team-filter" class="form-control" onchange="loadData()" style="width:150px;margin-left:8px">
+<option value="">全部班组</option>
+</select>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>工序编码</th><th>工序名称</th><th>所属班组</th><th>操作</th></tr></thead>
+<tbody id="data-tbody"></tbody>
+</table>
+<div id="data-empty" class="table-empty" style="display:none">暂无数据</div>
+</div>
+</div>
+</div>
+<div class="modal-overlay" id="edit-modal">
+<div class="modal" style="max-width:500px">
+<div class="modal-header"><h3 id="modal-title">新增工序</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+<div class="modal-body">
+<div class="form-group"><label>工序编码</label><input type="text" class="form-control" id="f-code" placeholder="如: P001"></div>
+<div class="form-group"><label>工序名称</label><input type="text" class="form-control" id="f-name" placeholder="如: 焊接压板1（自动）"></div>
+<div class="form-group"><label>所属班组</label><select class="form-control" id="f-team"><option value="">-- 选择班组 --</option></select></div>
+</div>
+<div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="save()">保存</button></div>
+</div>
+</div>
+
+<style>
+.readonly-hide{display:none}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+    if(USER_ROLE === "team"){
+        document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});
+    }
+});
+</script>
+{% endblock %}
+{% block scripts %}
+<script>var USER_ROLE="{{ session.get('role','') }}";</script>
+<script>
+var editId=null;
+var teams=[];
+(function(){
+    fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
+        teams=d;
+        var sel=document.getElementById("f-team");
+        var filter=document.getElementById("team-filter");
+        d.forEach(function(t){
+            var o=document.createElement("option");o.value=t.name;o.textContent=t.name;sel.appendChild(o);
+            var o2=document.createElement("option");o2.value=t.name;o2.textContent=t.name;filter.appendChild(o2);
+        });
+        loadData();
+    });
+})();
+
+function loadData(){
+    var q=document.getElementById("search").value;
+    var team=document.getElementById("team-filter").value;
+    var url="/api/processes?q="+encodeURIComponent(q);
+    if(team)url+="&team="+encodeURIComponent(team);
+    fetch(url).then(function(r){return r.json()}).then(function(d){
+        var tb=document.getElementById("data-tbody");tb.innerHTML="";
+        var empty=document.getElementById("data-empty");
+        if(!d.length){empty.style.display="block";return;}
+        empty.style.display="none";
+        d.forEach(function(r){
+            var tr=document.createElement("tr");
+            tr.innerHTML='<td>'+r.process_code+'</td>'
+                +'<td><strong>'+r.process_name+'</strong></td>'
+                +'<td>'+(r.team_name||'-')+'</td>'
+                +'<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="showEdit('+r.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="del('+r.id+')">删除</button></div></td>';
+            tb.appendChild(tr);
+        });
+    });
+}
+
+function showAdd(){
+    editId=null;
+    document.getElementById("modal-title").textContent="新增工序";
+    document.getElementById("f-code").value="";
+    document.getElementById("f-name").value="";
+    document.getElementById("f-team").value="";
+    document.getElementById("edit-modal").classList.add("show");
+}
+function showEdit(id){
+    fetch("/api/processes").then(function(r){return r.json()}).then(function(d){
+        var item=d.find(function(x){return x.id===id});
+        if(!item)return;
+        editId=id;
+        document.getElementById("modal-title").textContent="编辑工序";
+        document.getElementById("f-code").value=item.process_code;
+        document.getElementById("f-name").value=item.process_name;
+        document.getElementById("f-team").value=item.team_name||"";
+        document.getElementById("edit-modal").classList.add("show");
+    });
+}
+function closeModal(){document.getElementById("edit-modal").classList.remove("show");}
+function save(){
+    var data={
+        process_code:document.getElementById("f-code").value.trim(),
+        process_name:document.getElementById("f-name").value.trim(),
+        team_name:document.getElementById("f-team").value
+    };
+    if(!data.process_code||!data.process_name){toast("请填写编码和名称","warning");return;}
+    var url=editId?"/api/processes/"+editId:"/api/processes";
+    api(url,{method:editId?"PUT":"POST",body:data}).then(function(){
+        toast("已保存","success");closeModal();loadData();
+    }).catch(function(e){toast(e.error||"保存失败","error");});
+}
+function del(id){if(!confirm("确定删除？"))return;api("/api/processes/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadData();});}
+
+function importProcesses(){
+    var f=document.getElementById("import-file").files[0];
+    if(!f)return;
+    var fd=new FormData();fd.append("file",f);
+    fetch("/api/import/processes",{method:"POST",body:fd}).then(function(r){return r.json()}).then(function(d){
+        if(d.count!==undefined){toast("导入成功: "+d.count+" 条","success");loadData();}
+        else toast(d.error||"导入失败","error");
+    });
+    document.getElementById("import-file").value="";
+}
+function exportProcesses(){
+    fetch("/api/processes").then(function(r){return r.json()}).then(function(d){
+        var csv="工序编码,工序名称,所属班组\n";
+        d.forEach(function(r){csv+=r.process_code+","+r.process_name+","+(r.team_name||"")+"\n";});
+        var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+        var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="工序列表.csv";a.click();
+    });
+}
+</script>
+
+<style>
+.readonly-hide{display:none}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+    if(USER_ROLE === "team"){
+        document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});
+    }
+});
+</script>
+{% endblock %}

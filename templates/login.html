@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - 班组排产系统</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);min-height:100vh;display:flex;align-items:center;justify-content:center}
+.login-card{background:#fff;border-radius:16px;padding:40px;width:380px;box-shadow:0 25px 60px rgba(0,0,0,0.3)}
+.login-card h1{text-align:center;font-size:22px;color:#111827;margin-bottom:8px}
+.login-card .subtitle{text-align:center;font-size:13px;color:#6b7280;margin-bottom:28px}
+.form-group{margin-bottom:18px}
+.form-group label{display:block;font-weight:600;font-size:13px;color:#374151;margin-bottom:6px}
+.form-control{width:100%;padding:10px 14px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;transition:border-color .2s}
+.form-control:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,0.1)}
+.btn-login{width:100%;padding:12px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-login:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(37,99,235,0.4)}
+.error-msg{background:#fef2f2;color:#dc2626;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;display:none}
+.accounts{margin-top:20px;padding-top:16px;border-top:1px solid #f3f4f6}
+.accounts h3{font-size:12px;color:#9ca3af;margin-bottom:8px}
+.accounts table{width:100%;font-size:11px;color:#6b7280}
+.accounts td{padding:3px 6px}
+.accounts td:first-child{font-weight:600;color:#374151}
+</style>
+</head>
+<body>
+<div class="login-card">
+<h1>📋 班组排产系统</h1>
+<div class="subtitle">Production Scheduling System</div>
+<div class="error-msg" id="error-msg"></div>
+<div class="form-group">
+<label>用户名</label>
+<input type="text" class="form-control" id="username" placeholder="请输入用户名" autofocus>
+</div>
+<div class="form-group">
+<label>密码</label>
+<input type="password" class="form-control" id="password" placeholder="请输入密码">
+</div>
+<button class="btn-login" onclick="doLogin()">登 录</button>
+<div class="accounts">
+<h3>测试账号：</h3>
+<table>
+<tr><td>planner</td><td>planner123</td><td>计划员（可看全部+审批）</td></tr>
+<tr><td>qianduan</td><td>123456</td><td>前段班组</td></tr>
+<tr><td>hanjie</td><td>123456</td><td>焊接班组</td></tr>
+<tr><td>kouya</td><td>123456</td><td>扣压班组</td></tr>
+<tr><td>zhuangpei</td><td>123456</td><td>装配包装班组</td></tr>
+</table>
+</div>
+</div>
+<script>
+document.getElementById("password").addEventListener("keydown",function(e){if(e.key==="Enter")doLogin()});
+function doLogin(){
+var u=document.getElementById("username").value;
+var p=document.getElementById("password").value;
+if(!u||!p){showError("请输入用户名和密码");return;}
+fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})})
+.then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d}})})
+.then(function(r){
+if(r.ok){window.location.href="/";}
+else{showError(r.data.error||"登录失败");}
+}).catch(function(){showError("网络错误");});
+}
+function showError(msg){var el=document.getElementById("error-msg");el.textContent=msg;el.style.display="block";}
+</script>
+</body>
+</html>

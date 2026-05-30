@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><h1>📋 计划审批</h1></div>
+<div class="toolbar">
+<label>日期：</label><input type="date" id="filter-date" onchange="load()">
+<label>状态：</label><select id="filter-status" onchange="load()">
+<option value="">全部</option><option value="submitted">待审批</option><option value="approved">已通过</option><option value="rejected">已拒绝</option><option value="returned">已退回</option>
+</select>
+</div>
+<div class="card"><div class="card-body"><div class="table-wrap"><table>
+<thead><tr><th>班组</th><th>计划日期</th><th>状态</th><th>排班数</th><th>提交时间</th><th>审批时间</th><th>退回原因</th><th>操作</th></tr></thead>
+<tbody id="tbody"></tbody>
+</table><div id="empty" class="table-empty" style="display:none">暂无计划</div>
+</div></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+var today=new Date().toISOString().split("T")[0];document.getElementById("filter-date").value=today;
+function load(){
+var dt=document.getElementById("filter-date").value;
+var st=document.getElementById("filter-status").value;
+var url="/api/daily-plans?";if(dt)url+="date="+dt+"&";if(st)url+="status="+st;
+fetch(url).then(function(r){return r.json()}).then(function(d){
+var tb=document.getElementById("tbody");tb.innerHTML="";
+var empty=document.getElementById("empty");
+if(!d.length){empty.style.display="block";return;}empty.style.display="none";
+d.forEach(function(p){
+var tr=document.createElement("tr");
+var map={draft:['badge-gray','草稿'],submitted:['badge-yellow','待审批'],approved:['badge-green','已通过'],rejected:['badge-red','已拒绝'],returned:['badge-orange','已退回']};
+var cls=map[p.status]||['badge-gray',p.status];
+var actions='';
+if(p.status==='submitted'){
+actions='<button class="btn btn-success btn-sm" onclick="approve('+p.id+')">✅ 通过</button> <button class="btn btn-danger btn-sm" onclick="reject('+p.id+')">❌ 拒绝</button> <button class="btn btn-warning btn-sm" onclick="ret('+p.id+')">↩️ 退回</button>';
+}else if(p.status==='approved'){
+actions='<button class="btn btn-warning btn-sm" onclick="ret('+p.id+')">↩️ 退回修改</button>';
+}
+// Fetch schedule count
+fetch("/api/schedule?team_id="+p.team_id+"&date="+p.plan_date).then(function(r){return r.json()}).then(function(tasks){
+var cntCell=tr.querySelector(".task-cnt");if(cntCell)cntCell.textContent=tasks.length;
+});
+tr.innerHTML='<td><strong>'+(p.team_name||'')+'</strong></td><td>'+p.plan_date+'</td><td><span class="badge '+cls[0]+'">'+cls[1]+'</span></td><td class="task-cnt">-</td><td>'+(p.submitted_at||'-')+'</td><td>'+(p.approved_at||'-')+'</td><td>'+(p.reject_reason||'-')+'</td><td>'+actions+'</td>';
+tb.appendChild(tr);
+});});}
+function approve(id){if(!confirm("通过此计划？"))return;api("/api/daily-plan/"+id+"/approve",{method:"POST"}).then(function(){toast("已通过","success");load();});}
+function reject(id){var r=reason("拒绝");if(r===null)return;api("/api/daily-plan/"+id+"/reject",{method:"POST",body:{reason:r}}).then(function(){toast("已拒绝","success");load();});}
+function ret(id){var r=reason("退回");if(r===null)return;api("/api/daily-plan/"+id+"/return",{method:"POST",body:{reason:r}}).then(function(){toast("已退回","success");load();});}
+function reason(action){var r=window.prompt(action+"原因（可选）：");return r===null?null:r;}
+load();
+</script>
+{% endblock %}

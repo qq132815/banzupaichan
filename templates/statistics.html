@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><h1>📈 完成率统计</h1></div>
+<div class="card">
+<div class="card-header"><h2>班组完成率</h2></div>
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>班组</th><th>计划数量</th><th>完成数量</th><th>完成率</th><th>任务数</th></tr></thead>
+<tbody id="stats-tbody"></tbody>
+</table>
+<div id="stats-empty" class="table-empty" style="display:none">暂无排班数据</div>
+</div>
+</div>
+</div>
+<div class="card">
+<div class="card-header"><h2>近7天趋势</h2></div>
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>日期</th><th>计划数量</th><th>完成数量</th><th>完成率</th></tr></thead>
+<tbody id="daily-tbody"></tbody>
+</table>
+</div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+fetch("/api/statistics").then(function(r){return r.json()}).then(function(d){
+var tb=document.getElementById("stats-tbody");
+var empty=document.getElementById("stats-empty");
+if(!d.length){empty.style.display='block';return;}
+d.forEach(function(s){
+var rate=s.planned_qty?Math.round(s.completed_qty/s.planned_qty*100):0;
+var tr=document.createElement("tr");
+tr.innerHTML='<td><strong>'+(s.team_name||'')+'</strong></td><td>'+s.planned_qty+'</td><td>'+s.completed_qty+'</td><td><span class="badge '+(rate>=80?'badge-green':rate>=50?'badge-yellow':'badge-red')+'">'+rate+'%</span></td><td>'+s.task_count+'</td>';
+tb.appendChild(tr);});});
+fetch("/api/statistics/daily").then(function(r){return r.json()}).then(function(d){
+var tb=document.getElementById("daily-tbody");
+d.forEach(function(s){
+var rate=s.planned?Math.round(s.completed/s.planned*100):0;
+var tr=document.createElement("tr");
+tr.innerHTML='<td>'+s.date+'</td><td>'+s.planned+'</td><td>'+s.completed+'</td><td><span class="badge '+(rate>=80?'badge-green':rate>=50?'badge-yellow':'badge-gray')+'">'+rate+'%</span></td>';
+tb.appendChild(tr);});});
+</script>
+{% endblock %}

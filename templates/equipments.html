@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>⚙️ 设备管理</h1>
+<div class="page-actions">
+<label class="btn btn-outline" style="cursor:pointer">
+📥 导入设备
+<input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="importEquip(this)">
+</label>
+<button class="btn btn-outline" onclick="exportEquip()">📤 导出</button>
+<button class="btn btn-outline" onclick="downloadTemplate()">📄 下载模板</button>
+<button class="btn btn-primary" onclick="showAddEquip()">＋ 新增设备</button>
+</div>
+</div>
+<div class="toolbar">
+<label>班组：</label>
+<select id="eq-team-filter" onchange="loadEquipments()">
+<option value="">全部</option>
+</select>
+</div>
+<div class="card">
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>设备编码</th><th>设备名称</th><th>所属班组</th><th>类型</th><th>标准产能/h</th><th>位置</th><th>状态</th><th>操作</th></tr></thead>
+<tbody id="eq-tbody"></tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="modal-overlay" id="eq-modal">
+<div class="modal">
+<div class="modal-header"><h3 id="eqm-title">新增设备</h3><button class="modal-close" onclick="closeEqModal()">&times;</button></div>
+<div class="modal-body">
+<div class="form-row">
+<div class="form-group"><label>设备编码</label><input type="text" class="form-control" id="eqm-code"></div>
+<div class="form-group"><label>设备名称</label><input type="text" class="form-control" id="eqm-name"></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>所属班组</label><select class="form-control" id="eqm-team"></select></div>
+<div class="form-group"><label>设备类型</label><select class="form-control" id="eqm-type"><option value="auto">自动</option><option value="manual">手动</option></select></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>标准产能/小时</label><input type="number" class="form-control" id="eqm-capacity"></div>
+<div class="form-group"><label>位置</label><input type="text" class="form-control" id="eqm-location"></div>
+</div>
+</div>
+<div class="modal-footer">
+<button class="btn btn-secondary" onclick="closeEqModal()">取消</button>
+<button class="btn btn-primary" onclick="saveEquip()">保存</button>
+</div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var editEqId=null;var teams=[];
+fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
+teams=d;
+var sel1=document.getElementById("eq-team-filter");
+var sel2=document.getElementById("eqm-team");
+d.forEach(function(t){
+var o1=document.createElement("option");o1.value=t.id;o1.textContent=t.name;sel1.appendChild(o1);
+var o2=document.createElement("option");o2.value=t.id;o2.textContent=t.name;sel2.appendChild(o2);
+});
+});
+
+function loadEquipments(){
+var tid=document.getElementById("eq-team-filter").value;
+var url="/api/equipments";if(tid)url+="?team_id="+tid;
+fetch(url).then(function(r){return r.json()}).then(function(d){
+var tb=document.getElementById("eq-tbody");tb.innerHTML="";
+var teamMap={};teams.forEach(function(t){teamMap[t.id]=t.name;});
+d.forEach(function(eq){
+var tr=document.createElement("tr");
+var st=eq.status==='normal'?'<span class="badge badge-green">正常</span>':eq.status==='maintenance'?'<span class="badge badge-yellow">维修</span>':'<span class="badge badge-red">离线</span>';
+tr.innerHTML='<td><strong>'+eq.equipment_code+'</strong></td><td>'+eq.equipment_name+'</td><td>'+(teamMap[eq.team_id]||eq.team_id)+'</td><td>'+eq.equipment_type+'</td><td>'+(eq.capacity_per_hour||0)+'</td><td>'+(eq.location||'')+'</td><td>'+st+'</td><td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editEquip('+eq.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="deleteEquip('+eq.id+')">删除</button></div></td>';
+tb.appendChild(tr);});});
+}
+
+function importEquip(input){
+if(!input.files.length) return;
+var fd = new FormData();
+fd.append("file", input.files[0]);
+toast("正在导入...", "info");
+fetch("/api/import/equipment", {method:"POST", body:fd}).then(function(r){return r.json()}).then(function(d){
+if(d.error){toast(d.error,"error");return;}
+toast("导入成功，共 "+d.count+" 台设备","success");
+loadEquipments();
+}).catch(function(){toast("导入失败","error");});
+input.value = "";
+}
+
+function exportEquip(){
+fetch("/api/equipments").then(function(r){return r.json()}).then(function(d){
+if(!d.length){toast("无数据可导出","warning");return;}
+var teamMap={};teams.forEach(function(t){teamMap[t.id]=t.name;});
+var headers=["序号","设备编码","设备名称","所属班组","类型","产能/h","位置","状态"];
+var csv=headers.join(",")+"\n";
+d.forEach(function(eq,i){
+var row=[i+1,eq.equipment_code,'"'+eq.equipment_name+'"',(teamMap[eq.team_id]||''),eq.equipment_type,eq.capacity_per_hour||0,'"'+(eq.location||'')+'"',eq.status];
+csv+=row.join(",")+"\n";
+});
+var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="设备清单导出.csv";a.click();
+});
+}
+
+function downloadTemplate(){
+var headers=["序号","设备编码","设备名称","所属班组"];
+var rows=["1,FX19-1,涂装机1号（自动）,装配包装","2,TJ12-1,涂装1号,装配包装"];
+var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";
+var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="设备导入模板.csv";a.click();
+}
+
+function showAddEquip(){editEqId=null;document.getElementById("eqm-title").textContent="新增设备";["eqm-code","eqm-name","eqm-capacity","eqm-location"].forEach(function(id){document.getElementById(id).value=""});document.getElementById("eqm-type").value="auto";document.getElementById("eq-modal").classList.add("show");}
+function closeEqModal(){document.getElementById("eq-modal").classList.remove("show");}
+function editEquip(id){fetch("/api/equipments").then(function(r){return r.json()}).then(function(d){var eq=d.find(function(x){return x.id===id});if(!eq)return;editEqId=id;document.getElementById("eqm-title").textContent="编辑设备";document.getElementById("eqm-code").value=eq.equipment_code;document.getElementById("eqm-name").value=eq.equipment_name;document.getElementById("eqm-team").value=eq.team_id;document.getElementById("eqm-type").value=eq.equipment_type;document.getElementById("eqm-capacity").value=eq.capacity_per_hour||"";document.getElementById("eqm-location").value=eq.location||"";document.getElementById("eq-modal").classList.add("show");});}
+function saveEquip(){
+var data={equipment_code:document.getElementById("eqm-code").value,equipment_name:document.getElementById("eqm-name").value,team_id:parseInt(document.getElementById("eqm-team").value),equipment_type:document.getElementById("eqm-type").value,capacity_per_hour:parseFloat(document.getElementById("eqm-capacity").value)||0,location:document.getElementById("eqm-location").value,status:'normal'};
+if(!data.equipment_code||!data.equipment_name){toast("编码和名称必填","warning");return;}
+var url=editEqId?"/api/equipments/"+editEqId:"/api/equipments";
+api(url,{method:editEqId?"PUT":"POST",body:data}).then(function(){toast("保存成功","success");closeEqModal();loadEquipments();}).catch(function(){toast("保存失败","error");});
+}
+function deleteEquip(id){if(!confirm("确定删除？"))return;api("/api/equipments/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadEquipments();});}
+loadEquipments();
+</script>
+{% endblock %}

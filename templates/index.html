@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><h1>工作台</h1>
+<div class="page-actions">
+{% if session.get('role') == 'planner' %}
+<button class="btn btn-primary" onclick="calcAlerts()">🔄 刷新预警</button>
+{% endif %}
+</div>
+</div>
+<div class="stats-row">
+{% if session.get('role') == 'planner' %}
+<div class="stat-card"><div class="stat-icon red">🔴</div><div class="stat-info"><div class="stat-num" id="red-alerts">-</div><div class="stat-label">紧急预警</div></div></div>
+<div class="stat-card"><div class="stat-icon orange">📋</div><div class="stat-info"><div class="stat-num" id="pending-approvals">-</div><div class="stat-label">待审批计划</div></div></div>
+{% endif %}
+<div class="stat-card"><div class="stat-icon blue">📊</div><div class="stat-info"><div class="stat-num" id="today-schedules">-</div><div class="stat-label">今日排班</div></div></div>
+<div class="stat-card"><div class="stat-icon green">🏭</div><div class="stat-info"><div class="stat-num" id="in-progress">-</div><div class="stat-label">在产订单</div></div></div>
+</div>
+{% if session.get('role') == 'planner' %}
+<div class="card"><div class="card-header"><h2>🔔 最新预警</h2><a href="/alerts-page" class="btn btn-outline btn-sm">查看全部</a></div>
+<div class="card-body"><div class="table-wrap"><table>
+<thead><tr><th>产品</th><th>等级</th><th>交期</th><th>需求数</th><th>缺口</th><th>剩余天</th></tr></thead>
+<tbody id="alert-tbody"></tbody>
+</table><div id="alert-empty" class="table-empty" style="display:none">暂无预警</div></div></div></div>
+{% endif %}
+{% if session.get('role') == 'team' %}
+<div class="card"><div class="card-header"><h2>📋 我的计划</h2></div>
+<div class="card-body"><div id="my-plan-info"></div></div></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+fetch("/api/dashboard").then(function(r){return r.json()}).then(function(d){
+var el;el=document.getElementById("red-alerts");if(el)el.textContent=d.red_alerts||0;
+el=document.getElementById("today-schedules");if(el)el.textContent=d.today_schedules||0;
+el=document.getElementById("in-progress");if(el)el.textContent=d.in_progress_orders||0;
+el=document.getElementById("pending-approvals");if(el)el.textContent=d.pending_approvals||0;
+});
+if(document.getElementById("alert-tbody")){
+fetch("/api/alerts").then(function(r){return r.json()}).then(function(a){
+var tb=document.getElementById("alert-tbody"),empty=document.getElementById("alert-empty");
+if(!a.length){empty.style.display="block";return;}
+a.slice(0,10).forEach(function(x){var tr=document.createElement("tr");tr.className="alert-"+x.alert_level;
+tr.innerHTML='<td>'+x.product_code+'</td><td><span class="badge badge-'+x.alert_level+'">'+x.alert_level.toUpperCase()+'</span></td><td>'+(x.due_date||'')+'</td><td>'+x.quantity+'</td><td>'+(x.shortage_qty||0)+'</td><td>'+(x.days_remaining||0)+'</td>';
+tb.appendChild(tr);});});
+}
+if(document.getElementById("my-plan-info")){
+var today=new Date().toISOString().split("T")[0];
+fetch("/api/daily-plan?date="+today).then(function(r){return r.json()}).then(function(p){
+var map={draft:'草稿 - 编辑中',submitted:'已提交 - 等待审批',approved:'已通过',rejected:'已拒绝',returned:'已退回 - 请修改后重新提交'};
+var el=document.getElementById("my-plan-info");
+el.innerHTML='<div class="info-card '+(p.status==='approved'?'green':p.status==='returned'||p.status==='rejected'?'orange':'')+'"><p><strong>'+today+'</strong> 计划状态：<span class="badge badge-'+(p.status==='approved'?'green':p.status==='submitted'?'yellow':p.status==='returned'||p.status==='rejected'?'red':'gray')+'">'+(map[p.status]||p.status)+'</span></p>'+(p.reject_reason?'<p>原因：'+p.reject_reason+'</p>':'')+'<p style="margin-top:8px"><a href="/schedule-page" class="btn btn-primary btn-sm">进入排班 →</a></p></div>';
+});
+}
+function calcAlerts(){fetch("/api/alerts/calculate",{method:"POST"}).then(function(r){return r.json()}).then(function(d){toast("预警计算完成","success");});}
+</script>
+{% endblock %}

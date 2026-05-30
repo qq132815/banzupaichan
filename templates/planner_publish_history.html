@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>📜 发布记录</h1>
+<div class="page-actions">
+<button class="btn btn-outline" onclick="exportCSV()">📤 导出</button>
+</div>
+</div>
+
+<div class="card">
+<div class="card-header"><h2>📋 发布批次</h2></div>
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>发布编号</th><th>发布时间</th><th>需求数量</th><th>需求总量</th><th>发布人</th><th>操作</th></tr></thead>
+<tbody id="batch-tbody"></tbody>
+</table>
+<div id="batch-empty" class="table-empty" style="display:none">暂无发布记录</div>
+</div>
+</div>
+</div>
+
+<div id="detail-modal" style="display:none">
+<div id="detail-overlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000" onclick="closeDetail()"></div>
+<div id="detail-box" style="position:fixed;top:5vh;left:4vw;right:4vw;bottom:5vh;background:#fff;border-radius:12px;z-index:1001;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+<div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid #e5e7eb;flex-shrink:0">
+<h3 id="detail-title" style="margin:0;font-size:16px">批次明细</h3>
+<button onclick="closeDetail()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:4px 8px">&times;</button>
+</div>
+<div id="detail-body" style="flex:1;overflow:auto;padding:0"></div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function loadBatches(){
+    fetch("/api/publish-batches").then(function(r){
+        if(!r.ok) throw new Error("HTTP "+r.status);
+        return r.json();
+    }).then(function(d){
+        var tb=document.getElementById("batch-tbody");
+        tb.innerHTML="";
+        if(!d.length){
+            document.getElementById("batch-empty").style.display="block";
+            return;
+        }
+        document.getElementById("batch-empty").style.display="none";
+        d.forEach(function(b){
+            var tr=document.createElement("tr");
+            var btn=document.createElement("button");
+            btn.className="btn btn-primary btn-sm";
+            btn.textContent="查看明细";
+            btn.onclick=function(){viewDetail(b.id,b.batch_no);};
+            tr.innerHTML="<td><strong>"+b.batch_no+"</strong></td>"
+                +"<td>"+b.published_at+"</td>"
+                +"<td>"+b.total_count+"</td>"
+                +"<td><strong>"+b.total_quantity+"</strong></td>"
+                +"<td>"+(b.published_by||"-")+"</td>";
+            var tdBtn=document.createElement("td");
+            tdBtn.appendChild(btn);
+            tr.appendChild(tdBtn);
+            tb.appendChild(tr);
+        });
+    }).catch(function(e){
+        console.error("loadBatches error:",e);
+        toast("加载发布记录失败","error");
+    });
+}
+
+function viewDetail(batchId,batchNo){
+    document.getElementById("detail-title").textContent="批次明细 - "+batchNo;
+    document.getElementById("detail-body").innerHTML="<div style='padding:40px;text-align:center;color:#6b7280'>加载中...</div>";
+    document.getElementById("detail-modal").style.display="block";
+    fetch("/api/publish-batches/"+batchId+"/details").then(function(r){
+        if(!r.ok) throw new Error("HTTP "+r.status);
+        return r.json();
+    }).then(function(d){
+        if(!d.length){
+            document.getElementById("detail-body").innerHTML="<div class='table-empty'>无数据</div>";
+            return;
+        }
+        var dates={};
+        var products={};
+        var dataMap={};
+        d.forEach(function(r){
+            var date=r.required_date;
+            var code=r.product_code;
+            dates[date]=true;
+            if(!products[code]){
+                products[code]={
+                    name:r.product_name||code,
+                    team:r.team_name||"-",
+                    level:r.bom_level||0,
+                    chain:r.parent_chain||code
+                };
+            }
+            var key=code+"|"+date;
+            if(!dataMap[key])dataMap[key]=0;
+            dataMap[key]+=r.required_quantity;
+        });
+        var dateArr=Object.keys(dates).sort();
+        var prodArr=Object.keys(products).sort(function(a,b){
+            var ca=products[a].chain||a, cb=products[b].chain||b;
+            return ca.localeCompare(cb);
+        });
+        var html="<table class='detail-matrix'><thead><tr>";
+        html+="<th class='dm-sticky'>产品名称</th>";
+        html+="<th class='dm-sticky2'>件号</th>";
+        html+="<th class='dm-sticky3'>层级</th>";
+        html+="<th class='dm-sticky4'>班组</th>";
+        dateArr.forEach(function(dt){
+            html+="<th class='dm-date'>"+dt.substring(5)+"</th>";
+        });
+        html+="<th class='dm-total'>合计</th></tr></thead><tbody>";
+        prodArr.forEach(function(code){
+            var p=products[code];
+            html+="<tr>";
+            html+="<td class='dm-sticky'><strong>"+p.name+"</strong></td>";
+            html+="<td class='dm-sticky2'>"+code+"</td>";
+            var lv=p.level+"级";
+            html+="<td class='dm-sticky3'>"+lv+"</td>";
+            html+="<td class='dm-sticky4'>"+p.team+"</td>";
+            var total=0;
+            dateArr.forEach(function(date){
+                var key=code+"|"+date;
+                var val=dataMap[key]||0;
+                total+=val;
+                html+="<td class='dm-cell"+(val>0?" dm-has":"")+"'>"+(val>0?val:"")+"</td>";
+            });
+            html+="<td class='dm-total'><strong>"+total+"</strong></td>";
+            html+="</tr>";
+        });
+        html+="</tbody></table>";
+        document.getElementById("detail-body").innerHTML=html;
+    }).catch(function(e){
+        console.error("viewDetail error:",e);
+        document.getElementById("detail-body").innerHTML="<div style='padding:40px;text-align:center;color:#dc2626'>加载失败: "+e.message+"</div>";
+    });
+}
+
+function closeDetail(){
+    document.getElementById("detail-modal").style.display="none";
+}
+
+function exportCSV(){
+    var table=document.querySelector("#batch-tbody").closest("table");
+    if(!table){toast("无数据可导出","warning");return;}
+    var csv="";
+    table.querySelectorAll("tr").forEach(function(row){
+        var cols=[];
+        row.querySelectorAll("th,td").forEach(function(cell){
+            cols.push('"'+cell.textContent.replace(/"/g,'""')+'"');
+        });
+        csv+=cols.join(",")+"\n";
+    });
+    var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+    var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="发布记录.csv";a.click();
+}
+
+loadBatches();
+</script>
+<style>
+.detail-matrix{border-collapse:collapse;font-size:12px;white-space:nowrap;width:100%}
+.detail-matrix th,.detail-matrix td{padding:6px 12px;border:1px solid #e5e7eb;text-align:center}
+.detail-matrix th{background:#f9fafb;font-weight:600;position:sticky;top:0;z-index:10}
+.dm-sticky{position:sticky;left:0;background:#fff;z-index:5;text-align:left;min-width:200px;padding-left:16px}
+.dm-sticky2{position:sticky;left:200px;background:#fff;z-index:5;text-align:left;min-width:180px}
+.dm-sticky3{position:sticky;left:380px;background:#fff;z-index:5;text-align:center;min-width:50px}
+.dm-sticky4{position:sticky;left:430px;background:#fff;z-index:5;text-align:center;min-width:80px}
+.dm-date{min-width:65px;font-size:11px}
+.dm-cell{min-width:65px}
+.dm-cell.dm-has{background:#dbeafe;font-weight:600;color:#1e40af}
+.dm-total{background:#f3f4f6;font-weight:600;min-width:70px;position:sticky;right:0;z-index:5}
+</style>
+{% endblock %}

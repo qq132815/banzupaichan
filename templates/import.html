@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><h1>📥 数据导入</h1></div>
+<div class="import-grid">
+<div class="import-card">
+<h3>📋 发货计划</h3>
+<p>导入成品发货计划，用于预警计算和倒推半成品需求</p>
+<div class="ic-actions"><input type="file" id="f-shipping" accept=".xlsx"><button class="btn btn-primary btn-sm" onclick="doImport('shipping','f-shipping')">导入</button></div>
+</div>
+<div class="import-card">
+<h3>⏱️ 生产周期</h3>
+<p>导入产品生产周期与提前时间表</p>
+<div class="ic-actions"><input type="file" id="f-cycles" accept=".xlsx"><button class="btn btn-primary btn-sm" onclick="doImport('cycles','f-cycles')">导入</button></div>
+</div>
+<div class="import-card">
+<h3>📦 工单数据</h3>
+<p>导入工单，支持从MES/蜂鸟系统导出的Excel</p>
+<div class="ic-actions"><input type="file" id="f-orders" accept=".xlsx"><button class="btn btn-primary btn-sm" onclick="doImport('orders','f-orders')">导入</button></div>
+</div>
+<div class="import-card">
+<h3>🔧 工序数据</h3>
+<p>导入工序主数据</p>
+<div class="ic-actions"><input type="file" id="f-processes" accept=".xlsx"><button class="btn btn-primary btn-sm" onclick="doImport('processes','f-processes')">导入</button></div>
+</div>
+<div class="import-card">
+<h3>🔗 工艺路线</h3>
+<p>导入工艺路线（件号对应的工序列表）</p>
+<div class="ic-actions"><input type="file" id="f-routes" accept=".xlsx"><button class="btn btn-primary btn-sm" onclick="doImport('process_routes','f-routes')">导入</button></div>
+</div>
+<div class="import-card">
+<h3>🔩 物料清单(BOM)</h3>
+<p>导入成品与半成品的BOM关系</p>
+<div class="ic-actions"><input type="file" id="f-bom" accept=".xlsx"><button class="btn btn-primary btn-sm" onclick="doImport('bom','f-bom')">导入</button></div>
+</div>
+<div class="import-card">
+<h3>⚙️ 设备数据</h3>
+<p>导入设备信息（编码/名称/班组/产能/位置）</p>
+<div class="ic-actions"><input type="file" id="f-equip" accept=".xlsx"><button class="btn btn-primary btn-sm" onclick="doImport('equipment','f-equip')">导入</button></div>
+</div>
+<div class="import-card">
+<h3>📊 报工数据</h3>
+<p>导入蜂鸟/MES报工数据，用于完成率统计</p>
+<div class="ic-actions"><input type="file" id="f-reports" accept=".xlsx"><button class="btn btn-primary btn-sm" onclick="doReportImport()">导入</button></div>
+</div>
+</div>
+<div id="import-result" style="margin-top:20px"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+function doImport(type,fileId){
+var f=document.getElementById(fileId).files[0];
+if(!f){toast("请选择文件","warning");return;}
+var fd=new FormData();fd.append("file",f);
+document.getElementById("import-result").innerHTML='<span style="color:#6b7280">导入中...</span>';
+fetch("/api/import/"+type,{method:"POST",body:fd}).then(function(r){return r.json()}).then(function(d){
+if(d.error){document.getElementById("import-result").innerHTML='<span class="badge badge-red">错误</span> '+d.error;toast(d.error,"error");}
+else{document.getElementById("import-result").innerHTML='<span class="badge badge-green">成功</span> 导入 '+d.count+' 条记录';toast("导入成功: "+d.count+" 条","success");}
+}).catch(function(e){document.getElementById("import-result").innerHTML='<span class="badge badge-red">错误</span> '+e;toast("导入失败","error");});
+}
+function doReportImport(){
+var f=document.getElementById("f-reports").files[0];
+if(!f){toast("请选择文件","warning");return;}
+var fd=new FormData();fd.append("file",f);
+fetch("/api/reports",{method:"POST",body:fd}).then(function(r){return r.json()}).then(function(d){
+if(d.error){toast(d.error,"error");}
+else{toast("导入成功: "+d.count+" 条","success");}
+}).catch(function(){toast("导入失败","error");});
+}
+</script>
+{% endblock %}

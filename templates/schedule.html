@@ -1,0 +1,1249 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>📊 排班 &amp; 甘特图</h1>
+<div class="page-actions" id="plan-actions"></div>
+</div>
+<!-- Plan Status -->
+<div id="plan-status-bar" class="toolbar" style="display:none">
+<span id="plan-status-badge"></span>
+<span id="plan-status-text" style="font-size:13px;color:#6b7280"></span>
+<div style="margin-left:auto;display:flex;gap:8px" id="plan-btns"></div>
+</div>
+<!-- Team/Date -->
+<div class="toolbar">
+<label>日期：</label>
+<input type="date" id="schedule-date" onchange="onDateChange()">
+<span id="work-schedule-hint" style="font-size:12px;color:#6b7280;margin-left:8px"></span>
+<button class="btn btn-outline" onclick="exportScheduleImage()">📷 导出排班图片</button>
+{% if session.get('role') == 'team' %}
+<button class="btn btn-success" onclick="showAddTask()">＋ 新增排班</button>
+<button class="btn btn-outline" onclick="showFreeTask()">📝 无维护排班</button>
+{% endif %}
+</div>
+<div style="display:flex;gap:16px">
+<div style="flex:2;min-width:0;overflow:hidden">
+<!-- Gantt Chart -->
+<div id="gantt-panel" class="card" style="display:none">
+
+<div class="card-body" style="padding:0;overflow-x:auto">
+<div class="gantt-container" id="gantt-container">
+<div class="gantt-header" id="gantt-header"></div>
+<div class="gantt-body" id="gantt-body"></div>
+</div>
+<div class="gantt-legend" style="padding:10px 16px">
+<span><div class="dot" style="background:#ef4444"></div>P0</span>
+<span><div class="dot" style="background:#3b82f6"></div>P1</span>
+<span><div class="dot" style="background:#6b7280"></div>P2</span>
+<span style="color:#ef4444;font-size:11px">│ 当前时间</span>
+<span style="color:#9ca3af;font-size:11px;margin-left:12px">休息: 10:00-10:10 / 11:45-12:45 / 15:00-15:10</span>
+</div>
+</div>
+</div>
+<!-- end flex:2 -->
+
+<!-- Warning Panel (1/3 width) -->
+<div id="warning-panel" class="card" style="flex:1;min-width:280px">
+<div class="card-header"><h2>⚠️ 排班预警</h2><span id="warning-hint" style="font-size:12px;color:#9ca3af">本班组近期需求</span></div>
+<div class="card-body" style="padding:8px;max-height:600px;overflow-y:auto">
+<div id="warning-content"></div>
+</div>
+</div>
+
+</div><!-- end flex container -->
+
+<!-- Schedule Table (full width below) -->
+<div id="schedule-section" class="card" style="display:none;margin-top:16px">
+<div class="card-header"><h2>📋 排班明细</h2><span id="task-count" style="color:#6b7280;font-size:13px"></span></div>
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>设备</th><th>产品名称</th><th>工序</th><th>工单号</th><th>人员</th><th>时间</th><th>工时</th><th>产能/h</th><th>数量</th><th>优先级</th><th>操作</th></tr></thead>
+<tbody id="schedule-tbody"></tbody>
+</table>
+<div id="schedule-empty" class="table-empty" style="display:none">暂无排班</div>
+</div>
+</div>
+</div>
+
+<!-- Tooltip -->
+<div class="tooltip" id="gantt-tooltip" style="display:none"></div>
+<!-- Modal -->
+<div class="modal-overlay" id="task-modal">
+<div class="modal">
+<div class="modal-header"><h3 id="modal-title">新增排班</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+<div class="modal-body">
+<div class="form-group"><label>🔍 搜索工单/产品编码</label><div class="search-box"><input type="text" class="form-control" id="order-search" placeholder="搜索产品名称/工单号/产品编码..." oninput="searchOrders()"><div id="order-results" class="search-results"></div></div></div>
+<div id="selected-order" style="display:none"><div class="info-card">
+<p><strong>产品：</strong><span id="sel-product-name"></span> &nbsp; <strong>工单：</strong><span id="sel-order-no"></span> &nbsp; <strong>交期：</strong><span id="sel-due-date"></span></p>
+<p><strong>数量：</strong><span id="sel-quantity-display"></span></p>
+<div id="sel-progress" style="margin-top:8px"></div>
+</div></div>
+<div class="form-row">
+<div class="form-group"><label>工序</label><select class="form-control" id="process-select" onchange="onProcessChange()" ><option value="">-- 先搜索工单 --</option></select></div>
+<div class="form-group"><label>设备</label><div class="search-box"><input type="text" class="form-control" id="equip-search" placeholder="搜索设备..." oninput="searchEquipments()"><div id="equip-results" class="search-results"></div></div><input type="hidden" id="equipment-select" value=""></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>生产人员</label><input type="text" class="form-control" id="operator" placeholder="姓名"></div>
+<div class="form-group"><label>优先级</label><select class="form-control" id="priority"><option value="P0">P0 主机厂</option><option value="P1">P1 加工单</option><option value="P2" selected>P2 库存</option></select></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>开始时间</label><select class="form-control" id="start-time"></select></div>
+<div class="form-group"><label>结束时间</label><select class="form-control" id="end-time"></select></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>工时(h)</label><input type="number" class="form-control" id="work-hours" step="0.25" oninput="calcQty()"></div>
+<div class="form-group"><label>产能/h</label><input type="number" class="form-control" id="capacity" step="1" oninput="calcQty()"><span style="font-size:11px;color:#9ca3af" id="capacity-hint"></span></div>
+<div class="form-group"><label>产量</label><input type="number" class="form-control" id="plan-qty"><span style="font-size:11px;color:#9ca3af">= 工时 × 产能</span></div>
+</div>
+<div class="form-inline">
+<label><input type="checkbox" id="is-overtime" onchange="onOvertimeChange()"> 加班（17:30-20:00）</label>
+<span id="overtime-hint" style="font-size:12px;color:#9ca3af;margin-left:8px"></span>
+</div>
+<div id="conflict-msg" class="conflict-warning" style="display:none"><span class="cw-icon">⚠️</span><span id="conflict-text"></span></div>
+</div>
+<div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="saveTask()">保存</button></div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var currentTeamId=null, selectedOrder=null, editingId=null, currentPlan=null;
+var orderProcessProgress=[];window._preselectEquipment=null;
+var CELL_W=80;
+var allEquips=[], allTasks=[];
+var USER_ROLE="{{ session.get('role','') }}";
+var USER_TEAM={{ session.get('team_id','null') }};
+var TEAM_NAME="{{ session.get('team_name','') }}";
+
+// Work time slots (regular hours)
+var WORK_SLOTS=[
+    {start:"08:00",end:"10:00",type:"work"},
+    {start:"10:00",end:"10:10",type:"break"},
+    {start:"10:10",end:"11:45",type:"work"},
+    {start:"11:45",end:"12:45",type:"break"},
+    {start:"12:45",end:"15:00",type:"work"},
+    {start:"15:00",end:"15:10",type:"break"},
+    {start:"15:10",end:"17:00",type:"work"}
+];
+var OT_SLOT={start:"17:30",end:"20:00",type:"overtime"};
+
+// Generate time options (every 5 min from 08:00 to 20:00)
+var TIME_OPTIONS=[];
+for(var h=8;h<=20;h++){for(var m=0;m<60;m+=5){var t=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');if(t>="08:00"&&t<="20:00")TIME_OPTIONS.push(t);}}
+var GANTT_HOURS=[8,9,10,11,12,13,14,15,16,17,18,19,20];
+
+// ========== Init ==========
+(function(){
+    var params=new URLSearchParams(window.location.search);
+    var urlTeam=params.get("team_id");
+    var urlDate=params.get("date");
+    var today=urlDate||new Date().toISOString().split("T")[0];
+    document.getElementById("schedule-date").value=today;
+    populateTimeSelects();
+    updateWorkHint();
+    fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
+        if(urlTeam){currentTeamId=parseInt(urlTeam);}
+        else if(USER_TEAM){currentTeamId=USER_TEAM;}
+        else if(d.length){currentTeamId=d[0].id;}
+        if(currentTeamId){onTeamChange();}
+    });
+})();
+
+function populateTimeSelects(){
+    var sSel=document.getElementById("start-time");
+    var eSel=document.getElementById("end-time");
+    sSel.innerHTML="";eSel.innerHTML="";
+    TIME_OPTIONS.forEach(function(t){
+        var o1=document.createElement("option");o1.value=t;o1.textContent=t;sSel.appendChild(o1);
+        var o2=document.createElement("option");o2.value=t;o2.textContent=t;eSel.appendChild(o2);
+    });
+    sSel.value="08:00";eSel.value="17:00";
+    sSel.addEventListener("change",function(){autoCalcHours();checkOvertime();});
+    eSel.addEventListener("change",function(){autoCalcHours();checkOvertime();});
+}
+
+function updateWorkHint(){
+    var el=document.getElementById("work-schedule-hint");
+    el.textContent="班次: 08:00-10:00 / 10:10-11:45 / 12:45-15:00 / 15:10-17:00 | 加班: 17:30-20:00";
+}
+
+function isToday(){
+    var d=document.getElementById("schedule-date").value;
+    return d===new Date().toISOString().split("T")[0];
+}
+
+function onOvertimeChange(){
+    var cb=document.getElementById("is-overtime");
+    var hint=document.getElementById("overtime-hint");
+    if(cb.checked){
+        if(!isToday()){
+            cb.checked=false;
+            hint.textContent="⚠️ 只有当日才能加班";hint.style.color="#dc2626";
+            return;
+        }
+        document.getElementById("end-time").value="20:00";
+        hint.textContent="加班时段: 17:30-20:00";hint.style.color="#f59e0b";
+    }else{
+        document.getElementById("end-time").value="17:00";
+        hint.textContent="";
+    }
+    autoCalcHours();
+}
+
+function checkOvertime(){
+    var endVal=document.getElementById("end-time").value;
+    var startVal=document.getElementById("start-time").value;
+    var cb=document.getElementById("is-overtime");
+    if(endVal>"17:00"){
+        if(!isToday()){
+            document.getElementById("end-time").value="17:00";
+            document.getElementById("overtime-hint").textContent="⚠️ 只有当日才能超过17:00";
+            document.getElementById("overtime-hint").style.color="#dc2626";
+            return;
+        }
+        cb.checked=true;
+        document.getElementById("overtime-hint").textContent="加班时段: 17:30-20:00";
+    }else{
+        cb.checked=false;
+        document.getElementById("overtime-hint").textContent="";
+    }
+}
+
+// Calculate actual work hours (excluding breaks)
+function calcWorkHours(start,end){
+    var sm=parseInt(start.split(":")[0])*60+parseInt(start.split(":")[1]);
+    var em=parseInt(end.split(":")[0])*60+parseInt(end.split(":")[1]);
+    if(em<=sm)return 0;
+    // Simple: total time minus known break periods
+    var total=em-sm;
+    // Subtract breaks that fall within range
+    var breaks=[
+        {s:600,e:610},   // 10:00-10:10
+        {s:705,e:765},   // 11:45-12:45
+        {s:900,e:910}    // 15:00-15:10
+    ];
+    breaks.forEach(function(b){
+        var overlapStart=Math.max(sm,b.s);
+        var overlapEnd=Math.min(em,b.e);
+        if(overlapEnd>overlapStart)total-=(overlapEnd-overlapStart);
+    });
+    return Math.round(total/60*100)/100;
+}
+
+function autoCalcHours(){
+    var s=document.getElementById("start-time").value;
+    var e=document.getElementById("end-time").value;
+    if(s&&e){
+        var h=calcWorkHours(s,e);
+        document.getElementById("work-hours").value=h>0?h.toFixed(2):"0";
+        calcQty();
+    }
+}
+
+function onTeamChange(){
+    if(!currentTeamId)return;
+    loadPlan();
+    loadRequirements();
+}
+function onDateChange(){if(currentTeamId)loadPlan();}
+
+// ========== Daily Plan ==========
+function loadPlan(){
+    var dt=document.getElementById("schedule-date").value;
+    fetch("/api/daily-plan?team_id="+currentTeamId+"&date="+dt).then(function(r){return r.json()}).then(function(plan){
+        currentPlan=plan;renderPlanStatus();loadData();loadWarnings();
+    });
+}
+function renderPlanStatus(){
+    var bar=document.getElementById("plan-status-bar");
+    var badge=document.getElementById("plan-status-badge");
+    var text=document.getElementById("plan-status-text");
+    var btns=document.getElementById("plan-btns");
+    bar.style.display="flex";
+    var s=currentPlan.status;
+    var map={draft:['badge-gray','草稿'],submitted:['badge-yellow','待审批'],approved:['badge-green','已通过'],rejected:['badge-red','已拒绝'],returned:['badge-orange','已退回']};
+    var cls=map[s]||['badge-gray',s];
+    badge.innerHTML='<span class="badge '+cls[0]+'">'+cls[1]+'</span>';
+    text.textContent=s==='draft'?'编辑中':s==='submitted'?'等待审批':s==='approved'?'已通过，不可修改':s==='returned'?'已退回，请修改':'';
+    btns.innerHTML='';
+    if((s==='draft'||s==='returned')&&USER_ROLE==='team'){
+        btns.innerHTML='<button class="btn btn-primary" onclick="submitPlan()">📤 提交计划</button>';
+    }
+    var addBtn=document.querySelector(".btn-success");
+    if(addBtn)addBtn.disabled=(s==='approved');
+}
+function submitPlan(){
+    fetch("/api/daily-plan/"+currentPlan.id+"/submit",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+        if(d.ok){toast("计划已提交","success");loadPlan();}else{toast(d.error||"失败","error");}
+    });
+}
+
+// ========== Load Requirements ==========
+function loadRequirements(){
+    if(!currentTeamId) return;
+    var teamName = "";
+    var sel = document.getElementById("team-select");
+    if(sel.options[sel.selectedIndex]) teamName = sel.options[sel.selectedIndex].text;
+    
+    // Show all published requirements for this team (not limited by date)
+    fetch("/api/production-requirements/for-team?team=" + encodeURIComponent(teamName))
+        .then(function(r){return r.json()})
+        .then(function(d){
+            var panel = document.getElementById("requirements-panel");
+            var tb = document.getElementById("requirements-tbody");
+            var empty = document.getElementById("requirements-empty");
+            tb.innerHTML = "";
+            
+            if(!d.length){
+                panel.style.display = "block";
+                empty.style.display = "block";
+                return;
+            }
+            empty.style.display = "none";
+            panel.style.display = "block";
+            
+            var todayStr = new Date().toISOString().split("T")[0];
+            d.forEach(function(r){
+                var tr = document.createElement("tr");
+                var days = Math.round((new Date(r.required_date) - new Date(todayStr)) / 86400000);
+                var dateColor = days < 0 ? '#dc2626' : days <= 1 ? '#d97706' : '#059669';
+                var dateLabel = days < 0 ? '已过期' + Math.abs(days) + '天' : days === 0 ? '今天' : days === 1 ? '明天' : days + '天后';
+                
+                // Truncate process list
+                var procShort = (r.process_name || '-');
+                if(procShort.length > 30) procShort = procShort.substring(0, 30) + '...';
+                
+                tr.innerHTML = '<td><strong>' + (r.product_name || r.product_code) + '</strong></td>'
+                    + '<td style="color:' + dateColor + ';font-weight:600">' + r.required_date + ' (' + dateLabel + ')</td>'
+                    + '<td><strong>' + r.required_quantity + '</strong></td>'
+                    + '<td>' + r.ship_date + '</td>'
+                    + '<td title="' + (r.process_name || '') + '">' + procShort + '</td>'
+                    + '<td><span class="badge badge-blue">需求</span></td>';
+                tb.appendChild(tr);
+            });
+        });
+}
+
+// ========== Load Data ==========
+function loadWarnings(){
+    fetch("/api/schedule-warnings").then(function(r){return r.json()}).then(function(d){
+        var panel=document.getElementById("warning-panel");
+        var container=document.getElementById("warning-content");
+        panel.style.display="block";
+        var reqs=d.requirements||[];
+        var woRemain=d.work_order_remaining||{};
+        if(!reqs.length){container.innerHTML="<div style='padding:20px;text-align:center;color:#9ca3af'>暂无发布需求</div>";return;}
+        // Build date range: today-2 to today+3
+        var today=new Date();
+        var dates=[];
+        for(var i=-2;i<=3;i++){
+            var dt=new Date(today);dt.setDate(dt.getDate()+i);
+            dates.push(dt.toISOString().split("T")[0]);
+        }
+        // Group by product
+        var products={};
+        reqs.forEach(function(r){
+            var name=r.product_name||r.product_code;
+            if(!products[name])products[name]={dates:{},code:r.product_code};
+            var key=r.required_date;
+            if(!products[name].dates[key])products[name].dates[key]=0;
+            products[name].dates[key]+=r.required_quantity;
+        });
+        // Build table
+        var html="<table style='width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap'>";
+        html+="<thead><tr><th style='text-align:left;padding:4px 6px;background:#f9fafb;border-bottom:1px solid #e5e7eb;min-width:100px'>产品名称</th>";
+        html+="<th style='text-align:center;padding:4px 6px;background:#fef3c7;border-bottom:1px solid #e5e7eb;min-width:50px'>未完成</th>";
+        dates.forEach(function(d){
+            var isToday=d===today.toISOString().split("T")[0];
+            var hdr=isToday?"<b>今天</b>":d.substring(5);
+            var bg=isToday?"#dcfce7":"#f9fafb";
+            html+="<th style='text-align:center;padding:4px 6px;background:"+bg+";border-bottom:1px solid #e5e7eb;font-size:10px'>"+hdr+"</th>";
+        });
+        html+="</tr></thead><tbody>";
+        var prodNames=Object.keys(products).sort();
+        prodNames.forEach(function(name){
+            var p=products[name];
+            var remain=woRemain[name]||woRemain[p.code]||0;
+            html+="<tr>";
+            html+="<td style='text-align:left;padding:4px 6px;border-bottom:1px solid #f3f4f6;max-width:120px;overflow:hidden;text-overflow:ellipsis' title='"+name+"'>"+name+"</td>";
+            html+="<td style='text-align:center;padding:4px 6px;border-bottom:1px solid #f3f4f6;color:"+(remain>0?"#dc2626":"#059669")+";font-weight:600'>"+(remain>0?remain:"-")+"</td>";
+            dates.forEach(function(d){
+                var val=p.dates[d]||0;
+                var bg="transparent";
+                if(val>0){
+                    var dt=new Date(d);var todayDt=new Date(today.toISOString().split("T")[0]);
+                    var diff=Math.round((dt-todayDt)/86400000);
+                    bg=diff<0?"#fee2e2":diff===0?"#dcfce7":"#dbeafe";
+                }
+                html+="<td style='text-align:center;padding:4px 6px;border-bottom:1px solid #f3f4f6;background:"+bg+";font-weight:"+(val>0?"600":"400")+"'>"+(val>0?val:"-")+"</td>";
+            });
+            html+="</tr>";
+        });
+        html+="</tbody></table>";
+        container.innerHTML=html;
+    }).catch(function(e){console.error("loadWarnings error:",e);});
+}
+
+function loadData(){
+    document.getElementById("gantt-panel").style.display="flex";
+    document.getElementById("schedule-section").style.display="block";
+    var dt=document.getElementById("schedule-date").value;
+    Promise.all([
+        fetch("/api/equipments?team_id="+currentTeamId).then(function(r){return r.json()}),
+        fetch("/api/schedule?team_id="+currentTeamId+"&date="+dt).then(function(r){return r.json()})
+    ]).then(function(res){
+        allEquips=res[0];allTasks=res[1];
+        renderGantt();renderTable();
+    });
+}
+
+// ========== Gantt Chart ==========
+function renderGantt(){
+    var hdr=document.getElementById("gantt-header");
+    var body=document.getElementById("gantt-body");
+    hdr.innerHTML='<div class="gantt-label" id="gantt-hdr-label">设备</div>';
+    GANTT_HOURS.forEach(function(h){
+        var cls="gantt-hour";
+        hdr.innerHTML+='<div class="'+cls+'">'+h+':00</div>';
+    });
+    body.innerHTML="";
+    // Calc max label width
+    var tmp=document.createElement("span");
+    tmp.style.cssText="position:absolute;visibility:hidden;font-size:13px;font-weight:600;padding:0";
+    document.body.appendChild(tmp);
+    var maxW=0;
+    allEquips.forEach(function(eq){tmp.textContent=eq.equipment_name;var w=tmp.getBoundingClientRect().width;if(w>maxW)maxW=w;});
+    document.body.removeChild(tmp);
+    var labelW=Math.ceil(maxW)+24;
+    document.getElementById("gantt-hdr-label").style.width=labelW+"px";
+    document.getElementById("gantt-hdr-label").style.minWidth=labelW+"px";
+    allEquips.forEach(function(eq,idx){
+        var row=document.createElement("div");row.className="gantt-row";
+        row.setAttribute("data-equip-id",eq.id);
+        row.setAttribute("data-equip-idx",idx);
+        var hasTask=allTasks.some(function(t){return t.equipment_id==eq.id});
+        var lblBg=hasTask?'background:#ecfdf5;border-left:3px solid #10b981':'';
+        row.innerHTML='<div class="gantt-label" style="'+lblBg+'">'+eq.equipment_name+'</div>';
+        var barArea=document.createElement("div");barArea.className="gantt-bars";barArea.style.position="relative";
+        barArea.setAttribute("data-equip-id",eq.id);
+        // Break shading
+        GANTT_HOURS.forEach(function(){var cell=document.createElement("div");cell.className="gantt-cell";barArea.appendChild(cell);});
+        // Break zone indicators
+        addBreakZone(barArea,10,10+1/6,9,10);    // 10:00-10:10
+        addBreakZone(barArea,11+3/4,12+3/4,9,10); // 11:45-12:45
+        addBreakZone(barArea,15,15+1/6,9,10);     // 15:00-15:10
+
+        var eqTasks=allTasks.filter(function(t){return t.equipment_id==eq.id});
+        eqTasks.forEach(function(t){
+            if(!t.start_time||!t.end_time)return;
+            var sh=parseInt(t.start_time.split(":")[0]),sm=parseInt(t.start_time.split(":")[1])||0;
+            var eh=parseInt(t.end_time.split(":")[0]),em=parseInt(t.end_time.split(":")[1])||0;
+            var left=(sh-8)*CELL_W+(sm/60)*CELL_W;
+            var width=(eh-sh)*CELL_W+((em-sm)/60)*CELL_W;
+            if(width<20)width=20;
+            var bar=document.createElement("div");
+            bar.className="gantt-bar priority-"+(t.priority||'P2');
+            bar.style.left=left+"px";bar.style.width=width+"px";
+            bar.setAttribute("data-id",t.id);bar.setAttribute("data-equip-id",eq.id);
+            // Bar content
+            var label=(t.product_name||t.product_code||t.work_order_no||'');
+            bar.innerHTML='<div class="bar-inner"><div class="bar-title">'+label+'</div><div class="bar-sub">'+(t.process_name||'')+' | '+t.quantity+' | '+(t.operator||'-')+'</div></div>'
+                +'<div class="resize-handle rh-left"></div>'
+                +'<div class="resize-handle rh-right"></div>';
+            // Click to edit
+            bar.addEventListener("click",function(e){
+                if(e.target.classList.contains("resize-handle"))return;
+                if(bar._suppressClick)return;
+                editTask(t.id);
+            });
+            // Resize handles
+            bar.querySelector(".rh-left").addEventListener("mousedown",function(e){startResize(e,t,bar,"left")});
+            bar.querySelector(".rh-right").addEventListener("mousedown",function(e){startResize(e,t,bar,"right")});
+            // Full bar drag to change equipment
+            bar.addEventListener("mousedown",function(e){
+                if(e.target.classList.contains("resize-handle"))return;
+                startBarDrag(e,t,bar);
+            });
+            // Tooltip
+            bar.addEventListener("mouseenter",function(e){showTooltip(e,t)});
+            bar.addEventListener("mouseleave",hideTooltip);
+            bar.addEventListener("mousemove",function(e){
+                var tip=document.getElementById("gantt-tooltip");
+                if(tip.style.display==="block"){
+                    var cRect=document.getElementById("gantt-container").getBoundingClientRect();
+                    tip.style.left=(e.clientX-cRect.left+12)+"px";
+                    tip.style.top=(e.clientY-cRect.top+12)+"px";
+                }
+            });
+            barArea.appendChild(bar);
+        });
+
+        row.querySelector(".gantt-label").style.width=labelW+"px";
+        row.querySelector(".gantt-label").style.minWidth=labelW+"px";
+        row.appendChild(barArea);body.appendChild(row);
+    });
+    // Enable click-to-add on empty areas
+    body.querySelectorAll(".gantt-bars").forEach(function(area){
+        area.addEventListener("dblclick",function(e){
+            if(e.target.closest(".gantt-bar"))return;
+            var eqId=area.getAttribute("data-equip-id");
+            var rect=area.getBoundingClientRect();
+            var x=e.clientX-rect.left;
+            var hour=8+x/CELL_W;
+            var h=Math.floor(hour);var m=Math.round((hour-h)*60/5)*5;
+            var timeStr=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+            showAddTaskFor({id:eqId,_timeHint:timeStr});
+        });
+    });
+}
+
+function addBreakZone(barArea,startH,endH){
+    var left=(startH-8)*CELL_W;
+    var width=(endH-startH)*CELL_W;
+    var zone=document.createElement("div");
+    zone.style.cssText="position:absolute;top:0;bottom:0;left:"+left+"px;width:"+width+"px;background:repeating-linear-gradient(45deg,transparent,transparent 3px,rgba(0,0,0,0.03) 3px,rgba(0,0,0,0.03) 6px);pointer-events:none;z-index:0";
+    barArea.appendChild(zone);
+}
+
+// ========== Tooltip ==========
+function showTooltip(e,t){
+    var tip=document.getElementById("gantt-tooltip");
+    tip.innerHTML='<div class="tt-title">'+(t.product_name||t.product_code||t.work_order_no)+'</div>'
+        +'<div class="tt-row"><span class="tt-label">工序：</span><span>'+(t.process_name||'')+'</span></div>'
+        +'<div class="tt-row"><span class="tt-label">设备：</span><span>'+(t.equipment_code||'')+'</span></div>'
+        +'<div class="tt-row"><span class="tt-label">时间：</span><span>'+(t.start_time||'')+' - '+(t.end_time||'')+'</span></div>'
+        +'<div class="tt-row"><span class="tt-label">数量：</span><span>'+t.quantity+'</span></div>'
+        +'<div class="tt-row"><span class="tt-label">人员：</span><span>'+(t.operator||'-')+'</span></div>'
+        +'<div class="tt-row"><span class="tt-label">优先级：</span><span>'+(t.priority||'P2')+'</span></div>';
+    tip.style.display="block";
+    var cRect=document.getElementById("gantt-container").getBoundingClientRect();
+    tip.style.left=(e.clientX-cRect.left+12)+"px";
+    tip.style.top=(e.clientY-cRect.top+12)+"px";
+}
+function hideTooltip(){document.getElementById("gantt-tooltip").style.display="none";}
+
+// ========== Schedule Table ==========
+function renderTable(){
+    var tb=document.getElementById("schedule-tbody");tb.innerHTML="";
+    var empty=document.getElementById("schedule-empty");
+    document.getElementById("task-count").textContent=allTasks.length+" 条";
+    if(!allTasks.length){empty.style.display="block";return;}empty.style.display="none";
+    var canEdit=currentPlan&&currentPlan.status!=='approved';
+    allTasks.forEach(function(s){
+        var tr=document.createElement("tr");
+        var ot=s.is_overtime?' <span class="badge badge-orange">加班</span>':'';
+        var actions='';
+        if(canEdit)actions='<div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editTask('+s.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="deleteTask('+s.id+')">删</button></div>';
+        else actions='<span style="color:#9ca3af;font-size:12px">锁定</span>';
+        tr.innerHTML='<td>'+(s.equipment_code||'')+'</td>'
+            +'<td><strong>'+(s.product_name||s.product_code||s.work_order_no||'')+'</strong></td>'
+            +'<td>'+(s.process_name||'')+'</td>'
+            +'<td>'+(s.work_order_no||'')+'</td>'
+            +'<td>'+(s.operator||'-')+'</td>'
+            +'<td>'+(s.start_time||'')+'-'+(s.end_time||'')+ot+'</td>'
+            +'<td>'+(s.hours||0)+'</td>'
+            +'<td>'+(s.capacity_per_hour||0)+'</td>'
+            +'<td><strong>'+s.quantity+'</strong></td>'
+            +'<td>'+priorityLabel(s.priority)+'</td>'
+            +'<td>'+actions+'</td>';
+        tb.appendChild(tr);
+    });
+}
+
+// ========== Modal ==========
+function showAddTask(){
+    if(!currentTeamId){toast("请先选择班组","warning");return;}
+    if(currentPlan&&currentPlan.status==='approved'){toast("计划已通过","warning");return;}
+    editingId=null;resetForm();document.getElementById("modal-title").textContent="新增排班";
+    document.getElementById("task-modal").classList.add("show");
+}
+function showAddTaskFor(eq){
+    showAddTask();
+    if(eq._timeHint){
+        document.getElementById("start-time").value=eq._timeHint;
+        autoCalcHours();
+    }
+    window._preselectEquipment=eq;
+}
+function selectProcessFromProgress(procName){
+    document.querySelectorAll("[data-proc-card]").forEach(function(c){
+        if(c.getAttribute("data-proc-card")===procName){
+            c.style.outline="2px solid #3b82f6";
+            c.style.outlineOffset="2px";
+            c.style.boxShadow="0 0 0 3px rgba(59,130,246,0.2)";
+        }else{
+            c.style.outline="none";
+            c.style.boxShadow="none";
+        }
+    });
+    var sel=document.getElementById("process-select");
+    for(var i=0;i<sel.options.length;i++){
+        if(sel.options[i].getAttribute("data-name")===procName){
+            sel.selectedIndex=i;
+            onProcessChange();
+            break;
+        }
+    }
+}
+
+function searchEquipments(){
+    var q=document.getElementById("equip-search").value.toLowerCase();
+    var box=document.getElementById("equip-results");
+    if(q.length<1){box.innerHTML="";return;}
+    box.innerHTML="";
+    allEquips.forEach(function(eq){
+        var txt=(eq.equipment_name+" "+eq.equipment_code).toLowerCase();
+        if(txt.indexOf(q)>=0){
+            var div=document.createElement("div");div.className="search-item";
+            div.innerHTML='<div class="si-main">'+eq.equipment_name+'</div><div class="si-sub">'+eq.equipment_code+' | '+eq.capacity_per_hour+'/h</div>';
+            div.onclick=function(){
+                document.getElementById("equip-search").value=eq.equipment_name;
+                document.getElementById("equipment-select").value=eq.id;
+                document.getElementById("capacity").value=eq.capacity_per_hour||0;
+                document.getElementById("capacity-hint").textContent="标准: "+(eq.capacity_per_hour||0)+"/h";
+                calcQty();
+                box.innerHTML="";
+            };
+            box.appendChild(div);
+        }
+    });
+    if(!box.children.length)box.innerHTML='<div class="search-item"><div class="si-sub">无匹配</div></div>';
+}
+
+function closeModal(){document.getElementById("task-modal").classList.remove("show");document.getElementById("order-results").innerHTML="";document.getElementById("conflict-msg").style.display="none";document.getElementById("overtime-hint").textContent="";}
+function resetForm(){
+    document.getElementById("order-search").value="";
+    document.getElementById("selected-order").style.display="none";
+    document.getElementById("process-select").innerHTML='<option value="">-- 先搜索工单 --</option>';
+    document.getElementById("equipment-select").innerHTML='<option value="">-- 先选工序 --</option>';
+    document.getElementById("operator").value="";
+    document.getElementById("start-time").value="08:00";
+    document.getElementById("end-time").value="17:00";
+    document.getElementById("work-hours").value="";
+    document.getElementById("capacity").value="";
+    document.getElementById("plan-qty").value="";
+    document.getElementById("capacity-hint").textContent="";
+    document.getElementById("priority").value="P2";
+    document.getElementById("is-overtime").checked=false;
+    selectedOrder=null;window._preselectEquipment=null;
+    autoCalcHours();
+}
+function editTask(id){
+    var t=allTasks.find(function(x){return x.id===id});if(!t)return;
+    editingId=id;document.getElementById("modal-title").textContent="编辑排班";
+    document.getElementById("order-search").value=t.product_name||t.product_code||t.work_order_no||"";
+    document.getElementById("selected-order").style.display="none";
+    document.getElementById("sel-order-no").textContent=t.work_order_no||"";
+        document.getElementById("operator").value=t.operator||"";
+    document.getElementById("start-time").value=t.start_time||"08:00";
+    document.getElementById("end-time").value=t.end_time||"17:00";
+    document.getElementById("work-hours").value=t.hours||"";
+    document.getElementById("capacity").value=t.capacity_per_hour||"";
+    document.getElementById("plan-qty").value=t.quantity||"";
+    document.getElementById("priority").value=t.priority||"P2";
+    document.getElementById("is-overtime").checked=!!t.is_overtime;
+    document.getElementById("equipment-select").innerHTML='<option value="'+t.equipment_id+'">'+(t.equipment_code||'')+' - '+(t.equipment_name||'')+'</option>';
+    document.getElementById("process-select").innerHTML='<option value="'+t.process_code+'">'+(t.process_name||t.process_code)+'</option>';
+    document.getElementById("task-modal").classList.add("show");
+    checkOvertime();
+}
+
+// ========== Search ==========
+function searchOrders(){
+    var q=document.getElementById("order-search").value;
+    if(q.length<1){document.getElementById("order-results").innerHTML="";return;}
+    fetch("/api/search-orders?q="+encodeURIComponent(q)).then(function(r){return r.json()}).then(function(d){
+        var box=document.getElementById("order-results");box.innerHTML="";
+        if(!d.length){box.innerHTML='<div class="search-item"><div class="si-sub">无匹配</div></div>';return;}
+        d.forEach(function(o){
+            var div=document.createElement("div");div.className="search-item";
+            div.innerHTML='<div class="si-main">'+(o.product_name||o.product_code||o.order_no)+'</div><div class="si-sub">'+o.order_no+' | '+(o.completed_qty||0)+'/'+o.quantity+'</div>';
+            div.onclick=function(){selectOrder(o)};box.appendChild(div);
+        });
+    });
+}
+function selectOrder(o){
+    selectedOrder=o;
+    document.getElementById("sel-order-no").textContent=o.order_no;
+        document.getElementById("sel-product-name").textContent=o.product_name||"";
+    document.getElementById("sel-due-date").textContent=o.due_date||"";
+    var comp=o.completed_qty||0;
+    document.getElementById("sel-quantity-display").textContent=comp+"/"+o.quantity+" ("+(o.quantity?Math.round(comp/o.quantity*100):0)+"%)";
+    
+    // Parse process progress
+    orderProcessProgress=[];
+    var progEl=document.getElementById("sel-progress");
+    if(o.process_progress && o.process_progress!="None"){
+        var steps=o.process_progress.split("->");
+        var html='<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+        steps.forEach(function(s,i){
+            s=s.trim();
+            if(i>0)html+='<span style="color:#9ca3af">\u2192</span>';
+            var m=s.match(/(.+?)\u3010(\d+)\/(\d+)\u3011\uff08(\d+)%\uff09/);
+            if(m){
+                var procName=m[1].trim();
+                var completed=parseInt(m[2]);
+                var total=parseInt(m[3]);
+                var pct=parseInt(m[4]);
+                orderProcessProgress.push({name:procName,completed:completed,total:total,pct:pct});
+                var bg=pct>=80?'#dcfce7':pct>=50?'#fef3c7':'#fef2f2';
+                var fg=pct>=80?'#059669':pct>=50?'#d97706':'#dc2626';
+                html+='<div style="background:'+bg+';border:1px solid '+fg+'20;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer" onclick="selectProcessFromProgress(\''+procName.replace(/'/g,"\\'")+'\')" data-proc-card="'+procName+'" title="\u70b9\u51fb\u9009\u62e9\u6b64\u5de5\u5e8f">';                html+='<div style="font-weight:600;color:#111827;pointer-events:none">'+procName+'</div>';
+                html+='<div style="color:'+fg+';pointer-events:none">'+completed+'/'+total+' ('+pct+'%)</div>';
+                html+='<div style="background:#e5e7eb;border-radius:3px;height:4px;margin-top:3px"><div style="background:'+fg+';height:4px;border-radius:3px;width:'+pct+'%"></div></div>';
+                html+='</div>';
+            }else{
+                html+='<span style="font-size:12px;color:#6b7280">'+s+'</span>';
+            }
+        });
+        html+='</div>';
+        progEl.innerHTML=html;
+    }else{
+        progEl.innerHTML="";
+    }
+    document.getElementById("selected-order").style.display="block";
+    document.getElementById("order-results").innerHTML="";
+    document.getElementById("order-search").value=o.product_name||o.product_code||o.order_no;
+    
+    // Load processes from API and filter by progress
+    fetch("/api/product-processes?product_code="+encodeURIComponent(o.product_code)).then(function(r){return r.json()}).then(function(d){
+        // Filter processes by current team (support comma-separated teams)
+        if(TEAM_NAME){
+            d=d.filter(function(p){
+                if(!p.team_name)return false;
+                var teams=p.team_name.split(",");
+                return teams.some(function(t){return t.trim()===TEAM_NAME});
+            });
+        }
+        var sel=document.getElementById("process-select");sel.innerHTML='<option value="">-- \u9009\u62e9\u5de5\u5e8f --</option>';
+        var seen={};
+        
+        if(orderProcessProgress.length>0){
+            // Add processes from progress first (in order)
+            orderProcessProgress.forEach(function(pp){
+                var matched=d.find(function(p){return p.process_name===pp.name});
+                if(matched && !seen[pp.name]){
+                    seen[pp.name]=true;
+                    var opt=document.createElement("option");
+                    opt.value=matched.process_code;
+                    opt.setAttribute("data-name",pp.name);
+                    opt.setAttribute("data-team",matched.team_name||'');
+                    var statusText=pp.pct>=100?'\u2713\u5b8c\u6210':pp.pct>0?pp.pct+'%\u8fdb\u884c\u4e2d':'\u5f85\u5f00\u59cb';
+                    var padN=20-pp.name.length;if(padN<2)padN=2;var pad='';for(var pi=0;pi<padN;pi++)pad+='\u3000';opt.textContent=pp.name+pad+'【'+statusText+'】';
+                    sel.appendChild(opt);
+                }else if(!seen[pp.name]){
+                    seen[pp.name]=true;
+                    var opt=document.createElement("option");
+                    opt.value='PROC_'+pp.name;
+                    opt.setAttribute("data-name",pp.name);
+                    opt.setAttribute("data-team",'');
+                    var statusText=pp.pct>=100?'\u2713\u5b8c\u6210':pp.pct>0?pp.pct+'%\u8fdb\u884c\u4e2d':'\u5f85\u5f00\u59cb';
+                    var padN=20-pp.name.length;if(padN<2)padN=2;var pad='';for(var pi=0;pi<padN;pi++)pad+='\u3000';opt.textContent=pp.name+pad+'【'+statusText+'】';
+                    sel.appendChild(opt);
+                }
+            });
+        }
+        
+        // Add remaining processes from route
+        d.forEach(function(p){
+            if(!seen[p.process_name]){
+                seen[p.process_name]=true;
+                var opt=document.createElement("option");
+                opt.value=p.process_code;
+                opt.setAttribute("data-name",p.process_name);
+                opt.setAttribute("data-team",p.team_name||'');
+                opt.textContent=p.process_name;
+                sel.appendChild(opt);
+            }
+        });
+        
+        // Auto-select first incomplete process
+        if(orderProcessProgress.length>0){
+            for(var i=0;i<sel.options.length;i++){
+                var optName=sel.options[i].getAttribute("data-name");
+                var pp=orderProcessProgress.find(function(x){return x.name===optName});
+                if(pp && pp.pct<100){
+                    sel.selectedIndex=i;
+                    onProcessChange();
+                    break;
+                }
+            }
+        }
+    });
+}
+function onProcessChange(){
+    var ps=document.getElementById("process-select");
+    var pn=ps.options[ps.selectedIndex]?ps.options[ps.selectedIndex].getAttribute("data-name"):"";
+    document.querySelectorAll("[data-proc-card]").forEach(function(c){
+        c.style.outline=c.getAttribute("data-proc-card")===pn?"2px solid #3b82f6":"none";
+        c.style.outlineOffset=c.getAttribute("data-proc-card")===pn?"2px":"";
+        c.style.boxShadow=c.getAttribute("data-proc-card")===pn?"0 0 0 3px rgba(59,130,246,0.2)":"none";
+    });
+
+    // Equipment is now selected via search box
+    if(window._preselectEquipment){
+        var eq=allEquips.find(function(e){return e.id==window._preselectEquipment.id});
+        if(eq){
+            document.getElementById("equip-search").value=eq.equipment_name;
+            document.getElementById("equipment-select").value=eq.id;
+            document.getElementById("capacity").value=eq.capacity_per_hour||0;
+        }
+    }
+    
+    // Auto-fill remaining quantity from progress
+    var procName=document.getElementById("process-select").options[document.getElementById("process-select").selectedIndex].getAttribute("data-name");
+    if(procName && selectedOrder){
+        var pp=orderProcessProgress.find(function(x){return x.name===procName});
+        if(pp){
+            var remaining=pp.total-pp.completed;
+            if(remaining>0){
+                document.getElementById("plan-qty").value=remaining;
+                var cap=parseFloat(document.getElementById("capacity").value)||0;
+                if(cap>0){
+                    document.getElementById("work-hours").value=(remaining/cap).toFixed(2);
+                }
+            }
+        }
+    }
+}
+function onEquipChange(){
+    // Capacity is now set directly when selecting from search
+}
+function calcQty(){var h=parseFloat(document.getElementById("work-hours").value)||0;var c=parseFloat(document.getElementById("capacity").value)||0;document.getElementById("plan-qty").value=Math.round(h*c);}
+
+// ========== Save ==========
+function saveTask(){
+    if(!selectedOrder&&!editingId){toast("请先选择工单","warning");return;}
+    var eqId=document.getElementById("equipment-select").value;if(!eqId){toast("请选择设备","warning");return;}
+    var ps=document.getElementById("process-select");
+    var pn=ps.options[ps.selectedIndex].getAttribute("data-name")||ps.options[ps.selectedIndex].text;
+    var data={
+        equipment_id:parseInt(eqId),
+        work_order_no:selectedOrder?selectedOrder.order_no:document.getElementById("sel-order-no").textContent,
+        product_code:selectedOrder?selectedOrder.product_code:"",
+        process_code:document.getElementById("process-select").value,
+        process_name:pn,
+        schedule_date:document.getElementById("schedule-date").value,
+        start_time:document.getElementById("start-time").value,
+        end_time:document.getElementById("end-time").value,
+        hours:parseFloat(document.getElementById("work-hours").value)||0,
+        capacity_per_hour:parseFloat(document.getElementById("capacity").value)||0,
+        quantity:parseFloat(document.getElementById("plan-qty").value)||0,
+        is_overtime:document.getElementById("is-overtime").checked?1:0,
+        team_id:parseInt(currentTeamId),
+        priority:document.getElementById("priority").value,
+        operator:document.getElementById("operator").value
+    };
+    var url=editingId?"/api/schedule/"+editingId:"/api/schedule";
+    api(url,{method:editingId?"PUT":"POST",body:data}).then(function(){
+        toast(editingId?"已更新":"排班成功","success");closeModal();loadData();loadPlan();
+    }).catch(function(e){
+        if(e.error==='conflict'){document.getElementById("conflict-msg").style.display="flex";document.getElementById("conflict-text").textContent="冲突："+e.conflict_with+" 在 "+e.conflict_time;}
+        else if(e.error){toast(e.error,"error");}
+        else toast("保存失败","error");
+    });
+}
+function deleteTask(id){if(!confirm("确定删除？"))return;api("/api/schedule/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadData();loadPlan();});}
+
+// ========== Resize ==========
+var isResizing=false, resizeState=null;
+function startResize(e,t,bar,side){
+    e.preventDefault();e.stopPropagation();
+    isResizing=true;
+    resizeState={task:t,bar:bar,side:side,startX:e.clientX,origLeft:parseInt(bar.style.left),origWidth:parseInt(bar.style.width)};
+    document.addEventListener("mousemove",onResizeMove);
+    document.addEventListener("mouseup",onResizeEnd);
+    bar.classList.add("dragging");
+    hideTooltip();
+}
+function onResizeMove(e){
+    if(!resizeState)return;
+    var dx=e.clientX-resizeState.startX;
+    if(resizeState.side==="left"){
+        var nl=resizeState.origLeft+dx,nw=resizeState.origWidth-dx;
+        if(nw>=20&&nl>=0){resizeState.bar.style.left=nl+"px";resizeState.bar.style.width=nw+"px";}
+    }else{
+        var nw=resizeState.origWidth+dx;
+        if(nw>=20)resizeState.bar.style.width=nw+"px";
+    }
+}
+function onResizeEnd(e){
+    if(!resizeState)return;
+    document.removeEventListener("mousemove",onResizeMove);
+    document.removeEventListener("mouseup",onResizeEnd);
+    resizeState.bar.classList.remove("dragging");
+    var left=parseInt(resizeState.bar.style.left);
+    var width=parseInt(resizeState.bar.style.width);
+    var sH=8+left/CELL_W, eH=sH+width/CELL_W;
+    var sh=Math.floor(sH),sm=Math.round((sH-sh)*60/30)*30;
+    var eh=Math.floor(eH),em=Math.round((eH-eh)*60/30)*30;
+    if(sm>=60){sh+=1;sm=0;}if(em>=60){eh+=1;em=0;}
+    var ns=String(sh).padStart(2,"0")+":"+String(sm).padStart(2,"0");
+    var ne=String(eh).padStart(2,"0")+":"+String(em).padStart(2,"0");
+    var data=Object.assign({},resizeState.task,{start_time:ns,end_time:ne});
+    delete data.equipment_name;delete data.equipment_code;
+    api("/api/schedule/"+resizeState.task.id,{method:"PUT",body:data}).then(function(){
+        toast("时间已更新","success");loadData();
+    }).catch(function(err){
+        if(err.error==="conflict")toast("设备冲突","error");else toast("更新失败","error");
+        loadData();
+    });
+    isResizing=false;resizeState=null;
+}
+
+// ========== Resize ==========
+var resizeState=null;
+function startResize(e,t,bar,side){
+    e.preventDefault();e.stopPropagation();
+    bar._didResize=false;
+    resizeState={task:t,bar:bar,side:side,startX:e.clientX,origLeft:parseInt(bar.style.left),origWidth:parseInt(bar.style.width)};
+    bar.classList.add("dragging");
+    document.addEventListener("mousemove",onResizeMove);
+    document.addEventListener("mouseup",onResizeEnd);
+}
+function onResizeMove(e){
+    if(!resizeState)return;
+    var dx=e.clientX-resizeState.startX;
+    if(Math.abs(dx)>3)resizeState.bar._didResize=true;
+    if(resizeState.side==="left"){
+        var nl=resizeState.origLeft+dx,nw=resizeState.origWidth-dx;
+        if(nw>=20&&nl>=0){resizeState.bar.style.left=nl+"px";resizeState.bar.style.width=nw+"px";}
+    }else{
+        var nw=resizeState.origWidth+dx;
+        if(nw>=20)resizeState.bar.style.width=nw+"px";
+    }
+}
+function onResizeEnd(e){
+    if(!resizeState)return;
+    document.removeEventListener("mousemove",onResizeMove);
+    document.removeEventListener("mouseup",onResizeEnd);
+    resizeState.bar.classList.remove("dragging");
+    if(!resizeState.bar._didResize){
+        resizeState=null;return;
+    }
+    resizeState.bar._suppressClick=true;
+    setTimeout(function(){if(resizeState)resizeState.bar._suppressClick=false;},300);
+    var left=parseInt(resizeState.bar.style.left);
+    var width=parseInt(resizeState.bar.style.width);
+    var sH=8+left/CELL_W,eH=sH+width/CELL_W;
+    var sMin=clampToValid(snapTime(sH*60),true);
+    var eMin=clampToValid(snapTime(eH*60),false);
+    var sh=Math.floor(sMin/60),sm=sMin%60;
+    var eh=Math.floor(eMin/60),em=eMin%60;
+    var ns=String(sh).padStart(2,"0")+":"+String(sm).padStart(2,"0");
+    var ne=String(eh).padStart(2,"0")+":"+String(em).padStart(2,"0");
+    var data=Object.assign({},resizeState.task,{start_time:ns,end_time:ne});
+    delete data.equipment_name;delete data.equipment_code;
+    api("/api/schedule/"+resizeState.task.id,{method:"PUT",body:data}).then(function(){
+        toast("时间已更新","success");loadData();
+    }).catch(function(err){
+        if(err.error==="conflict")toast("设备冲突","error");else toast("更新失败","error");
+        loadData();
+    });
+    resizeState=null;
+}
+
+// ========== Bar Drag (change equipment) ==========
+var barDragState=null;
+function startBarDrag(e,t,bar){
+    if(e.target.classList.contains("resize-handle"))return;
+    bar._didDrag=false;
+    barDragState={task:t,bar:bar,startX:e.clientX,startY:e.clientY,origEquipId:t.equipment_id};
+    document.addEventListener("mousemove",onBarDragMove);
+    document.addEventListener("mouseup",onBarDragEnd);
+}
+function onBarDragMove(e){
+    if(!barDragState)return;
+    var dy=e.clientY-barDragState.startY;
+    var dx=e.clientX-barDragState.startX;
+    if(Math.abs(dy)>5||Math.abs(dx)>5)barDragState.bar._didDrag=true;
+    if(barDragState.bar._didDrag){
+        barDragState.bar.style.opacity="0.6";
+        barDragState.bar.style.zIndex="20";
+        barDragState.bar.style.transform="translate("+dx+"px,"+dy+"px)";
+        barDragState.bar.style.boxShadow="0 8px 25px rgba(0,0,0,0.3)";
+    }
+}
+function onBarDragEnd(e){
+    if(!barDragState)return;
+    document.removeEventListener("mousemove",onBarDragMove);
+    document.removeEventListener("mouseup",onBarDragEnd);
+    barDragState.bar.style.opacity="1";
+    barDragState.bar.style.transform="";
+    barDragState.bar.style.zIndex="";
+    barDragState.bar.style.boxShadow="";
+    if(!barDragState.bar._didDrag){
+        barDragState=null;return;
+    }
+    barDragState.bar._suppressClick=true;
+    var tmpBar=barDragState.bar;
+    setTimeout(function(){tmpBar._suppressClick=false;},300);
+    // Find which equipment row we dropped on
+    var rows=document.querySelectorAll(".gantt-row");
+    var newEquipId=null;
+    rows.forEach(function(row){
+        var rect=row.getBoundingClientRect();
+        if(e.clientY>=rect.top&&e.clientY<=rect.bottom){
+            newEquipId=parseInt(row.getAttribute("data-equip-id"));
+        }
+    });
+    if(newEquipId&&newEquipId!==barDragState.origEquipId){
+        var data=Object.assign({},barDragState.task,{equipment_id:newEquipId});
+        delete data.equipment_name;delete data.equipment_code;
+        api("/api/schedule/"+barDragState.task.id,{method:"PUT",body:data}).then(function(){
+            toast("已移到新设备","success");loadData();
+        }).catch(function(err){
+            if(err.error==="conflict")toast("目标设备时间冲突","error");
+            else toast("移动失败","error");
+            loadData();
+        });
+    }
+    barDragState=null;
+}
+
+// Valid snap points: 30min intervals, skipping break periods
+var SNAP_POINTS=[
+    480,510,540,570,           // 08:00,08:30,09:00,09:30
+    610,640,670,705,           // 10:10,10:40,11:10,11:45
+    765,795,825,855,885,       // 12:45,13:15,13:45,14:15,14:45
+    910,940,970,1000,1030,1060,1090,1120,1150,1170,1200  // 15:10-20:00
+];
+// After snapping, validate: start must not fall in break, end must not fall in break
+var BREAKS=[{s:600,e:610},{s:705,e:765},{s:900,e:910}];
+function snapTime(minute){
+    var best=SNAP_POINTS[0],bestDist=999;
+    for(var i=0;i<SNAP_POINTS.length;i++){
+        var d=Math.abs(minute-SNAP_POINTS[i]);
+        if(d<bestDist){bestDist=d;best=SNAP_POINTS[i];}
+    }
+    return best;
+}
+function inBreak(m){
+    for(var i=0;i<BREAKS.length;i++){if(m>BREAKS[i].s&&m<BREAKS[i].e)return true;}
+    return false;
+}
+function clampToValid(m,isStart){
+    // If landed inside a break, push to the right boundary of that break
+    for(var i=0;i<BREAKS.length;i++){
+        if(m>BREAKS[i].s&&m<BREAKS[i].e){
+            return isStart?BREAKS[i].e:BREAKS[i].s;
+        }
+    }
+    return m;
+}
+
+function priorityLabel(p){if(p==='P0')return'<span class="badge badge-red">P0</span>';if(p==='P1')return'<span class="badge badge-blue">P1</span>';return'<span class="badge badge-gray">P2</span>';}
+
+function exportScheduleImage(){
+    var date=document.getElementById("schedule-date").value;
+    if(!allTasks.length){toast("暂无排班数据","warning");return;}
+    var tasks=allTasks.slice().sort(function(a,b){
+        var ea=(a.equipment_name||"").localeCompare(b.equipment_name||"");
+        if(ea!==0)return ea;
+        return (a.start_time||"").localeCompare(b.start_time||"");
+    });
+    var equipMap={};
+    tasks.forEach(function(t){
+        var en=t.equipment_name||"未知设备";
+        if(!equipMap[en])equipMap[en]=[];
+        equipMap[en].push(t);
+    });
+    var html='<div id="export-schedule" style="padding:24px;background:#fff;font-family:Arial,sans-serif;width:800px">';
+    html+='<div style="text-align:center;margin-bottom:16px">';
+    html+='<h2 style="margin:0;font-size:18px">排班计划表</h2>';
+    html+='<p style="margin:4px 0;font-size:13px;color:#666">日期：'+date+'</p>';
+    html+='</div>';
+    html+='<table style="width:100%;border-collapse:collapse;font-size:12px">';
+    html+='<thead><tr style="background:#f0f0f0">';
+    html+='<th style="border:1px solid #ccc;padding:6px 8px;text-align:left">设备</th>';
+    html+='<th style="border:1px solid #ccc;padding:6px 8px;text-align:left">产品名称</th>';
+    html+='<th style="border:1px solid #ccc;padding:6px 8px;text-align:left">工序</th>';
+    html+='<th style="border:1px solid #ccc;padding:6px 8px;text-align:left">生产人员</th>';
+    html+='<th style="border:1px solid #ccc;padding:6px 8px;text-align:center">时间</th>';
+    html+='<th style="border:1px solid #ccc;padding:6px 8px;text-align:right">数量</th>';
+    html+='<th style="border:1px solid #ccc;padding:6px 8px;text-align:center">优先级</th>';
+    html+='</tr></thead><tbody>';
+    var bgColors={P0:"#fee2e2",P1:"#dbeafe",P2:"#f9fafb"};
+    Object.keys(equipMap).sort().forEach(function(en){
+        var items=equipMap[en];
+        items.forEach(function(t,i){
+            html+='<tr style="background:'+(bgColors[t.priority]||"#fff")+'">';
+            if(i===0)html+='<td style="border:1px solid #ccc;padding:6px 8px;font-weight:600" rowspan="'+items.length+'">'+en+'</td>';
+            html+='<td style="border:1px solid #ccc;padding:6px 8px">'+(t.product_name||t.product_code||'')+'</td>';
+            html+='<td style="border:1px solid #ccc;padding:6px 8px">'+(t.process_name||'')+'</td>';
+            html+='<td style="border:1px solid #ccc;padding:6px 8px">'+(t.operator||'-')+'</td>';
+            html+='<td style="border:1px solid #ccc;padding:6px 8px;text-align:center">'+(t.start_time||'')+' - '+(t.end_time||'')+'</td>';
+            html+='<td style="border:1px solid #ccc;padding:6px 8px;text-align:right">'+(t.quantity||0)+'</td>';
+            html+='<td style="border:1px solid #ccc;padding:6px 8px;text-align:center">'+(t.priority||'')+'</td>';
+            html+='</tr>';
+        });
+    });
+    html+='</tbody></table>';
+    html+='<p style="margin-top:12px;font-size:11px;color:#999;text-align:right">导出时间：'+new Date().toLocaleString()+'</p>';
+    html+='</div>';
+    var div=document.createElement("div");
+    div.style.position="fixed";div.style.left="-9999px";div.style.top="0";
+    div.innerHTML=html;
+    document.body.appendChild(div);
+    var target=document.getElementById("export-schedule");
+    html2canvas(target,{scale:2,useCORS:true}).then(function(canvas){
+        var a=document.createElement("a");
+        a.href=canvas.toDataURL("image/png");
+        a.download="排班计划_"+date+".png";
+        a.click();
+        document.body.removeChild(div);
+        toast("图片已导出","success");
+    }).catch(function(e){
+        document.body.removeChild(div);
+        toast("导出失败","error");
+    });
+}
+
+// ========== Free Task (无维护排班) ==========
+function showFreeTask(){
+    if(!currentTeamId){toast("请先选择班组","warning");return;}
+    if(currentPlan&&currentPlan.status==='approved'){toast("计划已通过","warning");return;}
+    document.getElementById("free-modal").classList.add("show");
+    document.getElementById("free-product").value="";
+    document.getElementById("free-process").value="";
+    document.getElementById("free-operator").value="";
+    document.getElementById("free-qty").value="";
+    document.getElementById("free-hours").value="";
+    document.getElementById("free-capacity").value="";
+    document.getElementById("free-capacity-hint").textContent="";
+    document.getElementById("free-equip-search").value="";
+    document.getElementById("free-equip").value="";
+    document.getElementById("free-equip-results").innerHTML="";
+    // Set default times using same TIME_OPTS as original
+    var st=document.getElementById("free-start");
+    var et=document.getElementById("free-end");
+    st.innerHTML="";et.innerHTML="";
+    TIME_OPTIONS.forEach(function(t){var o=document.createElement("option");o.value=t;o.textContent=t;st.appendChild(o);var o2=document.createElement("option");o2.value=t;o2.textContent=t;et.appendChild(o2);});
+    st.value="08:00";et.value="17:00";
+    freeAutoCalcHours();
+}
+function searchFreeEquip(){
+    var q=document.getElementById("free-equip-search").value.toLowerCase();
+    if(q.length<1){document.getElementById("free-equip-results").innerHTML="";return;}
+    var items=[];
+    allEquips.forEach(function(eq){
+        var txt=(eq.equipment_name+" "+eq.equipment_code).toLowerCase();
+        if(txt.indexOf(q)>=0){
+            items.push(eq);
+        }
+    });
+    var box=document.getElementById("free-equip-results");box.innerHTML="";
+    if(!items.length){box.innerHTML='<div class="search-item"><div class="si-sub">无匹配</div></div>';return;}
+    items.forEach(function(eq){
+        var div=document.createElement("div");div.className="search-item";
+        div.innerHTML='<div class="si-main">'+eq.equipment_name+'</div><div class="si-sub">'+eq.equipment_code+'</div>';
+        div.onclick=function(){
+            document.getElementById("free-equip-search").value=eq.equipment_name;
+            document.getElementById("free-equip").value=eq.id;
+            box.innerHTML="";
+        };
+        box.appendChild(div);
+    });
+}
+function onFreeOvertimeChange(){
+    var cb=document.getElementById("free-overtime");
+    var hint=document.getElementById("free-overtime-hint");
+    var et=document.getElementById("free-end");
+    if(cb.checked){
+        et.value="20:00";hint.textContent="加班至20:00";
+    }else{
+        et.value="17:00";hint.textContent="";
+    }
+    freeAutoCalcHours();
+}
+function freeAutoCalcHours(){
+    var s=document.getElementById("free-start").value;
+    var e=document.getElementById("free-end").value;
+    if(s&&e){
+        var h=calcWorkHours(s,e);
+        document.getElementById("free-hours").value=h>0?h.toFixed(2):"0";
+        freeCalcQty();
+    }
+}
+function closeFreeModal(){document.getElementById("free-modal").classList.remove("show");}
+function saveFreeTask(){
+    var product=document.getElementById("free-product").value.trim();
+    var process=document.getElementById("free-process").value.trim();
+    var equipId=document.getElementById("free-equip").value;
+    var operator=document.getElementById("free-operator").value.trim();
+    var priority=document.getElementById("free-priority").value;
+    var startTime=document.getElementById("free-start").value;
+    var endTime=document.getElementById("free-end").value;
+    var hours=parseFloat(document.getElementById("free-hours").value)||0;
+    var capacity=parseFloat(document.getElementById("free-capacity").value)||0;
+    var qty=parseFloat(document.getElementById("free-qty").value)||0;
+    if(!product){toast("请填写产品名称","warning");return;}
+    if(!process){toast("请填写工序","warning");return;}
+    if(!equipId){toast("请选择设备","warning");return;}
+    var isOT=document.getElementById("free-overtime").checked?1:0;
+    var data={
+        equipment_id:parseInt(equipId),
+        product_code:product,
+        process_name:process,
+        schedule_date:document.getElementById("schedule-date").value,
+        start_time:startTime,
+        end_time:endTime,
+        hours:hours,
+        capacity_per_hour:capacity,
+        quantity:qty,
+        operator:operator,
+        priority:priority,
+        is_overtime:isOT,
+        team_id:parseInt(currentTeamId)||0
+    };
+    api("/api/schedule",{method:"POST",body:data}).then(function(){
+        toast("保存成功","success");closeFreeModal();loadData();
+    }).catch(function(err){
+        if(err&&err.error==="conflict")toast("设备时间冲突","error");
+        else if(err&&err.error)toast(err.error,"error");
+        else toast("保存失败","error");
+    });
+}
+function freeCalcQty(){
+    var h=parseFloat(document.getElementById("free-hours").value)||0;
+    var c=parseFloat(document.getElementById("free-capacity").value)||0;
+    document.getElementById("free-qty").value=Math.round(h*c);
+}
+</script>
+
+<!-- Free Task Modal -->
+<div class="modal-overlay" id="free-modal">
+<div class="modal">
+<div class="modal-header"><h3>📝 无维护排班</h3><button class="modal-close" onclick="closeFreeModal()">&times;</button></div>
+<div class="modal-body">
+<div class="form-row">
+<div class="form-group"><label>产品名称</label><input type="text" class="form-control" id="free-product" placeholder="手动输入产品名称"></div>
+<div class="form-group"><label>工序</label><input type="text" class="form-control" id="free-process" placeholder="手动输入工序名称"></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>设备</label><div class="search-box"><input type="text" class="form-control" id="free-equip-search" placeholder="搜索设备..." oninput="searchFreeEquip()"><div id="free-equip-results" class="search-results"></div></div><input type="hidden" id="free-equip" value=""></div>
+<div class="form-group"><label>优先级</label><select class="form-control" id="free-priority"><option value="P0">P0 主机厂</option><option value="P1">P1 加工单</option><option value="P2" selected>P2 库存</option></select></div>
+</div>
+<div class="form-group"><label>生产人员</label><input type="text" class="form-control" id="free-operator" placeholder="姓名"></div>
+<div class="form-row">
+<div class="form-group"><label>开始时间</label><select class="form-control" id="free-start" onchange="freeAutoCalcHours()"></select></div>
+<div class="form-group"><label>结束时间</label><select class="form-control" id="free-end" onchange="freeAutoCalcHours()"></select></div>
+</div>
+<div class="form-inline">
+<label><input type="checkbox" id="free-overtime" onchange="onFreeOvertimeChange()"> 加班（17:30-20:00）</label>
+<span id="free-overtime-hint" style="font-size:12px;color:#9ca3af;margin-left:8px"></span>
+</div>
+<div class="form-row">
+<div class="form-group"><label>工时(h)</label><input type="number" class="form-control" id="free-hours" step="0.25" oninput="freeCalcQty()"></div>
+<div class="form-group"><label>产能/h</label><input type="number" class="form-control" id="free-capacity" step="1" oninput="freeCalcQty()"><span style="font-size:11px;color:#9ca3af" id="free-capacity-hint"></span></div>
+<div class="form-group"><label>产量</label><input type="number" class="form-control" id="free-qty"><span style="font-size:11px;color:#9ca3af">= 工时 × 产能</span></div>
+</div>
+</div>
+<div class="modal-footer">
+<button class="btn btn-secondary" onclick="closeFreeModal()">取消</button>
+<button class="btn btn-primary" onclick="saveFreeTask()">保存</button>
+</div>
+</div>
+</div>
+{% endblock %}

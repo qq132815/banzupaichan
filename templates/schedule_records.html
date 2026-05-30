@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>📋 排班提交记录</h1>
+<div class="page-actions">
+{% if session.get('role') == 'planner' %}
+<select id="rec-team-filter" class="form-control" onchange="loadRecords()" style="width:120px">
+<option value="">全部班组</option>
+</select>
+{% else %}
+<input type="hidden" id="rec-team-filter" value="{{ session.get('team_id','') }}">
+{% endif %}
+<select id="rec-status-filter" class="form-control" onchange="loadRecords()" style="width:100px">
+<option value="">全部状态</option>
+<option value="draft">草稿</option>
+<option value="submitted">待审批</option>
+<option value="approved">已通过</option>
+<option value="returned">已退回</option>
+</select>
+</div>
+</div>
+<div class="card">
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>排班单据号</th><th>班组</th><th>排班日期</th><th>提交日期</th><th>状态</th><th>退回原因</th><th>操作</th></tr></thead>
+<tbody id="rec-tbody"></tbody>
+</table>
+<div id="rec-empty" class="table-empty" style="display:none">暂无排班记录</div>
+</div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function(){
+    var sel=document.getElementById("rec-team-filter");
+    if(sel.tagName==="SELECT"){
+        fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
+            d.forEach(function(t){
+                var o=document.createElement("option");o.value=t.id;o.textContent=t.name;sel.appendChild(o);
+            });
+            loadRecords();
+        });
+    }else{
+        loadRecords();
+    }
+})();
+
+function loadRecords(){
+    var teamId=document.getElementById("rec-team-filter").value;
+    var status=document.getElementById("rec-status-filter").value;
+    var url="/api/daily-plans?";
+    if(teamId)url+="team_id="+teamId+"&";
+    fetch(url).then(function(r){return r.json()}).then(function(d){
+        var tb=document.getElementById("rec-tbody");tb.innerHTML="";
+        var empty=document.getElementById("rec-empty");
+        if(status)d=d.filter(function(p){return p.status===status;});
+        if(!d.length){empty.style.display="block";return;}
+        empty.style.display="none";
+        d.forEach(function(p){
+            var tr=document.createElement("tr");
+            var docNo="DP-"+p.plan_date.replace(/-/g,"")+"-"+(p.team_name||p.team_id);
+            var statusMap={draft:"草稿",submitted:"待审批",approved:"已通过",rejected:"已驳回",returned:"已退回"};
+            var badgeMap={draft:"gray",submitted:"yellow",approved:"green",rejected:"red",returned:"orange"};
+            var st=statusMap[p.status]||p.status;
+            var badge=badgeMap[p.status]||"gray";
+            var submitted=p.submitted_at||"-";
+            var reason=p.reject_reason||"-";
+            var btns="";
+            if(p.status==="draft"){
+                btns+='<button class="btn btn-primary btn-sm" onclick="submitPlan('+p.id+')">提交审核</button> ';
+                btns+='<button class="btn btn-danger btn-sm" onclick="deletePlan('+p.id+')">删除</button>';
+            }else if(p.status==="submitted"){
+                btns+='<button class="btn btn-outline btn-sm" onclick="withdrawPlan('+p.id+')">申请撤回</button>';
+            }else if(p.status==="returned"){
+                btns+='<button class="btn btn-primary btn-sm" onclick="editPlan('+p.id+','+p.team_id+',\''+p.plan_date+'\')">修改</button> ';
+                btns+='<button class="btn btn-primary btn-sm" onclick="submitPlan('+p.id+')">重新提交</button> ';
+                btns+='<button class="btn btn-danger btn-sm" onclick="deletePlan('+p.id+')">删除</button>';
+            }else if(p.status==="rejected"){
+                btns+='<button class="btn btn-outline btn-sm" onclick="editPlan('+p.id+','+p.team_id+',\''+p.plan_date+'\')">查看</button>';
+            }
+            tr.innerHTML='<td><strong>'+docNo+'</strong></td>'
+                +'<td>'+(p.team_name||p.team_id)+'</td>'
+                +'<td>'+p.plan_date+'</td>'
+                +'<td>'+submitted+'</td>'
+                +'<td><span class="badge badge-'+badge+'">'+st+'</span></td>'
+                +'<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis" title="'+reason+'">'+reason+'</td>'
+                +'<td>'+btns+'</td>';
+            tb.appendChild(tr);
+        });
+    });
+}
+
+function submitPlan(pid){
+    if(!confirm("确认提交审核？提交后当日不能重复提交。"))return;
+    api("/api/daily-plan/"+pid+"/submit",{method:"POST"}).then(function(){
+        toast("提交成功","success");loadRecords();
+    }).catch(function(e){toast(e.error||"提交失败","error");});
+}
+
+function withdrawPlan(pid){
+    if(!confirm("确认申请撤回？"))return;
+    api("/api/daily-plan/"+pid+"/return",{method:"POST",body:{reason:"班组申请撤回"}}).then(function(){
+        toast("已申请撤回","success");loadRecords();
+    }).catch(function(e){toast(e.error||"撤回失败","error");});
+}
+
+function deletePlan(pid){
+    if(!confirm("确认删除？"))return;
+    api("/api/daily-plan/"+pid,{method:"DELETE"}).then(function(){
+        toast("已删除","success");loadRecords();
+    }).catch(function(e){toast(e.error||"删除失败","error");});
+}
+
+function editPlan(pid,teamId,planDate){
+    window.location.href="/schedule-page?team_id="+teamId+"&date="+planDate;
+}
+</script>
+{% endblock %}

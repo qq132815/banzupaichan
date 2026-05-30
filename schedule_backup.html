@@ -1,0 +1,791 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>馃搳 鎺掔彮 &amp; 鐢樼壒鍥?/h1>
+<div class="page-actions" id="plan-actions"></div>
+</div>
+<!-- Plan Status -->
+<div id="plan-status-bar" class="toolbar" style="display:none">
+<span id="plan-status-badge"></span>
+<span id="plan-status-text" style="font-size:13px;color:#6b7280"></span>
+<div style="margin-left:auto;display:flex;gap:8px" id="plan-btns"></div>
+</div>
+<!-- Team/Date -->
+<div class="toolbar">
+<label>鐝粍锛?/label>
+<select id="team-select" onchange="onTeamChange()"><option value="">-- 璇烽€夋嫨 --</option></select>
+<label>鏃ユ湡锛?/label>
+<input type="date" id="schedule-date" onchange="onDateChange()">
+<span id="work-schedule-hint" style="font-size:12px;color:#6b7280;margin-left:8px"></span>
+{% if session.get('role') == 'team' %}
+<button class="btn btn-success" onclick="showAddTask()">锛?鏂板鎺掔彮</button>
+{% endif %}
+</div>
+<!-- Gantt Chart (full width, equipment as rows) -->
+<div id="gantt-panel" class="card" style="display:none">
+<div class="card-header"><h2>馃搳 鐢樼壒鍥?/h2><span id="gantt-hint" style="font-size:12px;color:#9ca3af">鎷栨嫿浠诲姟鏉″彲璋冩暣鏃堕棿 | 鎷栧埌鍏朵粬璁惧琛屽彲鏇存崲璁惧</span></div>
+<div class="card-body" style="padding:0;overflow-x:auto">
+<div class="gantt-container" id="gantt-container">
+<div class="gantt-header" id="gantt-header"></div>
+<div class="gantt-body" id="gantt-body"></div>
+</div>
+<div class="gantt-legend" style="padding:10px 16px">
+<span><div class="dot" style="background:#ef4444"></div>P0</span>
+<span><div class="dot" style="background:#3b82f6"></div>P1</span>
+<span><div class="dot" style="background:#6b7280"></div>P2</span>
+<span style="color:#ef4444;font-size:11px">鈹?褰撳墠鏃堕棿</span>
+<span style="color:#9ca3af;font-size:11px;margin-left:12px">浼戞伅: 10:00-10:10 / 11:45-12:45 / 15:00-15:10</span>
+</div>
+</div>
+</div>
+<!-- Schedule Table -->
+<div id="schedule-section" class="card" style="display:none;margin-top:16px">
+<div class="card-header"><h2>馃搵 鎺掔彮鏄庣粏</h2><span id="task-count" style="color:#6b7280;font-size:13px"></span></div>
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>璁惧</th><th>浜у搧鍚嶇О</th><th>宸ュ簭</th><th>宸ュ崟鍙?/th><th>浜哄憳</th><th>鏃堕棿</th><th>宸ユ椂</th><th>浜ц兘/h</th><th>鏁伴噺</th><th>浼樺厛绾?/th><th>鎿嶄綔</th></tr></thead>
+<tbody id="schedule-tbody"></tbody>
+</table>
+<div id="schedule-empty" class="table-empty" style="display:none">鏆傛棤鎺掔彮</div>
+</div>
+</div>
+</div>
+<!-- Tooltip -->
+<div class="tooltip" id="gantt-tooltip" style="display:none"></div>
+<!-- Modal -->
+<div class="modal-overlay" id="task-modal">
+<div class="modal">
+<div class="modal-header"><h3 id="modal-title">鏂板鎺掔彮</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+<div class="modal-body">
+<div class="form-group"><label>馃攳 鎼滅储宸ュ崟/浜у搧缂栫爜</label><div class="search-box"><input type="text" class="form-control" id="order-search" placeholder="杈撳叆宸ュ崟鍙锋垨浜у搧缂栫爜..." oninput="searchOrders()"><div id="order-results" class="search-results"></div></div></div>
+<div id="selected-order" style="display:none"><div class="info-card">
+<p><strong>宸ュ崟锛?/strong><span id="sel-order-no"></span> &nbsp; <strong>浜у搧锛?/strong><span id="sel-product-code"></span> &nbsp; <strong>鍚嶇О锛?/strong><span id="sel-product-name"></span></p>
+<p><strong>鏁伴噺锛?/strong><span id="sel-quantity"></span> &nbsp; <strong>宸插畬鎴愶細</strong><span id="sel-completed"></span> &nbsp; <strong>浜ゆ湡锛?/strong><span id="sel-due-date"></span></p>
+<div id="sel-progress" style="margin-top:8px"></div>
+</div></div>
+<div class="form-row">
+<div class="form-group"><label>宸ュ簭</label><select class="form-control" id="process-select" onchange="onProcessChange()"><option value="">-- 鍏堟悳绱㈠伐鍗?--</option></select></div>
+<div class="form-group"><label>璁惧</label><select class="form-control" id="equipment-select" onchange="onEquipChange()"><option value="">-- 鍏堥€夊伐搴?--</option></select></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>鐢熶骇浜哄憳</label><input type="text" class="form-control" id="operator" placeholder="濮撳悕"></div>
+<div class="form-group"><label>浼樺厛绾?/label><select class="form-control" id="priority"><option value="P0">P0 涓绘満鍘?/option><option value="P1">P1 鍔犲伐鍗?/option><option value="P2" selected>P2 搴撳瓨</option></select></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>寮€濮嬫椂闂?/label><select class="form-control" id="start-time"></select></div>
+<div class="form-group"><label>缁撴潫鏃堕棿</label><select class="form-control" id="end-time"></select></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>宸ユ椂(h)</label><input type="number" class="form-control" id="work-hours" step="0.25" oninput="calcQty()"></div>
+<div class="form-group"><label>浜ц兘/h</label><input type="number" class="form-control" id="capacity" step="1" oninput="calcQty()"><span style="font-size:11px;color:#9ca3af" id="capacity-hint"></span></div>
+<div class="form-group"><label>浜ч噺</label><input type="number" class="form-control" id="plan-qty"><span style="font-size:11px;color:#9ca3af">= 宸ユ椂 脳 浜ц兘</span></div>
+</div>
+<div class="form-inline">
+<label><input type="checkbox" id="is-overtime" onchange="onOvertimeChange()"> 鍔犵彮锛?7:30-20:00锛?/label>
+<span id="overtime-hint" style="font-size:12px;color:#9ca3af;margin-left:8px"></span>
+</div>
+<div id="conflict-msg" class="conflict-warning" style="display:none"><span class="cw-icon">鈿狅笍</span><span id="conflict-text"></span></div>
+</div>
+<div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">鍙栨秷</button><button class="btn btn-primary" onclick="saveTask()">淇濆瓨</button></div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var currentTeamId=null, selectedOrder=null, editingId=null, currentPlan=null;
+var CELL_W=80;
+var allEquips=[], allTasks=[];
+var USER_ROLE="{{ session.get('role','') }}";
+var USER_TEAM={{ session.get('team_id','null') }};
+
+// Work time slots (regular hours)
+var WORK_SLOTS=[
+    {start:"08:00",end:"10:00",type:"work"},
+    {start:"10:00",end:"10:10",type:"break"},
+    {start:"10:10",end:"11:45",type:"work"},
+    {start:"11:45",end:"12:45",type:"break"},
+    {start:"12:45",end:"15:00",type:"work"},
+    {start:"15:00",end:"15:10",type:"break"},
+    {start:"15:10",end:"17:00",type:"work"}
+];
+var OT_SLOT={start:"17:30",end:"20:00",type:"overtime"};
+
+// Generate time options (every 5 min from 08:00 to 20:00)
+var TIME_OPTIONS=[];
+for(var h=8;h<=20;h++){for(var m=0;m<60;m+=5){var t=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');if(t>="08:00"&&t<="20:00")TIME_OPTIONS.push(t);}}
+var GANTT_HOURS=[8,9,10,11,12,13,14,15,16,17,18,19,20];
+
+// ========== Init ==========
+(function(){
+    var today=new Date().toISOString().split("T")[0];
+    document.getElementById("schedule-date").value=today;
+    populateTimeSelects();
+    updateWorkHint();
+    fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
+        var sel=document.getElementById("team-select");
+        d.forEach(function(t){
+            var o=document.createElement("option");o.value=t.id;o.textContent=t.name;
+            if(USER_ROLE==='team'&&USER_TEAM==t.id)o.selected=true;
+            sel.appendChild(o);
+        });
+        if(USER_ROLE==='team'){currentTeamId=USER_TEAM;onTeamChange();}
+    });
+})();
+
+function populateTimeSelects(){
+    var sSel=document.getElementById("start-time");
+    var eSel=document.getElementById("end-time");
+    sSel.innerHTML="";eSel.innerHTML="";
+    TIME_OPTIONS.forEach(function(t){
+        var o1=document.createElement("option");o1.value=t;o1.textContent=t;sSel.appendChild(o1);
+        var o2=document.createElement("option");o2.value=t;o2.textContent=t;eSel.appendChild(o2);
+    });
+    sSel.value="08:00";eSel.value="17:00";
+    sSel.addEventListener("change",function(){autoCalcHours();checkOvertime();});
+    eSel.addEventListener("change",function(){autoCalcHours();checkOvertime();});
+}
+
+function updateWorkHint(){
+    var el=document.getElementById("work-schedule-hint");
+    el.textContent="鐝: 08:00-10:00 / 10:10-11:45 / 12:45-15:00 / 15:10-17:00 | 鍔犵彮: 17:30-20:00";
+}
+
+function isToday(){
+    var d=document.getElementById("schedule-date").value;
+    return d===new Date().toISOString().split("T")[0];
+}
+
+function onOvertimeChange(){
+    var cb=document.getElementById("is-overtime");
+    var hint=document.getElementById("overtime-hint");
+    if(cb.checked){
+        if(!isToday()){
+            cb.checked=false;
+            hint.textContent="鈿狅笍 鍙湁褰撴棩鎵嶈兘鍔犵彮";hint.style.color="#dc2626";
+            return;
+        }
+        document.getElementById("end-time").value="20:00";
+        hint.textContent="鍔犵彮鏃舵: 17:30-20:00";hint.style.color="#f59e0b";
+    }else{
+        document.getElementById("end-time").value="17:00";
+        hint.textContent="";
+    }
+    autoCalcHours();
+}
+
+function checkOvertime(){
+    var endVal=document.getElementById("end-time").value;
+    var startVal=document.getElementById("start-time").value;
+    var cb=document.getElementById("is-overtime");
+    if(endVal>"17:00"){
+        if(!isToday()){
+            document.getElementById("end-time").value="17:00";
+            document.getElementById("overtime-hint").textContent="鈿狅笍 鍙湁褰撴棩鎵嶈兘瓒呰繃17:00";
+            document.getElementById("overtime-hint").style.color="#dc2626";
+            return;
+        }
+        cb.checked=true;
+        document.getElementById("overtime-hint").textContent="鍔犵彮鏃舵: 17:30-20:00";
+    }else{
+        cb.checked=false;
+        document.getElementById("overtime-hint").textContent="";
+    }
+}
+
+// Calculate actual work hours (excluding breaks)
+function calcWorkHours(start,end){
+    var sm=parseInt(start.split(":")[0])*60+parseInt(start.split(":")[1]);
+    var em=parseInt(end.split(":")[0])*60+parseInt(end.split(":")[1]);
+    if(em<=sm)return 0;
+    // Simple: total time minus known break periods
+    var total=em-sm;
+    // Subtract breaks that fall within range
+    var breaks=[
+        {s:600,e:610},   // 10:00-10:10
+        {s:705,e:765},   // 11:45-12:45
+        {s:900,e:910}    // 15:00-15:10
+    ];
+    breaks.forEach(function(b){
+        var overlapStart=Math.max(sm,b.s);
+        var overlapEnd=Math.min(em,b.e);
+        if(overlapEnd>overlapStart)total-=(overlapEnd-overlapStart);
+    });
+    return Math.round(total/60*100)/100;
+}
+
+function autoCalcHours(){
+    var s=document.getElementById("start-time").value;
+    var e=document.getElementById("end-time").value;
+    if(s&&e){
+        var h=calcWorkHours(s,e);
+        document.getElementById("work-hours").value=h>0?h.toFixed(2):"0";
+        calcQty();
+    }
+}
+
+function onTeamChange(){
+    currentTeamId=document.getElementById("team-select").value;
+    if(!currentTeamId)return;
+    loadPlan();
+}
+function onDateChange(){if(currentTeamId)loadPlan();}
+
+// ========== Daily Plan ==========
+function loadPlan(){
+    var dt=document.getElementById("schedule-date").value;
+    fetch("/api/daily-plan?team_id="+currentTeamId+"&date="+dt).then(function(r){return r.json()}).then(function(plan){
+        currentPlan=plan;renderPlanStatus();loadData();
+    });
+}
+function renderPlanStatus(){
+    var bar=document.getElementById("plan-status-bar");
+    var badge=document.getElementById("plan-status-badge");
+    var text=document.getElementById("plan-status-text");
+    var btns=document.getElementById("plan-btns");
+    bar.style.display="flex";
+    var s=currentPlan.status;
+    var map={draft:['badge-gray','鑽夌'],submitted:['badge-yellow','寰呭鎵?],approved:['badge-green','宸查€氳繃'],rejected:['badge-red','宸叉嫆缁?],returned:['badge-orange','宸查€€鍥?]};
+    var cls=map[s]||['badge-gray',s];
+    badge.innerHTML='<span class="badge '+cls[0]+'">'+cls[1]+'</span>';
+    text.textContent=s==='draft'?'缂栬緫涓?:s==='submitted'?'绛夊緟瀹℃壒':s==='approved'?'宸查€氳繃锛屼笉鍙慨鏀?:s==='returned'?'宸查€€鍥烇紝璇蜂慨鏀?:'';
+    btns.innerHTML='';
+    if((s==='draft'||s==='returned')&&USER_ROLE==='team'){
+        btns.innerHTML='<button class="btn btn-primary" onclick="submitPlan()">馃摛 鎻愪氦璁″垝</button>';
+    }
+    var addBtn=document.querySelector(".btn-success");
+    if(addBtn)addBtn.disabled=(s==='approved');
+}
+function submitPlan(){
+    fetch("/api/daily-plan/"+currentPlan.id+"/submit",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+        if(d.ok){toast("璁″垝宸叉彁浜?,"success");loadPlan();}else{toast(d.error||"澶辫触","error");}
+    });
+}
+
+// ========== Load Data ==========
+function loadData(){
+    document.getElementById("gantt-panel").style.display="block";
+    document.getElementById("schedule-section").style.display="block";
+    var dt=document.getElementById("schedule-date").value;
+    Promise.all([
+        fetch("/api/equipments?team_id="+currentTeamId).then(function(r){return r.json()}),
+        fetch("/api/schedule?team_id="+currentTeamId+"&date="+dt).then(function(r){return r.json()})
+    ]).then(function(res){
+        allEquips=res[0];allTasks=res[1];
+        renderGantt();renderTable();
+    });
+}
+
+// ========== Gantt Chart ==========
+function renderGantt(){
+    var hdr=document.getElementById("gantt-header");
+    var body=document.getElementById("gantt-body");
+    hdr.innerHTML='<div class="gantt-label" id="gantt-hdr-label">璁惧</div>';
+    GANTT_HOURS.forEach(function(h){
+        var cls="gantt-hour";
+        hdr.innerHTML+='<div class="'+cls+'">'+h+':00</div>';
+    });
+    body.innerHTML="";
+    // Calc max label width
+    var tmp=document.createElement("span");
+    tmp.style.cssText="position:absolute;visibility:hidden;font-size:13px;font-weight:600;padding:0";
+    document.body.appendChild(tmp);
+    var maxW=0;
+    allEquips.forEach(function(eq){tmp.textContent=eq.equipment_name;var w=tmp.getBoundingClientRect().width;if(w>maxW)maxW=w;});
+    document.body.removeChild(tmp);
+    var labelW=Math.ceil(maxW)+24;
+    document.getElementById("gantt-hdr-label").style.width=labelW+"px";
+    document.getElementById("gantt-hdr-label").style.minWidth=labelW+"px";
+    allEquips.forEach(function(eq,idx){
+        var row=document.createElement("div");row.className="gantt-row";
+        row.setAttribute("data-equip-id",eq.id);
+        row.setAttribute("data-equip-idx",idx);
+        var hasTask=allTasks.some(function(t){return t.equipment_id==eq.id});
+        var lblBg=hasTask?'background:#ecfdf5;border-left:3px solid #10b981':'';
+        row.innerHTML='<div class="gantt-label" style="'+lblBg+'">'+eq.equipment_name+'</div>';
+        var barArea=document.createElement("div");barArea.className="gantt-bars";barArea.style.position="relative";
+        barArea.setAttribute("data-equip-id",eq.id);
+        // Break shading
+        GANTT_HOURS.forEach(function(){var cell=document.createElement("div");cell.className="gantt-cell";barArea.appendChild(cell);});
+        // Break zone indicators
+        addBreakZone(barArea,10,10+1/6,9,10);    // 10:00-10:10
+        addBreakZone(barArea,11+3/4,12+3/4,9,10); // 11:45-12:45
+        addBreakZone(barArea,15,15+1/6,9,10);     // 15:00-15:10
+
+        var eqTasks=allTasks.filter(function(t){return t.equipment_id==eq.id});
+        eqTasks.forEach(function(t){
+            if(!t.start_time||!t.end_time)return;
+            var sh=parseInt(t.start_time.split(":")[0]),sm=parseInt(t.start_time.split(":")[1])||0;
+            var eh=parseInt(t.end_time.split(":")[0]),em=parseInt(t.end_time.split(":")[1])||0;
+            var left=(sh-8)*CELL_W+(sm/60)*CELL_W;
+            var width=(eh-sh)*CELL_W+((em-sm)/60)*CELL_W;
+            if(width<20)width=20;
+            var bar=document.createElement("div");
+            bar.className="gantt-bar priority-"+(t.priority||'P2');
+            bar.style.left=left+"px";bar.style.width=width+"px";
+            bar.setAttribute("data-id",t.id);bar.setAttribute("data-equip-id",eq.id);
+            // Bar content
+            var label=(t.product_code||t.work_order_no||'');
+            bar.innerHTML='<div class="bar-inner"><div class="bar-title">'+label+'</div><div class="bar-sub">'+(t.process_name||'')+' | '+t.quantity+' | '+(t.operator||'-')+'</div></div>'
+                +'<div class="resize-handle rh-left"></div>'
+                +'<div class="resize-handle rh-right"></div>';
+            // Click to edit
+            bar.addEventListener("click",function(e){
+                if(e.target.classList.contains("resize-handle"))return;
+                if(bar._suppressClick)return;
+                editTask(t.id);
+            });
+            // Resize handles
+            bar.querySelector(".rh-left").addEventListener("mousedown",function(e){startResize(e,t,bar,"left")});
+            bar.querySelector(".rh-right").addEventListener("mousedown",function(e){startResize(e,t,bar,"right")});
+            // Full bar drag to change equipment
+            bar.addEventListener("mousedown",function(e){
+                if(e.target.classList.contains("resize-handle"))return;
+                startBarDrag(e,t,bar);
+            });
+            // Tooltip
+            bar.addEventListener("mouseenter",function(e){showTooltip(e,t)});
+            bar.addEventListener("mouseleave",hideTooltip);
+            bar.addEventListener("mousemove",function(e){
+                var tip=document.getElementById("gantt-tooltip");
+                if(tip.style.display==="block"){
+                    var cRect=document.getElementById("gantt-container").getBoundingClientRect();
+                    tip.style.left=(e.clientX-cRect.left+12)+"px";
+                    tip.style.top=(e.clientY-cRect.top+12)+"px";
+                }
+            });
+            barArea.appendChild(bar);
+        });
+
+        row.querySelector(".gantt-label").style.width=labelW+"px";
+        row.querySelector(".gantt-label").style.minWidth=labelW+"px";
+        row.appendChild(barArea);body.appendChild(row);
+    });
+    // Enable click-to-add on empty areas
+    body.querySelectorAll(".gantt-bars").forEach(function(area){
+        area.addEventListener("dblclick",function(e){
+            if(e.target.closest(".gantt-bar"))return;
+            var eqId=area.getAttribute("data-equip-id");
+            var rect=area.getBoundingClientRect();
+            var x=e.clientX-rect.left;
+            var hour=8+x/CELL_W;
+            var h=Math.floor(hour);var m=Math.round((hour-h)*60/5)*5;
+            var timeStr=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+            showAddTaskFor({id:eqId,_timeHint:timeStr});
+        });
+    });
+}
+
+function addBreakZone(barArea,startH,endH){
+    var left=(startH-8)*CELL_W;
+    var width=(endH-startH)*CELL_W;
+    var zone=document.createElement("div");
+    zone.style.cssText="position:absolute;top:0;bottom:0;left:"+left+"px;width:"+width+"px;background:repeating-linear-gradient(45deg,transparent,transparent 3px,rgba(0,0,0,0.03) 3px,rgba(0,0,0,0.03) 6px);pointer-events:none;z-index:0";
+    barArea.appendChild(zone);
+}
+
+// ========== Tooltip ==========
+function showTooltip(e,t){
+    var tip=document.getElementById("gantt-tooltip");
+    tip.innerHTML='<div class="tt-title">'+(t.product_code||t.work_order_no)+'</div>'
+        +'<div class="tt-row"><span class="tt-label">宸ュ簭锛?/span><span>'+(t.process_name||'')+'</span></div>'
+        +'<div class="tt-row"><span class="tt-label">璁惧锛?/span><span>'+(t.equipment_code||'')+'</span></div>'
+        +'<div class="tt-row"><span class="tt-label">鏃堕棿锛?/span><span>'+(t.start_time||'')+' - '+(t.end_time||'')+'</span></div>'
+        +'<div class="tt-row"><span class="tt-label">鏁伴噺锛?/span><span>'+t.quantity+'</span></div>'
+        +'<div class="tt-row"><span class="tt-label">浜哄憳锛?/span><span>'+(t.operator||'-')+'</span></div>'
+        +'<div class="tt-row"><span class="tt-label">浼樺厛绾э細</span><span>'+(t.priority||'P2')+'</span></div>';
+    tip.style.display="block";
+    var cRect=document.getElementById("gantt-container").getBoundingClientRect();
+    tip.style.left=(e.clientX-cRect.left+12)+"px";
+    tip.style.top=(e.clientY-cRect.top+12)+"px";
+}
+function hideTooltip(){document.getElementById("gantt-tooltip").style.display="none";}
+
+// ========== Schedule Table ==========
+function renderTable(){
+    var tb=document.getElementById("schedule-tbody");tb.innerHTML="";
+    var empty=document.getElementById("schedule-empty");
+    document.getElementById("task-count").textContent=allTasks.length+" 鏉?;
+    if(!allTasks.length){empty.style.display="block";return;}empty.style.display="none";
+    var canEdit=currentPlan&&currentPlan.status!=='approved';
+    allTasks.forEach(function(s){
+        var tr=document.createElement("tr");
+        var ot=s.is_overtime?' <span class="badge badge-orange">鍔犵彮</span>':'';
+        var actions='';
+        if(canEdit)actions='<div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editTask('+s.id+')">缂栬緫</button><button class="btn btn-danger btn-sm" onclick="deleteTask('+s.id+')">鍒?/button></div>';
+        else actions='<span style="color:#9ca3af;font-size:12px">閿佸畾</span>';
+        tr.innerHTML='<td>'+(s.equipment_code||'')+'</td>'
+            +'<td><strong>'+(s.product_code||s.work_order_no||'')+'</strong></td>'
+            +'<td>'+(s.process_name||'')+'</td>'
+            +'<td>'+(s.work_order_no||'')+'</td>'
+            +'<td>'+(s.operator||'-')+'</td>'
+            +'<td>'+(s.start_time||'')+'-'+(s.end_time||'')+ot+'</td>'
+            +'<td>'+(s.hours||0)+'</td>'
+            +'<td>'+(s.capacity_per_hour||0)+'</td>'
+            +'<td><strong>'+s.quantity+'</strong></td>'
+            +'<td>'+priorityLabel(s.priority)+'</td>'
+            +'<td>'+actions+'</td>';
+        tb.appendChild(tr);
+    });
+}
+
+// ========== Modal ==========
+function showAddTask(){
+    if(!currentTeamId){toast("璇峰厛閫夋嫨鐝粍","warning");return;}
+    if(currentPlan&&currentPlan.status==='approved'){toast("璁″垝宸查€氳繃","warning");return;}
+    editingId=null;resetForm();document.getElementById("modal-title").textContent="鏂板鎺掔彮";
+    document.getElementById("task-modal").classList.add("show");
+}
+function showAddTaskFor(eq){
+    showAddTask();
+    if(eq._timeHint){
+        document.getElementById("start-time").value=eq._timeHint;
+        autoCalcHours();
+    }
+    window._preselectEquipment=eq;
+}
+function closeModal(){document.getElementById("task-modal").classList.remove("show");document.getElementById("order-results").innerHTML="";document.getElementById("conflict-msg").style.display="none";document.getElementById("overtime-hint").textContent="";}
+function resetForm(){
+    document.getElementById("order-search").value="";
+    document.getElementById("selected-order").style.display="none";
+    document.getElementById("process-select").innerHTML='<option value="">-- 鍏堟悳绱㈠伐鍗?--</option>';
+    document.getElementById("equipment-select").innerHTML='<option value="">-- 鍏堥€夊伐搴?--</option>';
+    document.getElementById("operator").value="";
+    document.getElementById("start-time").value="08:00";
+    document.getElementById("end-time").value="17:00";
+    document.getElementById("work-hours").value="";
+    document.getElementById("capacity").value="";
+    document.getElementById("plan-qty").value="";
+    document.getElementById("capacity-hint").textContent="";
+    document.getElementById("priority").value="P2";
+    document.getElementById("is-overtime").checked=false;
+    selectedOrder=null;window._preselectEquipment=null;
+    autoCalcHours();
+}
+function editTask(id){
+    var t=allTasks.find(function(x){return x.id===id});if(!t)return;
+    editingId=id;document.getElementById("modal-title").textContent="缂栬緫鎺掔彮";
+    document.getElementById("order-search").value=t.work_order_no||"";
+    document.getElementById("selected-order").style.display="none";
+    document.getElementById("sel-order-no").textContent=t.work_order_no||"";
+    document.getElementById("sel-product-code").textContent=t.product_code||"";
+    document.getElementById("operator").value=t.operator||"";
+    document.getElementById("start-time").value=t.start_time||"08:00";
+    document.getElementById("end-time").value=t.end_time||"17:00";
+    document.getElementById("work-hours").value=t.hours||"";
+    document.getElementById("capacity").value=t.capacity_per_hour||"";
+    document.getElementById("plan-qty").value=t.quantity||"";
+    document.getElementById("priority").value=t.priority||"P2";
+    document.getElementById("is-overtime").checked=!!t.is_overtime;
+    document.getElementById("equipment-select").innerHTML='<option value="'+t.equipment_id+'">'+(t.equipment_code||'')+' - '+(t.equipment_name||'')+'</option>';
+    document.getElementById("process-select").innerHTML='<option value="'+t.process_code+'">'+(t.process_name||t.process_code)+'</option>';
+    document.getElementById("task-modal").classList.add("show");
+    checkOvertime();
+}
+
+// ========== Search ==========
+function searchOrders(){
+    var q=document.getElementById("order-search").value;
+    if(q.length<1){document.getElementById("order-results").innerHTML="";return;}
+    fetch("/api/search-orders?q="+encodeURIComponent(q)).then(function(r){return r.json()}).then(function(d){
+        var box=document.getElementById("order-results");box.innerHTML="";
+        if(!d.length){box.innerHTML='<div class="search-item"><div class="si-sub">鏃犲尮閰?/div></div>';return;}
+        d.forEach(function(o){
+            var div=document.createElement("div");div.className="search-item";
+            div.innerHTML='<div class="si-main">'+o.order_no+'</div><div class="si-sub">'+o.product_code+' | '+(o.product_name||'')+' | 鏁伴噺:'+o.quantity+'</div>';
+            div.onclick=function(){selectOrder(o)};box.appendChild(div);
+        });
+    });
+}
+function selectOrder(o){
+    selectedOrder=o;
+    document.getElementById("sel-order-no").textContent=o.order_no;
+    document.getElementById("sel-product-code").textContent=o.product_code;
+    document.getElementById("sel-product-name").textContent=o.product_name||"";
+    document.getElementById("sel-quantity").textContent=o.quantity;
+    document.getElementById("sel-due-date").textContent=o.due_date||"";
+    var comp=o.completed_qty||0;
+    document.getElementById("sel-completed").textContent=comp+"/"+(o.quantity||0)+" ("+(o.quantity?Math.round(comp/o.quantity*100):0)+"%)";
+    // Parse and display process progress
+    var progEl=document.getElementById("sel-progress");
+    if(o.process_progress&&o.process_progress!="None"){
+        var steps=o.process_progress.split("->");
+        var html='<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+        steps.forEach(function(s,i){
+            s=s.trim();
+            if(i>0)html+='<span style="color:#9ca3af">鈫?/span>';
+            // Parse: name銆恈ompleted/total銆戯紙pct锛?
+            var m=s.match(/(.+?)銆?\d+)\/(\d+)銆戯紙(\d+)%锛?);
+            if(m){
+                var pct=parseInt(m[4]);
+                var bg=pct>=80?'#dcfce7':pct>=50?'#fef3c7':'#fef2f2';
+                var fg=pct>=80?'#059669':pct>=50?'#d97706':'#dc2626';
+                html+='<div style="background:'+bg+';border:1px solid '+fg+'20;border-radius:6px;padding:4px 10px;font-size:12px">';
+                html+='<div style="font-weight:600;color:#111827">'+m[1]+'</div>';
+                html+='<div style="color:'+fg+'">'+m[2]+'/'+m[3]+' ('+m[4]+'%)</div>';
+                html+='<div style="background:#e5e7eb;border-radius:3px;height:4px;margin-top:3px"><div style="background:'+fg+';height:4px;border-radius:3px;width:'+pct+'%"></div></div>';
+                html+='</div>';
+            }else{
+                html+='<span style="font-size:12px;color:#6b7280">'+s+'</span>';
+            }
+        });
+        html+='</div>';
+        progEl.innerHTML=html;
+    }else{progEl.innerHTML="";}
+    document.getElementById("selected-order").style.display="block";
+    document.getElementById("order-results").innerHTML="";
+    document.getElementById("order-search").value=o.order_no;
+    fetch("/api/product-processes?product_code="+encodeURIComponent(o.product_code)).then(function(r){return r.json()}).then(function(d){
+        var sel=document.getElementById("process-select");sel.innerHTML='<option value="">-- 閫夋嫨宸ュ簭 --</option>';
+        var seen={};
+        d.forEach(function(p){
+            if(seen[p.process_name])return;seen[p.process_name]=true;
+            var opt=document.createElement("option");opt.value=p.process_code;
+            opt.setAttribute("data-name",p.process_name);opt.setAttribute("data-team",p.team_name);
+            opt.textContent=p.process_name;  // Only show process name
+            sel.appendChild(opt);
+        });
+    });
+}
+function onProcessChange(){
+    var pc=document.getElementById("process-select").value;if(!pc)return;
+    fetch("/api/process-equipment?process_code="+encodeURIComponent(pc)).then(function(r){return r.json()}).then(function(d){
+        var sel=document.getElementById("equipment-select");sel.innerHTML='<option value="">-- 閫夋嫨璁惧 --</option>';
+        d.forEach(function(eq){
+            var o=document.createElement("option");o.value=eq.id;o.setAttribute("data-cap",eq.capacity_per_hour||0);
+            o.textContent=eq.equipment_code+" - "+eq.equipment_name+" ("+eq.capacity_per_hour+"/h)";sel.appendChild(o);
+        });
+        if(window._preselectEquipment){for(var i=0;i<sel.options.length;i++){if(sel.options[i].value==window._preselectEquipment.id){sel.selectedIndex=i;onEquipChange();break;}}}
+    });
+}
+function onEquipChange(){
+    var opt=document.getElementById("equipment-select").options[document.getElementById("equipment-select").selectedIndex];
+    if(opt&&opt.value){var c=opt.getAttribute("data-cap");if(c&&c!=="0"){document.getElementById("capacity").value=c;document.getElementById("capacity-hint").textContent="鏍囧噯: "+c+"/h";calcQty();}}
+}
+function calcQty(){var h=parseFloat(document.getElementById("work-hours").value)||0;var c=parseFloat(document.getElementById("capacity").value)||0;document.getElementById("plan-qty").value=Math.round(h*c);}
+
+// ========== Save ==========
+function saveTask(){
+    if(!selectedOrder&&!editingId){toast("璇峰厛閫夋嫨宸ュ崟","warning");return;}
+    var eqId=document.getElementById("equipment-select").value;if(!eqId){toast("璇烽€夋嫨璁惧","warning");return;}
+    var ps=document.getElementById("process-select");
+    var pn=ps.options[ps.selectedIndex].getAttribute("data-name")||ps.options[ps.selectedIndex].text;
+    var data={
+        equipment_id:parseInt(eqId),
+        work_order_no:selectedOrder?selectedOrder.order_no:document.getElementById("sel-order-no").textContent,
+        product_code:selectedOrder?selectedOrder.product_code:"",
+        process_code:document.getElementById("process-select").value,
+        process_name:pn,
+        schedule_date:document.getElementById("schedule-date").value,
+        start_time:document.getElementById("start-time").value,
+        end_time:document.getElementById("end-time").value,
+        hours:parseFloat(document.getElementById("work-hours").value)||0,
+        capacity_per_hour:parseFloat(document.getElementById("capacity").value)||0,
+        quantity:parseFloat(document.getElementById("plan-qty").value)||0,
+        is_overtime:document.getElementById("is-overtime").checked?1:0,
+        team_id:parseInt(currentTeamId),
+        priority:document.getElementById("priority").value,
+        operator:document.getElementById("operator").value
+    };
+    var url=editingId?"/api/schedule/"+editingId:"/api/schedule";
+    api(url,{method:editingId?"PUT":"POST",body:data}).then(function(){
+        toast(editingId?"宸叉洿鏂?:"鎺掔彮鎴愬姛","success");closeModal();loadData();loadPlan();
+    }).catch(function(e){
+        if(e.error==='conflict'){document.getElementById("conflict-msg").style.display="flex";document.getElementById("conflict-text").textContent="鍐茬獊锛?+e.conflict_with+" 鍦?"+e.conflict_time;}
+        else if(e.error){toast(e.error,"error");}
+        else toast("淇濆瓨澶辫触","error");
+    });
+}
+function deleteTask(id){if(!confirm("纭畾鍒犻櫎锛?))return;api("/api/schedule/"+id,{method:"DELETE"}).then(function(){toast("宸插垹闄?,"success");loadData();loadPlan();});}
+
+// ========== Resize ==========
+var isResizing=false, resizeState=null;
+function startResize(e,t,bar,side){
+    e.preventDefault();e.stopPropagation();
+    isResizing=true;
+    resizeState={task:t,bar:bar,side:side,startX:e.clientX,origLeft:parseInt(bar.style.left),origWidth:parseInt(bar.style.width)};
+    document.addEventListener("mousemove",onResizeMove);
+    document.addEventListener("mouseup",onResizeEnd);
+    bar.classList.add("dragging");
+    hideTooltip();
+}
+function onResizeMove(e){
+    if(!resizeState)return;
+    var dx=e.clientX-resizeState.startX;
+    if(resizeState.side==="left"){
+        var nl=resizeState.origLeft+dx,nw=resizeState.origWidth-dx;
+        if(nw>=20&&nl>=0){resizeState.bar.style.left=nl+"px";resizeState.bar.style.width=nw+"px";}
+    }else{
+        var nw=resizeState.origWidth+dx;
+        if(nw>=20)resizeState.bar.style.width=nw+"px";
+    }
+}
+function onResizeEnd(e){
+    if(!resizeState)return;
+    document.removeEventListener("mousemove",onResizeMove);
+    document.removeEventListener("mouseup",onResizeEnd);
+    resizeState.bar.classList.remove("dragging");
+    var left=parseInt(resizeState.bar.style.left);
+    var width=parseInt(resizeState.bar.style.width);
+    var sH=8+left/CELL_W, eH=sH+width/CELL_W;
+    var sh=Math.floor(sH),sm=Math.round((sH-sh)*60/30)*30;
+    var eh=Math.floor(eH),em=Math.round((eH-eh)*60/30)*30;
+    if(sm>=60){sh+=1;sm=0;}if(em>=60){eh+=1;em=0;}
+    var ns=String(sh).padStart(2,"0")+":"+String(sm).padStart(2,"0");
+    var ne=String(eh).padStart(2,"0")+":"+String(em).padStart(2,"0");
+    var data=Object.assign({},resizeState.task,{start_time:ns,end_time:ne});
+    delete data.equipment_name;delete data.equipment_code;
+    api("/api/schedule/"+resizeState.task.id,{method:"PUT",body:data}).then(function(){
+        toast("鏃堕棿宸叉洿鏂?,"success");loadData();
+    }).catch(function(err){
+        if(err.error==="conflict")toast("璁惧鍐茬獊","error");else toast("鏇存柊澶辫触","error");
+        loadData();
+    });
+    isResizing=false;resizeState=null;
+}
+
+// ========== Resize ==========
+var resizeState=null;
+function startResize(e,t,bar,side){
+    e.preventDefault();e.stopPropagation();
+    bar._didResize=false;
+    resizeState={task:t,bar:bar,side:side,startX:e.clientX,origLeft:parseInt(bar.style.left),origWidth:parseInt(bar.style.width)};
+    bar.classList.add("dragging");
+    document.addEventListener("mousemove",onResizeMove);
+    document.addEventListener("mouseup",onResizeEnd);
+}
+function onResizeMove(e){
+    if(!resizeState)return;
+    var dx=e.clientX-resizeState.startX;
+    if(Math.abs(dx)>3)resizeState.bar._didResize=true;
+    if(resizeState.side==="left"){
+        var nl=resizeState.origLeft+dx,nw=resizeState.origWidth-dx;
+        if(nw>=20&&nl>=0){resizeState.bar.style.left=nl+"px";resizeState.bar.style.width=nw+"px";}
+    }else{
+        var nw=resizeState.origWidth+dx;
+        if(nw>=20)resizeState.bar.style.width=nw+"px";
+    }
+}
+function onResizeEnd(e){
+    if(!resizeState)return;
+    document.removeEventListener("mousemove",onResizeMove);
+    document.removeEventListener("mouseup",onResizeEnd);
+    resizeState.bar.classList.remove("dragging");
+    if(!resizeState.bar._didResize){
+        resizeState=null;return;
+    }
+    resizeState.bar._suppressClick=true;
+    setTimeout(function(){if(resizeState)resizeState.bar._suppressClick=false;},300);
+    var left=parseInt(resizeState.bar.style.left);
+    var width=parseInt(resizeState.bar.style.width);
+    var sH=8+left/CELL_W,eH=sH+width/CELL_W;
+    var sMin=clampToValid(snapTime(sH*60),true);
+    var eMin=clampToValid(snapTime(eH*60),false);
+    var sh=Math.floor(sMin/60),sm=sMin%60;
+    var eh=Math.floor(eMin/60),em=eMin%60;
+    var ns=String(sh).padStart(2,"0")+":"+String(sm).padStart(2,"0");
+    var ne=String(eh).padStart(2,"0")+":"+String(em).padStart(2,"0");
+    var data=Object.assign({},resizeState.task,{start_time:ns,end_time:ne});
+    delete data.equipment_name;delete data.equipment_code;
+    api("/api/schedule/"+resizeState.task.id,{method:"PUT",body:data}).then(function(){
+        toast("鏃堕棿宸叉洿鏂?,"success");loadData();
+    }).catch(function(err){
+        if(err.error==="conflict")toast("璁惧鍐茬獊","error");else toast("鏇存柊澶辫触","error");
+        loadData();
+    });
+    resizeState=null;
+}
+
+// ========== Bar Drag (change equipment) ==========
+var barDragState=null;
+function startBarDrag(e,t,bar){
+    if(e.target.classList.contains("resize-handle"))return;
+    bar._didDrag=false;
+    barDragState={task:t,bar:bar,startX:e.clientX,startY:e.clientY,origEquipId:t.equipment_id};
+    document.addEventListener("mousemove",onBarDragMove);
+    document.addEventListener("mouseup",onBarDragEnd);
+}
+function onBarDragMove(e){
+    if(!barDragState)return;
+    var dy=e.clientY-barDragState.startY;
+    var dx=e.clientX-barDragState.startX;
+    if(Math.abs(dy)>5||Math.abs(dx)>5)barDragState.bar._didDrag=true;
+    if(barDragState.bar._didDrag){
+        barDragState.bar.style.opacity="0.6";
+        barDragState.bar.style.zIndex="20";
+        barDragState.bar.style.transform="translate("+dx+"px,"+dy+"px)";
+        barDragState.bar.style.boxShadow="0 8px 25px rgba(0,0,0,0.3)";
+    }
+}
+function onBarDragEnd(e){
+    if(!barDragState)return;
+    document.removeEventListener("mousemove",onBarDragMove);
+    document.removeEventListener("mouseup",onBarDragEnd);
+    barDragState.bar.style.opacity="1";
+    barDragState.bar.style.transform="";
+    barDragState.bar.style.zIndex="";
+    barDragState.bar.style.boxShadow="";
+    if(!barDragState.bar._didDrag){
+        barDragState=null;return;
+    }
+    barDragState.bar._suppressClick=true;
+    var tmpBar=barDragState.bar;
+    setTimeout(function(){tmpBar._suppressClick=false;},300);
+    // Find which equipment row we dropped on
+    var rows=document.querySelectorAll(".gantt-row");
+    var newEquipId=null;
+    rows.forEach(function(row){
+        var rect=row.getBoundingClientRect();
+        if(e.clientY>=rect.top&&e.clientY<=rect.bottom){
+            newEquipId=parseInt(row.getAttribute("data-equip-id"));
+        }
+    });
+    if(newEquipId&&newEquipId!==barDragState.origEquipId){
+        var data=Object.assign({},barDragState.task,{equipment_id:newEquipId});
+        delete data.equipment_name;delete data.equipment_code;
+        api("/api/schedule/"+barDragState.task.id,{method:"PUT",body:data}).then(function(){
+            toast("宸茬Щ鍒版柊璁惧","success");loadData();
+        }).catch(function(err){
+            if(err.error==="conflict")toast("鐩爣璁惧鏃堕棿鍐茬獊","error");
+            else toast("绉诲姩澶辫触","error");
+            loadData();
+        });
+    }
+    barDragState=null;
+}
+
+// Valid snap points: 30min intervals, skipping break periods
+var SNAP_POINTS=[
+    480,510,540,570,           // 08:00,08:30,09:00,09:30
+    610,640,670,705,           // 10:10,10:40,11:10,11:45
+    765,795,825,855,885,       // 12:45,13:15,13:45,14:15,14:45
+    910,940,970,1000,1030,1060,1090,1120,1150,1170,1200  // 15:10-20:00
+];
+// After snapping, validate: start must not fall in break, end must not fall in break
+var BREAKS=[{s:600,e:610},{s:705,e:765},{s:900,e:910}];
+function snapTime(minute){
+    var best=SNAP_POINTS[0],bestDist=999;
+    for(var i=0;i<SNAP_POINTS.length;i++){
+        var d=Math.abs(minute-SNAP_POINTS[i]);
+        if(d<bestDist){bestDist=d;best=SNAP_POINTS[i];}
+    }
+    return best;
+}
+function inBreak(m){
+    for(var i=0;i<BREAKS.length;i++){if(m>BREAKS[i].s&&m<BREAKS[i].e)return true;}
+    return false;
+}
+function clampToValid(m,isStart){
+    // If landed inside a break, push to the right boundary of that break
+    for(var i=0;i<BREAKS.length;i++){
+        if(m>BREAKS[i].s&&m<BREAKS[i].e){
+            return isStart?BREAKS[i].e:BREAKS[i].s;
+        }
+    }
+    return m;
+}
+
+function priorityLabel(p){if(p==='P0')return'<span class="badge badge-red">P0</span>';if(p==='P1')return'<span class="badge badge-blue">P1</span>';return'<span class="badge badge-gray">P2</span>';}
+</script>
+{% endblock %}
+

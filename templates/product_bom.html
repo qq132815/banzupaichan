@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><h1>🔩 物料清单(BOM)</h1>
+<div class="page-actions">
+<input type="file" id="import-file" accept=".xlsx" style="display:none" onchange="doImport()">
+<button class="btn btn-outline readonly-hide" onclick="doExport()">📥 导出</button>
+<button class="btn btn-outline readonly-hide" onclick="document.getElementById('import-file').click()">📤 导入</button>
+{% if session.get('role') == 'planner' %}<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>{% endif %}
+</div></div>
+<div class="toolbar">
+<label>搜索：</label>
+<input type="text" id="search" placeholder="搜索父件/子件编码或名称..." oninput="doSearch()" style="width:300px">
+</div>
+<div class="card"><div class="card-body"><div class="table-wrap"><table>
+<thead><tr><th>父件编码</th><th>父件名称</th><th>子件编码</th><th>子件名称</th><th>用量</th><th>单位</th><th>生产班组</th>{% if session.get('role') == 'planner' %}<th>操作</th>{% endif %}</tr></thead>
+<tbody id="tbody"></tbody>
+</table></div></div></div>
+<div class="modal-overlay" id="modal"><div class="modal">
+<div class="modal-header"><h3 id="m-title">新增</h3><button class="modal-close" onclick="closeM()">&times;</button></div>
+<div class="modal-body">
+<div class="form-row"><div class="form-group"><label>父件编码</label><input class="form-control" id="m-parent-code"></div><div class="form-group"><label>父件名称</label><input class="form-control" id="m-parent-name"></div></div>
+<div class="form-row"><div class="form-group"><label>子件编码</label><input class="form-control" id="m-child-code"></div><div class="form-group"><label>子件名称</label><input class="form-control" id="m-child-name"></div></div>
+<div class="form-row"><div class="form-group"><label>用量</label><input type="number" class="form-control" id="m-qty" step="0.01"></div><div class="form-group"><label>单位</label><input class="form-control" id="m-unit"></div><div class="form-group"><label>生产班组</label><input class="form-control" id="m-team"></div></div>
+</div>
+<div class="modal-footer"><button class="btn btn-secondary" onclick="closeM()">取消</button><button class="btn btn-primary" onclick="save()">保存</button></div>
+</div></div>
+
+<style>
+.readonly-hide{display:none}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+    if(USER_ROLE === "team"){
+        document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});
+    }
+});
+</script>
+{% endblock %}
+{% block scripts %}
+<script>var USER_ROLE="{{ session.get('role','') }}";</script>
+<script>
+var editId=null;
+var allData=[];
+function load(){fetch("/api/bom").then(function(r){return r.json()}).then(function(d){allData=d;renderBom(d);});}
+function doSearch(){var q=document.getElementById("search").value.toLowerCase();if(!q){renderBom(allData);return;}var filtered=allData.filter(function(b){return (b.parent_product_code||"").toLowerCase().indexOf(q)>=0||(b.parent_product_name||"").toLowerCase().indexOf(q)>=0||(b.child_product_code||"").toLowerCase().indexOf(q)>=0||(b.child_product_name||"").toLowerCase().indexOf(q)>=0;});renderBom(filtered);}
+function renderBom(d){var tb=document.getElementById("tbody");tb.innerHTML="";d.forEach(function(b){var tr=document.createElement("tr");var ops='';if("{{ session.get('role','') }}"==="planner"){ops='<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="edit('+b.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="del('+b.id+')">删除</button></div></td>';}tr.innerHTML='<td>'+b.parent_product_code+'</td><td>'+(b.parent_product_name||'')+'</td><td>'+(b.child_product_code||'')+'</td><td>'+(b.child_product_name||'')+'</td><td>'+(b.quantity||'')+'</td><td>'+(b.unit||'')+'</td><td>'+(b.process_team||'')+'</td>'+ops;tb.appendChild(tr);});});}
+function showAdd(){editId=null;document.getElementById("m-title").textContent="新增";["m-parent-code","m-parent-name","m-child-code","m-child-name","m-qty","m-unit","m-team"].forEach(function(id){document.getElementById(id).value=""});document.getElementById("modal").classList.add("show");}
+function closeM(){document.getElementById("modal").classList.remove("show");}
+function edit(id){fetch("/api/bom").then(function(r){return r.json()}).then(function(d){var b=d.find(function(x){return x.id===id});if(!b)return;editId=id;document.getElementById("m-title").textContent="编辑";document.getElementById("m-parent-code").value=b.parent_product_code;document.getElementById("m-parent-name").value=b.parent_product_name||"";document.getElementById("m-child-code").value=b.child_product_code||"";document.getElementById("m-child-name").value=b.child_product_name||"";document.getElementById("m-qty").value=b.quantity||"";document.getElementById("m-unit").value=b.unit||"";document.getElementById("m-team").value=b.process_team||"";document.getElementById("modal").classList.add("show");});}
+function save(){var data={parent_product_code:document.getElementById("m-parent-code").value,parent_product_name:document.getElementById("m-parent-name").value,child_product_code:document.getElementById("m-child-code").value,child_product_name:document.getElementById("m-child-name").value,quantity:parseFloat(document.getElementById("m-qty").value)||1,unit:document.getElementById("m-unit").value,process_team:document.getElementById("m-team").value};if(!data.parent_product_code||!data.child_product_code){toast("编码必填","warning");return;}var url=editId?"/api/bom/"+editId:"/api/bom";api(url,{method:editId?"PUT":"POST",body:data}).then(function(){toast("保存成功","success");closeM();load();});}
+function del(id){if(!confirm("确定删除？"))return;api("/api/bom/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");load();});}
+function doImport(){var f=document.getElementById("import-file").files[0];if(!f)return;var fd=new FormData();fd.append("file",f);fetch("/api/import/bom",{method:"POST",body:fd}).then(function(r){return r.json()}).then(function(d){if(d.error)toast(d.error,"error");else{toast("导入 "+d.count+" 条","success");load();}});}
+function doExport(){window.location.href="/api/export/bom";}
+load();
+</script>
+
+<style>
+.readonly-hide{display:none}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+    if(USER_ROLE === "team"){
+        document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});
+    }
+});
+</script>
+{% endblock %}
