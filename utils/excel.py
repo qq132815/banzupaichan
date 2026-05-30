@@ -470,6 +470,32 @@ def import_work_reports(filepath):
         report_qty = gf('report_qty')
         if report_qty == 0 and not gv('order_no'):
             continue
+        # Parse report_hours - may be "30分钟" string or numeric
+        report_hours_raw = gv('report_hours')
+        report_hours = 0
+        if report_hours_raw:
+            import re as _re
+            m = _re.search(r'([\d.]+)', report_hours_raw)
+            if m:
+                val = float(m.group(1))
+                # If contains "分钟" or "min", treat as minutes and convert to hours
+                if '分钟' in report_hours_raw or 'min' in report_hours_raw.lower():
+                    report_hours = round(val / 60, 2)
+                else:
+                    report_hours = val
+        # If no hours, calculate from start/end time
+        if report_hours == 0:
+            st = gv('start_time')
+            et = gv('end_time')
+            if st and et:
+                try:
+                    from datetime import datetime
+                    fmt = '%Y-%m-%d %H:%M:%S'
+                    t1 = datetime.strptime(st[:19], fmt)
+                    t2 = datetime.strptime(et[:19], fmt)
+                    report_hours = round((t2 - t1).total_seconds() / 3600, 2)
+                except:
+                    pass
         c.execute("""INSERT INTO work_reports
             (report_qty, good_qty, bad_qty, report_unit, good_rate, operator, start_time, end_time,
              approve_status, approver, approve_time, creator, create_time, process_name, order_no,
@@ -479,7 +505,7 @@ def import_work_reports(filepath):
              gv('operator'), gv('start_time'), gv('end_time'), gv('approve_status'),
              gv('approver'), gv('approve_time'), gv('creator'), gv('create_time'),
              gv('process_name'), gv('order_no'), gv('product_code'), gv('product_name'),
-             gv('related_no'), gv('equipment'), gf('report_hours'), gf('weld_count'), gv('attendance_note')))
+             gv('related_no'), gv('equipment'), report_hours, gf('weld_count'), gv('attendance_note')))
         count += 1
     conn.commit()
     conn.close()
