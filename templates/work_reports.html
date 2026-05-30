@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>📋 报工数据</h1>
+</div>
+<div class="toolbar">
+<input type="text" id="search" placeholder="搜索工单号/产品编号/工序/人员..." oninput="window._page=1;loadData()" style="width:260px">
+<div style="margin-left:auto;display:flex;gap:8px">
+<button class="btn btn-outline readonly-hide" onclick="doExport()">📤 导出</button>
+<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/work-reports', function(){setTimeout(function(){loadData();}, 500);})">📥 导入</button>
+<button class="btn btn-danger readonly-hide" onclick="clearData()">🗑️ 清空</button>
+</div>
+</div>
+<div class="card">
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>工单编号</th><th>产品编号</th><th>产品名称</th><th>工序</th><th>报工数</th><th>良品数</th><th>不良数</th><th>良品率</th><th>生产人员</th><th>设备</th><th>开始时间</th><th>结束时间</th><th>时长</th><th>状态</th></tr></thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+</div>
+</div>
+<div id="wr-pagination"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+window._page=1;window._pageSize=50;window._total=0;
+
+function loadData(){
+    var q=document.getElementById("search").value;
+    var url="/api/work-reports?page="+window._page+"&page_size="+window._pageSize;
+    if(q)url+="&q="+encodeURIComponent(q);
+    fetch(url).then(function(r){return r.json()}).then(function(resp){
+        var d=resp.data||resp;window._total=resp.total||d.length;
+        renderPagination('wr-pagination',resp.page||1,resp.total_pages||1,'loadData');
+        var tb=document.getElementById("tbody");tb.innerHTML="";
+        d.forEach(function(r){
+            var tr=document.createElement("tr");
+            var st=r.approve_status==='已通过'?'<span class="badge badge-green">已通过</span>':r.approve_status==='已驳回'?'<span class="badge badge-red">已驳回</span>':'<span class="badge badge-gray">'+(r.approve_status||'-')+'</span>';
+            tr.innerHTML='<td>'+(r.order_no||'')+'</td>'
+                +'<td>'+(r.product_code||'')+'</td>'
+                +'<td>'+(r.product_name||'')+'</td>'
+                +'<td>'+(r.process_name||'')+'</td>'
+                +'<td><strong>'+(r.report_qty||0)+'</strong></td>'
+                +'<td>'+(r.good_qty||0)+'</td>'
+                +'<td>'+(r.bad_qty||0)+'</td>'
+                +'<td>'+(r.good_rate||'')+'</td>'
+                +'<td>'+(r.operator||'')+'</td>'
+                +'<td>'+(r.equipment||'')+'</td>'
+                +'<td>'+(r.start_time||'')+'</td>'
+                +'<td>'+(r.end_time||'')+'</td>'
+                +'<td>'+(r.report_hours||0)+'</td>'
+                +'<td>'+st+'</td>';
+            tb.appendChild(tr);
+        });
+    });
+}
+
+function doExport(){
+    fetch("/api/work-reports?page=1&page_size=99999").then(function(r){return r.json()}).then(function(resp){
+        var d=resp.data||resp;
+        if(!d.length){toast("无数据","warning");return;}
+        var headers=["工单编号","产品编号","产品名称","工序","报工数","良品数","不良数","良品率","生产人员","设备","开始时间","结束时间","时长","状态"];
+        var csv=headers.join(",")+"\n";
+        d.forEach(function(r){
+            var row=['"'+(r.order_no||'')+'"','"'+(r.product_code||'')+'"','"'+(r.product_name||'')+'"','"'+(r.process_name||'')+'"',r.report_qty||0,r.good_qty||0,r.bad_qty||0,'"'+(r.good_rate||'')+'"','"'+(r.operator||'')+'"','"'+(r.equipment||'')+'"','"'+(r.start_time||'')+'"','"'+(r.end_time||'')+'"',r.report_hours||0,'"'+(r.approve_status||'')+'"'];
+            csv+=row.join(",")+"\n";
+        });
+        var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+        var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="报工数据.csv";a.click();
+    });
+}
+
+function clearData(){
+    if(!confirm("确定清空所有报工数据？此操作不可恢复！"))return;
+    api("/api/work-reports",{method:"DELETE"}).then(function(){toast("已清空","success");loadData();}).catch(function(){toast("清空失败","error");});
+}
+
+loadData();
+</script>
+{% endblock %}

@@ -182,6 +182,11 @@ def admin_users_page():
 def admin_settings_page():
     return render_template('admin_settings.html')
 
+@app.route('/work-reports-page')
+@login_required
+def work_reports_page():
+    return render_template('work_reports.html')
+
 @app.route('/planner/plans')
 @login_required
 def planner_plans_page():
@@ -1254,6 +1259,50 @@ def api_standard_hours_init():
     conn.commit()
     conn.close()
     return jsonify({'ok': True, 'count': count})
+
+# ========== Work Reports API ==========
+@app.route('/api/work-reports')
+@login_required
+def api_work_reports():
+    q = request.args.get('q', '').strip()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
+    sql = "SELECT * FROM work_reports WHERE 1=1"
+    params = []
+    if q:
+        like = "%" + q + "%"
+        sql += " AND (order_no LIKE ? OR product_code LIKE ? OR product_name LIKE ? OR process_name LIKE ? OR operator LIKE ?)"
+        params.extend([like, like, like, like, like])
+    sql += " ORDER BY id DESC"
+    return jsonify(paginate_query(sql, params, page, page_size))
+
+@app.route('/api/work-reports', methods=['DELETE'])
+@login_required
+@planner_required
+def api_work_reports_clear():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM work_reports")
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/import/work-reports', methods=['POST'])
+@login_required
+@planner_required
+def api_import_work_reports():
+    from utils.excel import import_work_reports
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': '请上传文件'}), 400
+    path = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    f.save(path)
+    try:
+        count = import_work_reports(path)
+        return jsonify({'ok': True, 'success': True, 'count': count})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 # ========== System Settings API ==========
 @app.route('/api/settings', methods=['GET'])

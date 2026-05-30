@@ -418,3 +418,69 @@ def import_molds(filepath):
     conn.commit()
     conn.close()
     return count
+
+def import_work_reports(filepath):
+    """Import work reports from Excel."""
+    import openpyxl
+    from utils.db import get_connection
+    wb = openpyxl.load_workbook(filepath, data_only=True)
+    ws = wb.active
+    cols, headers = _match_headers(ws, {
+        'report_qty': ['报工数', '报工数量'],
+        'good_qty': ['报工良品数', '良品数'],
+        'bad_qty': ['报工不良数', '不良数'],
+        'report_unit': ['报工单位', '单位'],
+        'good_rate': ['报工良品率', '良品率'],
+        'operator': ['生产人员', '操作人', '报工人'],
+        'start_time': ['报工开始时间', '开始时间'],
+        'end_time': ['报工结束时间', '结束时间'],
+        'approve_status': ['审批状态', '状态'],
+        'approver': ['审批人'],
+        'approve_time': ['审批时间'],
+        'creator': ['创建人'],
+        'create_time': ['报工创建时间', '创建时间'],
+        'process_name': ['工序名称', '工序'],
+        'order_no': ['工单编号', '工单号'],
+        'product_code': ['产品编号', '产品编码'],
+        'product_name': ['产品名称'],
+        'related_no': ['关联单据号', '关联单据'],
+        'equipment': ['设备机台', '设备'],
+        'report_hours': ['报工时长', '时长'],
+        'weld_count': ['焊点数量', '焊点'],
+        'attendance_note': ['出勤人员备注', '备注'],
+    })
+    conn = get_connection()
+    c = conn.cursor()
+    count = 0
+    header_row = ws._import_header_row
+    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+        if not row or not row[0]:
+            continue
+        def gv(field):
+            if field not in cols or cols[field] >= len(row):
+                return ''
+            v = row[cols[field]]
+            return str(v).strip() if v is not None else ''
+        def gf(field):
+            if field not in cols or cols[field] >= len(row):
+                return 0
+            v = row[cols[field]]
+            try: return float(v)
+            except: return 0
+        report_qty = gf('report_qty')
+        if report_qty == 0 and not gv('order_no'):
+            continue
+        c.execute("""INSERT INTO work_reports
+            (report_qty, good_qty, bad_qty, report_unit, good_rate, operator, start_time, end_time,
+             approve_status, approver, approve_time, creator, create_time, process_name, order_no,
+             product_code, product_name, related_no, equipment, report_hours, weld_count, attendance_note)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (report_qty, gf('good_qty'), gf('bad_qty'), gv('report_unit'), gv('good_rate'),
+             gv('operator'), gv('start_time'), gv('end_time'), gv('approve_status'),
+             gv('approver'), gv('approve_time'), gv('creator'), gv('create_time'),
+             gv('process_name'), gv('order_no'), gv('product_code'), gv('product_name'),
+             gv('related_no'), gv('equipment'), gf('report_hours'), gf('weld_count'), gv('attendance_note')))
+        count += 1
+    conn.commit()
+    conn.close()
+    return count
