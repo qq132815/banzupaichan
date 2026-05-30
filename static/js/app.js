@@ -54,19 +54,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 // ========== Pagination ==========
-function renderPagination(containerId, currentPage, totalPages, onPageChange, onPageSizeChange) {
+function changePageSize(size, funcName) {
+    window._pageSize = parseInt(size);
+    window._page = 1;
+    window[funcName]();
+}
+function renderPagination(containerId, currentPage, totalPages, onPageChange) {
     var c = document.getElementById(containerId);
     if (!c) return;
-    if (totalPages <= 1 && !onPageSizeChange) { c.innerHTML = ""; return; }
     var html = '<div class="pagination-wrap">';
-    // Page size selector
-    if (onPageSizeChange) {
-        html += '<select class="pagination-size" onchange="' + onPageSizeChange + '(this.value)">';
-        [20,50,100,200].forEach(function(n){
-            html += '<option value="'+n+'"'+(window._pageSize===n?' selected':'')+'>'+n+'/页</option>';
-        });
-        html += '</select>';
-    }
+    html += '<select class="pagination-size" onchange="changePageSize(this.value,\''+onPageChange+'\')">';
+    [20,50,100,200].forEach(function(n){
+        html += '<option value="'+n+'"'+(window._pageSize===n?' selected':'')+'>'+n+'/页</option>';
+    });
+    html += '</select>';
     html += '<div class="pagination-btns">';
     html += '<button class="btn-page" '+ (currentPage<=1?'disabled':'') +' onclick="'+onPageChange+'('+(currentPage-1)+')">‹</button>';
     var start = Math.max(1, currentPage - 2);
