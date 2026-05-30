@@ -176,6 +176,12 @@ def import_page():
 def admin_users_page():
     return render_template('admin_users.html')
 
+@app.route('/admin/settings')
+@login_required
+@planner_required
+def admin_settings_page():
+    return render_template('admin_settings.html')
+
 @app.route('/planner/plans')
 @login_required
 def planner_plans_page():
@@ -1248,6 +1254,30 @@ def api_standard_hours_init():
     conn.commit()
     conn.close()
     return jsonify({'ok': True, 'count': count})
+
+# ========== System Settings API ==========
+@app.route('/api/settings', methods=['GET'])
+@login_required
+def api_get_settings():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT key, value FROM system_settings")
+    r = {row[0]: row[1] for row in c.fetchall()}
+    conn.close()
+    return jsonify(r)
+
+@app.route('/api/settings', methods=['POST'])
+@login_required
+@planner_required
+def api_save_settings():
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    for key, value in data.items():
+        c.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now','localtime'))", (key, str(value)))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
 
 # ========== Export API ==========
 @app.route('/api/export/<data_type>')

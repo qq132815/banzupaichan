@@ -63,6 +63,11 @@ def init_database():
     c.execute("CREATE TABLE IF NOT EXISTS bom (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_product_code TEXT, parent_product_name TEXT, child_product_code TEXT, child_product_name TEXT, quantity REAL, unit TEXT, process_team TEXT)")
     c.execute("CREATE TABLE IF NOT EXISTS standard_hours (id INTEGER PRIMARY KEY AUTOINCREMENT, product_code TEXT NOT NULL, product_name TEXT, process_name TEXT NOT NULL, team_name TEXT, standard_hours REAL DEFAULT 0, setup_time REAL DEFAULT 0, remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')), UNIQUE(product_code, process_name))")
 
+    c.execute("CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT DEFAULT (datetime('now','localtime')))")
+
+    # Insert default publish time if not exists
+    c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('plan_publish_time', '15:00')")
+
     c.execute("CREATE TABLE IF NOT EXISTS personnel (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, name TEXT NOT NULL, department TEXT, position TEXT, team_id INTEGER, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now','localtime')))")
 
     c.execute("CREATE TABLE IF NOT EXISTS molds (id INTEGER PRIMARY KEY AUTOINCREMENT, mold_code TEXT NOT NULL UNIQUE, mold_name TEXT, mold_type TEXT, product_code TEXT, status TEXT DEFAULT 'normal', location TEXT, team_id INTEGER, remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')))")

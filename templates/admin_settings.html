@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>⚙️ 系统设置</h1>
+</div>
+<div class="card">
+<div class="card-body" style="padding:24px;max-width:480px">
+<div class="form-group">
+<label style="font-weight:600;font-size:14px">计划发布时间截止</label>
+<p style="color:#6b7280;font-size:13px;margin:4px 0 8px">超过此时间提交的计划将标记为逾期</p>
+<input type="time" class="form-control" id="publish-time" style="width:160px">
+</div>
+<button class="btn btn-primary" onclick="saveSettings()" style="margin-top:12px">保存</button>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+fetch("/api/settings").then(function(r){return r.json()}).then(function(d){
+    document.getElementById("publish-time").value = d.plan_publish_time || "15:00";
+});
+function saveSettings(){
+    var val = document.getElementById("publish-time").value;
+    api("/api/settings", {method:"POST", body:{plan_publish_time: val}}).then(function(){
+        toast("保存成功", "success");
+    }).catch(function(){toast("保存失败", "error");});
+}
+</script>
+{% endblock %}

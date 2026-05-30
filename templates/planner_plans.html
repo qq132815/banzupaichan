@@ -9,7 +9,7 @@
 </select>
 </div>
 <div class="card"><div class="card-body"><div class="table-wrap"><table>
-<thead><tr><th>班组</th><th>计划日期</th><th>状态</th><th>排班数</th><th>提交时间</th><th>审批时间</th><th>退回原因</th><th>操作</th></tr></thead>
+<thead><tr><th>班组</th><th>计划日期</th><th>状态</th><th>排班数</th><th>提交时间</th><th>是否逾期</th><th>审批时间</th><th>退回原因</th><th>操作</th></tr></thead>
 <tbody id="tbody"></tbody>
 </table><div id="empty" class="table-empty" style="display:none">暂无计划</div>
 </div></div></div>
@@ -17,6 +17,7 @@
 {% block scripts %}
 <script>
 var today=new Date().toISOString().split("T")[0];document.getElementById("filter-date-from").value=today;document.getElementById("filter-date-to").value=today;
+window._publishTime='15:00';fetch('/api/settings').then(function(r){return r.json()}).then(function(d){window._publishTime=d.plan_publish_time||'15:00';});
 function load(){
 var dtFrom=document.getElementById("filter-date-from").value;
 var dtTo=document.getElementById("filter-date-to").value;
@@ -40,7 +41,8 @@ actions='<button class="btn btn-warning btn-sm" onclick="ret('+p.id+')">↩️ �
 fetch("/api/schedule?team_id="+p.team_id+"&date="+p.plan_date).then(function(r){return r.json()}).then(function(tasks){
 var cntCell=tr.querySelector(".task-cnt");if(cntCell)cntCell.textContent=tasks.length;
 });
-tr.innerHTML='<td><strong>'+(p.team_name||'')+'</strong></td><td>'+p.plan_date+'</td><td><span class="badge '+cls[0]+'">'+cls[1]+'</span></td><td class="task-cnt">-</td><td>'+(p.submitted_at||'-')+'</td><td>'+(p.approved_at||'-')+'</td><td>'+(p.reject_reason||'-')+'</td><td>'+actions+'</td>';
+var overdue='-';if(p.submitted_at&&window._publishTime){var parts=p.submitted_at.split(' ');if(parts.length>=2){var t=parts[1].substring(0,5);overdue=t>window._publishTime?'<span class="badge badge-red">逾期</span>':'<span class="badge badge-green">正常</span>';}}
+tr.innerHTML='<td><strong>'+(p.team_name||'')+'</strong></td><td>'+p.plan_date+'</td><td><span class="badge '+cls[0]+'">'+cls[1]+'</span></td><td class="task-cnt">-</td><td>'+(p.submitted_at||'-')+'</td><td>'+overdue+'</td><td>'+(p.approved_at||'-')+'</td><td>'+(p.reject_reason||'-')+'</td><td>'+actions+'</td>';
 tb.appendChild(tr);
 });});}
 function approve(id){if(!confirm("通过此计划？"))return;api("/api/daily-plan/"+id+"/approve",{method:"POST"}).then(function(){toast("已通过","success");load();});}
