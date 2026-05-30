@@ -470,19 +470,25 @@ def import_work_reports(filepath):
         report_qty = gf('report_qty')
         if report_qty == 0 and not gv('order_no'):
             continue
-        # Parse report_hours - may be "30分钟" string or numeric
+        # Parse report_hours - formats: "30分钟", "6小时30分钟", "5小时", "2.5"
         report_hours_raw = gv('report_hours')
         report_hours = 0
-        if report_hours_raw:
+        if report_hours_raw and report_hours_raw != '-':
             import re as _re
-            m = _re.search(r'([\d.]+)', report_hours_raw)
-            if m:
-                val = float(m.group(1))
-                # If contains "分钟" or "min", treat as minutes and convert to hours
-                if '分钟' in report_hours_raw or 'min' in report_hours_raw.lower():
-                    report_hours = round(val / 60, 2)
-                else:
-                    report_hours = val
+            hours_val = 0
+            mins_val = 0
+            hm = _re.search(r'([\d.]+)\s*小时', report_hours_raw)
+            if hm:
+                hours_val = float(hm.group(1))
+            mm = _re.search(r'([\d.]+)\s*分钟', report_hours_raw)
+            if mm:
+                mins_val = float(mm.group(1))
+            if hours_val > 0 or mins_val > 0:
+                report_hours = round(hours_val + mins_val / 60, 2)
+            else:
+                m = _re.search(r'([\d.]+)', report_hours_raw)
+                if m:
+                    report_hours = float(m.group(1))
         # If no hours, calculate from start/end time
         if report_hours == 0:
             st = gv('start_time')
