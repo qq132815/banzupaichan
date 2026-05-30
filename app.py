@@ -979,12 +979,17 @@ def api_production_cycle_delete(cid):
 @app.route('/api/bom')
 @login_required
 def api_bom():
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM bom ORDER BY parent_product_code")
-    r = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return jsonify(r)
+    q = request.args.get('q', '').strip()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
+    sql = "SELECT * FROM bom WHERE 1=1"
+    params = []
+    if q:
+        like = "%" + q + "%"
+        sql += " AND (parent_product_code LIKE ? OR parent_product_name LIKE ? OR child_product_code LIKE ? OR child_product_name LIKE ?)"
+        params.extend([like, like, like, like])
+    sql += " ORDER BY parent_product_code"
+    return jsonify(paginate_query(sql, params, page, page_size))
 
 @app.route('/api/bom', methods=['POST'])
 @login_required
