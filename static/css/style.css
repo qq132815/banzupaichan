@@ -1,4 +1,4 @@
-/* ========== Reset & Base ========== */
+﻿/* ========== Reset & Base ========== */
 *{margin:0;padding:0;box-sizing:border-box}
 html{font-size:14px}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#1f2937;line-height:1.5}
@@ -33,8 +33,8 @@ a{color:#2563eb;text-decoration:none}
 .stat-card .stat-info .stat-label{font-size:13px;color:#6b7280;margin-top:2px}
 
 /* ========== Cards & Panels ========== */
-.card{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:20px}
-.card-header{padding:16px 20px;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center}
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:20px;overflow:hidden}
+.card-header{padding:16px 20px;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;z-index:10}
 .card-header h2{font-size:16px;font-weight:600;color:#111827}
 .card-body{padding:20px}
 
@@ -115,10 +115,10 @@ select.form-control{appearance:auto}
 /* ========== Gantt Chart ========== */
 .gantt-wrapper{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);overflow:hidden}
 .gantt-toolbar{padding:14px 20px;border-bottom:1px solid #f3f4f6;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.gantt-container{overflow-x:auto;position:relative}
-.gantt-header{display:flex;background:#f9fafb;border-bottom:2px solid #e5e7eb;position:sticky;top:0;z-index:10}
-.gantt-label{padding:8px 12px;white-space:nowrap;font-weight:600;font-size:13px;color:#374151;border-right:2px solid #e5e7eb;background:#f9fafb;position:sticky;left:0;z-index:11;display:flex;align-items:center}
-.gantt-hour{min-width:80px;padding:10px;text-align:center;border-right:1px solid #f3f4f6;font-size:12px;color:#6b7280;font-weight:500}
+.gantt-container{position:relative;margin-bottom:8px}
+.gantt-header{display:flex;background:#fff;border-bottom:2px solid #e5e7eb;position:sticky;top:0;z-index:12}
+.gantt-label{padding:8px 12px;white-space:nowrap;font-weight:600;font-size:13px;color:#374151;border-right:2px solid #e5e7eb;background:#fff;position:sticky;left:0;z-index:11;display:flex;align-items:center}
+.gantt-hour{min-width:80px;padding:10px 0;text-align:center;border-right:1px solid #f3f4f6;font-size:12px;color:#6b7280;font-weight:500;display:flex;align-items:center;justify-content:center}
 
 .gantt-body{position:relative}
 .gantt-row{display:flex;border-bottom:1px solid #f3f4f6;min-height:52px;transition:background .15s}
@@ -141,7 +141,7 @@ select.form-control{appearance:auto}
 
 
 /* Gantt Legend */
-.gantt-legend{padding:12px 20px;border-top:1px solid #f3f4f6;display:flex;gap:20px;font-size:12px;color:#6b7280}
+.gantt-legend{padding:12px 20px;border-top:1px solid #f3f4f6;display:flex;gap:20px;font-size:12px;color:#6b7280;position:sticky;bottom:0;background:#fff;z-index:12}
 .gantt-legend span{display:flex;align-items:center;gap:6px}
 .gantt-legend .dot{width:12px;height:12px;border-radius:3px}
 
