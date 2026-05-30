@@ -53,7 +53,7 @@ function showAdd(){editId=null;document.getElementById("m-title").textContent="�
 function closeM(){document.getElementById("modal").classList.remove("show");}
 function edit(id){fetch("/api/process-routes").then(function(r){return r.json()}).then(function(d){var r=d.find(function(x){return x.id===id});if(!r)return;editId=id;document.getElementById("m-title").textContent="编辑";document.getElementById("m-code").value=r.route_code;document.getElementById("m-name").value=r.route_name||"";document.getElementById("m-product").value=r.product_code||"";document.getElementById("m-processes").value=r.process_list||"";document.getElementById("m-remark").value=r.remark||"";document.getElementById("modal").classList.add("show");});}
 function save(){var data={route_code:document.getElementById("m-code").value,route_name:document.getElementById("m-name").value,product_code:document.getElementById("m-product").value,process_list:document.getElementById("m-processes").value,remark:document.getElementById("m-remark").value};if(!data.route_code){toast("路线编码必填","warning");return;}var url=editId?"/api/process-routes/"+editId:"/api/process-routes";api(url,{method:editId?"PUT":"POST",body:data}).then(function(){toast("保存成功","success");closeM();load();}).catch(function(){toast("保存失败","error");});}
-function del(id){if(!confirm("确定删除？"))return;api("/api/process-routes/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");load();});}
+function deleteRoute(id){if(!confirm("确定删除？"))return;api("/api/process-routes/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");load();});}
 function doExport(){window.location.href="/api/export/process_routes";}
 load();
 </script>
