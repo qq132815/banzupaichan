@@ -36,7 +36,7 @@ a{color:#2563eb;text-decoration:none}
 .card{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:20px;overflow:hidden}
 .card-header{padding:16px 20px;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;z-index:10}
 .card-header h2{font-size:16px;font-weight:600;color:#111827}
-.card-body{padding:0;max-height:calc(100vh - 220px);overflow-y:auto}
+.card-body{padding:0;max-height:calc(100vh - 280px);overflow-y:auto}
 
 /* ========== Toolbar ========== */
 .toolbar{display:flex;gap:12px;margin-bottom:20px;align-items:center;flex-wrap:wrap;background:#fff;padding:14px 20px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);position:sticky;top:0;z-index:10}
