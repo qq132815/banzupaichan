@@ -1328,6 +1328,89 @@ def api_save_settings():
     conn.close()
     return jsonify({'ok': True})
 
+# ========== Schedules Lookup API ==========
+@app.route('/api/schedules')
+@login_required
+def api_schedules():
+    q = request.args.get('q', '').strip()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 200, type=int)
+    sql = "SELECT s.*, e.equipment_name FROM schedules s LEFT JOIN equipments e ON s.equipment_id=e.id WHERE 1=1"
+    params = []
+    if q:
+        like = "%" + q + "%"
+        sql += " AND (s.product_code LIKE ? OR s.process_name LIKE ? OR s.work_order_no LIKE ?)"
+        params.extend([like, like, like])
+    sql += " ORDER BY s.schedule_date DESC, s.start_time"
+    return jsonify(paginate_query(sql, params, page, page_size))
+
+# ========== Standard Hours Capacity API ==========
+@app.route('/api/standard-hours-capacity')
+@login_required
+def api_standard_hours_capacity():
+    q = request.args.get('q', '').strip()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
+    conn = get_connection()
+    c = conn.cursor()
+    
+    # Base query
+    sql = "SELECT * FROM standard_hours WHERE 1=1"
+    params = []
+    if q:
+        like = "%" + q + "%"
+        sql += " AND (product_code LIKE ? OR product_name LIKE ? OR process_name LIKE ?)"
+        params.extend([like, like, like])
+    sql += " ORDER BY product_code, process_name"
+    
+    # Count
+    count_sql = "SELECT COUNT(*) FROM (" + sql + ")"
+    c.execute(count_sql, params)
+    total = c.fetchone()[0]
+    
+    # Paginate
+    page = max(1, int(page or 1))
+    page_size = min(200, max(1, int(page_size or 50)))
+    offset = (page - 1) * page_size
+    c.execute(sql + " LIMIT ? OFFSET ?", params + [page_size, offset])
+    rows = [dict(row) for row in c.fetchall()]
+    
+    # Enrich each row with capacity data
+    for row in rows:
+        pc = row['product_code']
+        pn = row['process_name']
+        
+        # 排班产能: from schedules
+        c.execute("SELECT DISTINCT capacity_per_hour FROM schedules WHERE product_code=? AND process_name=? AND capacity_per_hour > 0", (pc, pn))
+        sched_caps = [r[0] for r in c.fetchall()]
+        row['schedule_capacities'] = sched_caps
+        if len(sched_caps) == 1:
+            row['schedule_capacity'] = sched_caps[0]
+        elif len(sched_caps) > 1:
+            row['schedule_capacity'] = -1  # Indicates multiple values
+        else:
+            row['schedule_capacity'] = 0
+        
+        # 报工产能: from work_reports, qty/hours
+        c.execute("SELECT report_qty, report_hours, order_no, operator, equipment, start_time, end_time FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0", (pc, pn))
+        reports = c.fetchall()
+        caps = []
+        report_details = []
+        for r in reports:
+            qty, hrs, ono, op, eq, st, et = r
+            if hrs > 0 and qty > 0:
+                cap = round(qty / hrs, 1)
+                caps.append(cap)
+                report_details.append({'qty': qty, 'hours': hrs, 'capacity': cap, 'order_no': ono, 'operator': op, 'equipment': eq, 'start': st, 'end': et})
+        row['report_avg'] = round(sum(caps) / len(caps), 1) if caps else 0
+        row['report_max'] = max(caps) if caps else 0
+        row['report_min'] = min(caps) if caps else 0
+        row['report_count'] = len(caps)
+    
+    conn.close()
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    return jsonify({'data': rows, 'total': total, 'page': page, 'page_size': page_size, 'total_pages': total_pages})
+
 # ========== Export API ==========
 @app.route('/api/export/<data_type>')
 @login_required

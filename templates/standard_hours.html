@@ -17,7 +17,7 @@
 <div class="card-body">
 <div class="table-wrap">
 <table>
-<thead><tr><th>产品编号</th><th>产品名称</th><th>工序</th><th>班组</th><th>标准工时(分)</th><th>换线时间(分)</th><th>备注</th><th>操作</th></tr></thead>
+<thead><tr><th>产品名称</th><th>工序</th><th>班组</th><th>标准工时(分)</th><th>排班产能(H)</th><th>报工平均产能(H)</th><th>报工最高产能(H)</th><th>报工最低产能(H)</th><th>备注</th><th>操作</th></tr></thead>
 <tbody id="tbody"></tbody>
 </table>
 <div id="empty-msg" class="table-empty" style="display:none">暂无数据，点击"从工艺路线初始化"生成基础数据</div>
@@ -51,6 +51,14 @@
 </div>
 </div>
 </div>
+
+<div class="modal-overlay" id="cap-modal">
+<div class="modal" style="max-width:640px">
+<div class="modal-header"><h3>排班产能明细</h3><button class="modal-close" onclick="document.getElementById('cap-modal').classList.remove('show')">&times;</button></div>
+<div class="modal-body" id="cap-detail-body" style="max-height:400px;overflow-y:auto"></div>
+</div>
+</div>
+
 {% endblock %}
 {% block scripts %}
 <script>
@@ -147,22 +155,35 @@ function updateProcessList(){
 
 function loadData(){
     var q=document.getElementById("search").value;
-    var url="/api/standard-hours";
-    url+=(url.indexOf('?')>=0?'&':'?')+'page='+window._page+'&page_size='+window._pageSize;
-    if(q)url+="?q="+encodeURIComponent(q);
-    fetch(url).then(function(r){return r.json()}).then(function(resp){var d=resp.data||resp;window._total=resp.total||d.length;renderPagination('sh-pagination',resp.page||1,resp.total_pages||1,'loadData');
+    var url="/api/standard-hours-capacity?page="+window._page+"&page_size="+window._pageSize;
+    if(q)url+="&q="+encodeURIComponent(q);
+    fetch(url).then(function(r){return r.json()}).then(function(resp){
+        var d=resp.data||resp;window._total=resp.total||d.length;renderPagination('sh-pagination',resp.page||1,resp.total_pages||1,'loadData');
         var tb=document.getElementById("tbody");tb.innerHTML="";
         var empty=document.getElementById("empty-msg");
         if(!d.length){empty.style.display="block";return;}
         empty.style.display="none";
         d.forEach(function(r){
             var tr=document.createElement("tr");
-            tr.innerHTML='<td>'+r.product_code+'</td>'
-                +'<td>'+(r.product_name||'')+'</td>'
+            var schedCap='';
+            if(r.schedule_capacity===-1){
+                schedCap='<span style="color:#dc2626;cursor:pointer" onclick="showCapDetail('+r.id+',\''+r.product_code+'\',\''+r.process_name+'\')">'+r.schedule_capacities[0]+'<span style="font-size:11px;color:#dc2626;margin-left:4px">⚠明细</span></span>';
+            }else if(r.schedule_capacity>0){
+                schedCap=''+r.schedule_capacity;
+            }else{
+                schedCap='<span style="color:#9ca3af">-</span>';
+            }
+            var avgCap=r.report_avg>0?r.report_avg:'<span style="color:#9ca3af">-</span>';
+            var maxCap=r.report_max>0?r.report_max:'<span style="color:#9ca3af">-</span>';
+            var minCap=r.report_min>0?r.report_min:'<span style="color:#9ca3af">-</span>';
+            tr.innerHTML='<td>'+(r.product_name||r.product_code)+'</td>'
                 +'<td>'+r.process_name+'</td>'
                 +'<td>'+(r.team_name||'')+'</td>'
                 +'<td><strong>'+(r.standard_hours||0)+'</strong></td>'
-                +'<td>'+(r.setup_time||0)+'</td>'
+                +'<td>'+schedCap+'</td>'
+                +'<td>'+avgCap+'</td>'
+                +'<td>'+maxCap+'</td>'
+                +'<td>'+minCap+'</td>'
                 +'<td>'+(r.remark||'')+'</td>'
                 +'<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editItem('+r.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="deleteItem('+r.id+')">删除</button></div></td>';
             tb.appendChild(tr);
@@ -241,5 +262,31 @@ function doExport(){
 
 loadData();
 function downloadShTpl(){var headers=["产品编号","产品名称","工序","班组","标准工时(分)","换线时间(分)","备注"];var rows=["F01-ABC,成品F01,焊接压板1（自动）,焊接,2.5,15,"];var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="标准工时导入模板.csv";a.click();}
+
+function showCapDetail(id, productCode, processName){
+    var body=document.getElementById("cap-detail-body");
+    body.innerHTML="<p>加载中...</p>";
+    document.getElementById("cap-modal").classList.add("show");
+    fetch("/api/schedules?q="+encodeURIComponent(productCode)).then(function(r){return r.json()}).then(function(resp){
+        var d=resp.data||resp;
+        var filtered=d.filter(function(s){return s.product_code===productCode && s.process_name===processName;});
+        if(!filtered.length){body.innerHTML="<p>无排班数据</p>";return;}
+        var html="<table><thead><tr><th>日期</th><th>设备</th><th>产能/H</th><th>数量</th><th>工时</th><th>生产人</th><th>工单号</th></tr></thead><tbody>";
+        filtered.forEach(function(s){
+            html+="<tr><td>"+(s.schedule_date||'')+"</td><td>"+(s.equipment_name||s.equipment_id||'')+"</td><td>"+(s.capacity_per_hour||0)+"</td><td>"+(s.quantity||0)+"</td><td>"+(s.hours||0)+"</td><td>"+(s.operator||'')+"</td><td>"+(s.work_order_no||'')+"</td></tr>";
+        });
+        html+="</tbody></table>";
+        body.innerHTML=html;
+    });
+}
+
 </script>
+
+<div class="modal-overlay" id="cap-modal">
+<div class="modal" style="max-width:640px">
+<div class="modal-header"><h3>排班产能明细</h3><button class="modal-close" onclick="document.getElementById('cap-modal').classList.remove('show')">&times;</button></div>
+<div class="modal-body" id="cap-detail-body" style="max-height:400px;overflow-y:auto"></div>
+</div>
+</div>
+
 {% endblock %}
