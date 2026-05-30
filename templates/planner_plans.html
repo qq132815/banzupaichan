@@ -2,7 +2,8 @@
 {% block content %}
 <div class="page-header"><h1>📋 计划审批</h1></div>
 <div class="toolbar">
-<label>日期：</label><input type="date" id="filter-date" onchange="load()">
+<label>开始：</label><input type="date" id="filter-date-from" onchange="load()">
+<label>结束：</label><input type="date" id="filter-date-to" onchange="load()">
 <label>状态：</label><select id="filter-status" onchange="load()">
 <option value="">全部</option><option value="submitted">待审批</option><option value="approved">已通过</option><option value="rejected">已拒绝</option><option value="returned">已退回</option>
 </select>
@@ -15,11 +16,12 @@
 {% endblock %}
 {% block scripts %}
 <script>
-var today=new Date().toISOString().split("T")[0];document.getElementById("filter-date").value=today;
+var today=new Date().toISOString().split("T")[0];document.getElementById("filter-date-from").value=today;document.getElementById("filter-date-to").value=today;
 function load(){
-var dt=document.getElementById("filter-date").value;
+var dtFrom=document.getElementById("filter-date-from").value;
+var dtTo=document.getElementById("filter-date-to").value;
 var st=document.getElementById("filter-status").value;
-var url="/api/daily-plans?";if(dt)url+="date="+dt+"&";if(st)url+="status="+st;
+var url="/api/daily-plans?";if(dtFrom)url+="date_from="+dtFrom+"&";if(dtTo)url+="date_to="+dtTo+"&";if(st)url+="status="+st;
 fetch(url).then(function(r){return r.json()}).then(function(d){
 var tb=document.getElementById("tbody");tb.innerHTML="";
 var empty=document.getElementById("empty");

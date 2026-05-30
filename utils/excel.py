@@ -7,6 +7,45 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.db import get_connection
 
 
+def _match_headers(ws, field_map):
+    """Match column indices by header names.
+    field_map: dict of {field_name: [possible_header_names]}
+    Returns: (dict of {field_name: column_index}, headers_list) or raises ValueError
+    Auto-detects header row: uses row 1 if it has 2+ non-empty values, else row 2.
+    """
+    # Auto-detect header row
+    row1_vals = [str(cell.value).strip() if cell.value else '' for cell in ws[1]]
+    row1_count = sum(1 for v in row1_vals if v)
+    if row1_count >= 2:
+        headers = row1_vals
+        header_row = 1
+    else:
+        headers = [str(cell.value).strip() if cell.value else '' for cell in ws[2]]
+        header_row = 2
+    # Store header_row for caller to use as min_row
+    ws._import_header_row = header_row
+    
+    result = {}
+    missing = []
+    for field, aliases in field_map.items():
+        found = False
+        for alias in aliases:
+            for i, h in enumerate(headers):
+                if alias.lower() in h.lower() or h.lower() in alias.lower():
+                    result[field] = i
+                    found = True
+                    break
+            if found:
+                break
+        if not found:
+            missing.append(field)
+    
+    if missing:
+        raise ValueError("未找到以下列: " + ", ".join(missing) + "。表头: " + ", ".join(headers))
+    return result, headers
+
+
+
 def import_shipping_plan(file_path):
     wb = openpyxl.load_workbook(file_path)
     ws = wb.active
@@ -19,7 +58,7 @@ def import_shipping_plan(file_path):
         if hasattr(h, 'strftime'):
             dates.append((i, h))
     count = 0
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    for row in ws.iter_rows(min_row=getattr(ws, '_import_header_row', 1) + 1, values_only=True):
         if not row or not row[0]:
             continue
         product_code = str(row[0]).strip()
@@ -42,7 +81,7 @@ def import_production_cycles(file_path):
     c = conn.cursor()
     c.execute("DELETE FROM production_cycles")
     count = 0
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    for row in ws.iter_rows(min_row=getattr(ws, '_import_header_row', 1) + 1, values_only=True):
         if not row or not row[0]:
             continue
         product_code = str(row[0]).strip()
@@ -96,7 +135,7 @@ def import_processes(file_path):
     c = conn.cursor()
     c.execute("DELETE FROM processes")
     count = 0
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    for row in ws.iter_rows(min_row=getattr(ws, '_import_header_row', 1) + 1, values_only=True):
         if not row or not row[0]:
             continue
         process_code = str(row[0]).strip()
@@ -117,7 +156,7 @@ def import_bom(file_path):
     c = conn.cursor()
     c.execute("DELETE FROM bom")
     count = 0
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    for row in ws.iter_rows(min_row=getattr(ws, '_import_header_row', 1) + 1, values_only=True):
         if not row or not row[0]:
             continue
         parent_code = str(row[2]).strip() if row[2] else ''  # 父项产品编号
@@ -144,19 +183,23 @@ def import_bom(file_path):
 def import_process_routes(file_path):
     wb = openpyxl.load_workbook(file_path)
     ws = wb.active
+    cols, headers = _match_headers(ws, {
+        'code': ['工艺路线编号', '路线编码', 'route_code', '编码'],
+        'name': ['工艺路线名称', '路线名称', 'route_name', '名称'],
+        'processes': ['包含工序列表', '工序列表', 'process_list', '工序'],
+        'product': ['产品编号', '产品编码', '成品件号', 'product_code', '产品'],
+    })
     conn = get_connection()
     c = conn.cursor()
     c.execute("DELETE FROM process_routes")
     count = 0
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if not row or not row[0]:
+    for row in ws.iter_rows(min_row=getattr(ws, '_import_header_row', 1) + 1, values_only=True):
+        if not row:
             continue
-        route_code = str(row[0]).strip()
-        route_name = str(row[1]).strip() if row[1] else ''
-        process_list = str(row[2]).strip() if row[2] else ''
-        if route_code == '工艺路线编号':
-            continue
-        product_code = route_code.split('-')[0] if '-' in route_code else route_code
+        route_code = str(row[cols['code']]).strip() if cols['code'] < len(row) and row[cols['code']] else ''
+        route_name = str(row[cols['name']]).strip() if cols['name'] < len(row) and row[cols['name']] else ''
+        process_list = str(row[cols['processes']]).strip() if cols['processes'] < len(row) and row[cols['processes']] else ''
+        product_code = str(row[cols['product']]).strip() if 'product' in cols and cols['product'] < len(row) and row[cols['product']] else None
         c.execute("INSERT INTO process_routes (route_code, route_name, product_code, process_list) VALUES (?, ?, ?, ?)",
                   (route_code, route_name, product_code, process_list))
         count += 1
@@ -171,7 +214,7 @@ def import_equipment(file_path):
     conn = get_connection()
     c = conn.cursor()
     count = 0
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    for row in ws.iter_rows(min_row=getattr(ws, '_import_header_row', 1) + 1, values_only=True):
         if not row or not row[0]:
             continue
         equipment_code = str(row[0]).strip()
@@ -194,7 +237,7 @@ def import_reports(file_path):
     conn = get_connection()
     c = conn.cursor()
     count = 0
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    for row in ws.iter_rows(min_row=getattr(ws, '_import_header_row', 1) + 1, values_only=True):
         if not row or not row[0]:
             continue
         order_no = str(row[0]).strip() if row[0] else ''
@@ -222,7 +265,7 @@ def import_equipments(file_path):
     c.execute("SELECT id, name FROM teams")
     team_map = {r[1]: r[0] for r in c.fetchall()}
     count = 0
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    for row in ws.iter_rows(min_row=getattr(ws, '_import_header_row', 1) + 1, values_only=True):
         if not row or not row[0]:
             continue
         eq_code = str(row[1]).strip() if len(row) > 1 and row[1] else ''

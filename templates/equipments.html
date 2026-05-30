@@ -1,11 +1,10 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <div class="page-header">
 <h1>⚙️ 设备管理</h1>
 <div class="page-actions">
 <label class="btn btn-outline" style="cursor:pointer">
 📥 导入设备
-<input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="importEquip(this)">
 </label>
 <button class="btn btn-outline" onclick="exportEquip()">📤 导出</button>
 <button class="btn btn-outline" onclick="downloadTemplate()">📄 下载模板</button>

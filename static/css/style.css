@@ -115,16 +115,17 @@ select.form-control{appearance:auto}
 /* ========== Gantt Chart ========== */
 .gantt-wrapper{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);overflow:hidden}
 .gantt-toolbar{padding:14px 20px;border-bottom:1px solid #f3f4f6;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.gantt-container{position:relative;margin-bottom:8px}
+.gantt-container{position:relative;margin-bottom:8px;padding-left:20px}
 .gantt-header{display:flex;background:#fff;border-bottom:2px solid #e5e7eb;position:sticky;top:0;z-index:12}
 .gantt-label{padding:8px 12px;white-space:nowrap;font-weight:600;font-size:13px;color:#374151;border-right:2px solid #e5e7eb;background:#fff;position:sticky;left:0;z-index:11;display:flex;align-items:center}
-.gantt-hour{min-width:80px;padding:10px 0;text-align:center;border-right:1px solid #f3f4f6;font-size:12px;color:#6b7280;font-weight:500;display:flex;align-items:center;justify-content:center}
+
 
 .gantt-body{position:relative}
-.gantt-row{display:flex;border-bottom:1px solid #f3f4f6;min-height:52px;transition:background .15s}
+.gantt-row{display:flex;border-bottom:1px solid #f3f4f6;min-height:52px;transition:background .15s;padding-left:0}
 .gantt-row:hover{background:#f9fafb}
 .gantt-bars{flex:1;position:relative;display:flex}
-.gantt-cell{min-width:80px;border-right:1px solid #f3f4f6}
+
+.gantt-cell{flex:0 0 80px;border-right:1px solid #f3f4f6}
 .gantt-cell:hover{background:rgba(59,130,246,0.03)}
 .gantt-bar{position:absolute;top:6px;height:38px;border-radius:6px;padding:4px 10px;font-size:11px;color:#fff;overflow:hidden;cursor:pointer;z-index:1;transition:box-shadow .2s;display:flex;align-items:center;gap:4px}
 .gantt-bar:hover{box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:5}

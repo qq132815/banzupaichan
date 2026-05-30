@@ -1,10 +1,9 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <div class="page-header"><h1>⏱️ 生产周期</h1>
 <div class="page-actions">
-<input type="file" id="import-file" accept=".xlsx" style="display:none" onchange="doImport()">
 <button class="btn btn-outline readonly-hide" onclick="doExport()">📥 导出</button>
-<button class="btn btn-outline readonly-hide" onclick="document.getElementById('import-file').click()">📤 导入</button>
+<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/cycles', function(){setTimeout(function(){load();}, 500);})">📤 导入</button>
 {% if session.get('role') == 'planner' %}<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>{% endif %}
 </div></div>
 <div class="toolbar"><input type="text" id="search" placeholder="搜索产品编码" oninput="load()"></div>
@@ -23,13 +22,13 @@
 </div></div>
 
 <style>
-.readonly-hide{display:none}
+
 </style>
 
 <script>
 document.addEventListener("DOMContentLoaded", function(){
     if(USER_ROLE === "team"){
-        document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});
+        if(USER_ROLE!=="planner"){document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});}
     }
 });
 </script>
@@ -44,19 +43,19 @@ function closeM(){document.getElementById("modal").classList.remove("show");}
 function edit(id){fetch("/api/production-cycles").then(function(r){return r.json()}).then(function(d){var c=d.find(function(x){return x.id===id});if(!c)return;editId=id;document.getElementById("m-title").textContent="编辑";document.getElementById("m-code").value=c.product_code;document.getElementById("m-days").value=c.production_days||"";document.getElementById("m-lead").value=c.lead_days||"";document.getElementById("modal").classList.add("show");});}
 function save(){var data={product_code:document.getElementById("m-code").value,production_days:parseFloat(document.getElementById("m-days").value)||1,lead_days:parseFloat(document.getElementById("m-lead").value)||0};if(!data.product_code){toast("产品编码必填","warning");return;}var url=editId?"/api/production-cycles/"+editId:"/api/production-cycles";api(url,{method:editId?"PUT":"POST",body:data}).then(function(){toast("保存成功","success");closeM();load();});}
 function del(id){if(!confirm("确定删除？"))return;api("/api/production-cycles/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");load();});}
-function doImport(){var f=document.getElementById("import-file").files[0];if(!f)return;var fd=new FormData();fd.append("file",f);fetch("/api/import/cycles",{method:"POST",body:fd}).then(function(r){return r.json()}).then(function(d){if(d.error)toast(d.error,"error");else{toast("导入 "+d.count+" 条","success");load();}});}
+
 function doExport(){window.location.href="/api/export/cycles";}
 load();
 </script>
 
 <style>
-.readonly-hide{display:none}
+
 </style>
 
 <script>
 document.addEventListener("DOMContentLoaded", function(){
     if(USER_ROLE === "team"){
-        document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});
+        if(USER_ROLE!=="planner"){document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});}
     }
 });
 </script>

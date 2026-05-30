@@ -297,9 +297,11 @@ def api_import(data_type):
             count = import_equipment(path)
         else:
             return jsonify({'error': 'unknown type'}), 400
-        return jsonify({'count': count})
+        return jsonify({'count': count, 'success': True})
+    except ValueError as e:
+        return jsonify({'error': str(e), 'success': False})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': '导入失败: ' + str(e), 'success': False})
 
 # ========== Daily Plan API ==========
 @app.route('/api/daily-plan')
@@ -318,11 +320,13 @@ def api_daily_plan():
 @login_required
 def api_daily_plans():
     date = request.args.get('date')
+    date_from = request.args.get('date_from')
+    date_to = request.args.get('date_to')
     team_id = request.args.get('team_id', type=int)
     # Team users can only see their own team's plans
     if session.get('role') == 'team':
         team_id = session.get('team_id')
-    return jsonify(get_all_daily_plans(date, team_id))
+    return jsonify(get_all_daily_plans(date, team_id, date_from, date_to))
 
 @app.route('/api/daily-plan/<int:pid>/submit', methods=['POST'])
 @login_required

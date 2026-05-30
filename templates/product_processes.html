@@ -1,10 +1,9 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <div class="page-header">
 <h1>⚙️ 工序管理</h1>
 <div class="page-actions">
-<input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="importProcesses()">
-<button class="btn btn-outline readonly-hide" onclick="document.getElementById('import-file').click()">📥 导入</button>
+<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/processes', function(){setTimeout(function(){load();}, 500);})">📥 导入</button>
 <button class="btn btn-outline readonly-hide" onclick="exportProcesses()">📤 导出</button>
 <button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>
 </div>
@@ -39,13 +38,13 @@
 </div>
 
 <style>
-.readonly-hide{display:none}
+
 </style>
 
 <script>
 document.addEventListener("DOMContentLoaded", function(){
     if(USER_ROLE === "team"){
-        document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});
+        if(USER_ROLE!=="planner"){document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});}
     }
 });
 </script>
@@ -145,13 +144,13 @@ function exportProcesses(){
 </script>
 
 <style>
-.readonly-hide{display:none}
+
 </style>
 
 <script>
 document.addEventListener("DOMContentLoaded", function(){
     if(USER_ROLE === "team"){
-        document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});
+        if(USER_ROLE!=="planner"){document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});}
     }
 });
 </script>

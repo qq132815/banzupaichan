@@ -211,7 +211,7 @@ def get_daily_plan_by_id(plan_id):
     conn.close()
     return dict(plan) if plan else None
 
-def get_all_daily_plans(date=None, team_id=None):
+def get_all_daily_plans(date=None, team_id=None, date_from=None, date_to=None):
     conn = get_connection()
     c = conn.cursor()
     q = "SELECT dp.*, t.name as team_name FROM daily_plans dp LEFT JOIN teams t ON dp.team_id=t.id WHERE 1=1"
@@ -219,6 +219,12 @@ def get_all_daily_plans(date=None, team_id=None):
     if date:
         q += " AND dp.plan_date=?"
         params.append(date)
+    if date_from:
+        q += " AND dp.plan_date>=?"
+        params.append(date_from)
+    if date_to:
+        q += " AND dp.plan_date<=?"
+        params.append(date_to)
     if team_id:
         q += " AND dp.team_id=?"
         params.append(team_id)
