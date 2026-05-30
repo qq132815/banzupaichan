@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><h1>📆 月报表</h1></div>
+<div class="toolbar">
+<input type="month" id="month-picker" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<select id="team-filter" onchange="loadData()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"><option value="">全部班组</option></select>
+<button class="btn btn-primary" onclick="loadData()">查询</button>
+<button class="btn btn-success" onclick="syncAttendance()" style="margin-left:8px" title="从钉钉同步考勤数据">📥 同步钉钉考勤</button>
+<span id="sync-status" style="margin-left:8px;font-size:13px"></span>
+</div>
+<div class="card"><div class="card-body">
+<div class="table-wrap">
+<table class="report-table">
+<thead><tr><th>姓名</th><th>班组</th><th>出勤</th><th>打卡工时</th><th>生产工时</th><th>总产量</th><th>良品率</th><th>平均效率</th><th>加班天</th><th>工时利用率</th><th>日均产量</th><th>达成率</th><th>请假天</th></tr></thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+</div></div>
+<style>
+.overtime{background:#fef2f2;color:#dc2626;font-weight:600}
+.report-table th{position:sticky;top:0;z-index:2}
+.report-table td{text-align:center}
+.report-table td:first-child,.report-table th:first-child{text-align:left;position:sticky;left:0;background:#fff;z-index:1}
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+(function(){
+    document.getElementById("month-picker").value=new Date().toISOString().substring(0,7);
+    fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
+        var sel=document.getElementById("team-filter");
+        d.forEach(function(t){var o=document.createElement("option");o.value=t.id;o.textContent=t.name;sel.appendChild(o);});
+        loadData();
+    });
+})();
+function loadData(){
+    var m=document.getElementById("month-picker").value;
+    var tid=document.getElementById("team-filter").value;
+    var url="/api/reports/monthly?month="+m;
+    if(tid)url+="&team_id="+tid;
+    fetch(url).then(function(r){return r.json()}).then(function(d){
+        var tb=document.getElementById("tbody");tb.innerHTML="";
+        if(!d.data||d.data.length===0){tb.innerHTML='<tr><td colspan="13" style="text-align:center;color:#9ca3af;padding:40px">暂无数据</td></tr>';return;}
+        d.data.forEach(function(r){
+            var tr=document.createElement("tr");
+            var gr=r.good_rate>0?r.good_rate+'%':'<span style="color:#9ca3af">-</span>';
+            var eff=r.avg_efficiency>0?(r.avg_efficiency>=100?'<span style="color:#059669">'+r.avg_efficiency+'%</span>':'<span style="color:#dc2626">'+r.avg_efficiency+'%</span>'):'<span style="color:#9ca3af">-</span>';
+            var leave=r.leave_days>0?'<span style="color:#dc2626;font-weight:600">'+r.leave_days+'</span>':'0';
+            tr.innerHTML='<td><strong>'+r.name+'</strong></td><td>'+(r.department||'')+'</td><td>'+r.work_days+'</td><td>'+(r.total_attendance_hours||0)+'h</td><td>'+(r.total_production_hours||0)+'h</td><td>'+(r.total_qty||0)+'</td><td>'+gr+'</td><td>'+eff+'</td><td>'+(r.overtime_days||0)+'</td><td>'+(r.utilization_rate||0)+'%</td><td>'+(r.daily_avg_qty||0)+'</td><td>'+(r.achieve_rate||0)+'%</td><td>'+leave+'</td>';
+            tb.appendChild(tr);
+        });
+    });
+}
+function syncAttendance(){
+    var m=document.getElementById("month-picker").value;
+    if(!m){toast("请先选择月份","warning");return;}
+    var parts=m.split("-");
+    var from=m+"-01";
+    var lastDay=new Date(parseInt(parts[0]),parseInt(parts[1]),0).getDate();
+    var to=m+"-"+(lastDay<10?"0":"")+lastDay;
+    var st=document.getElementById("sync-status");
+    st.innerHTML="<span style='color:#6b7280'>同步中...</span>";
+    fetch("/api/attendance/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({date_from:from,date_to:to})}).then(function(r){return r.json()}).then(function(d){
+        if(d.ok){
+            st.innerHTML="<span style='color:#059669'>✓ 同步完成 "+d.count+" 条</span>";
+            loadData();
+        }else{
+            st.innerHTML="<span style='color:#dc2626'>✗ "+(d.error||"同步失败")+"</span>";
+        }
+    }).catch(function(e){st.innerHTML="<span style='color:#dc2626'>✗ 请求失败</span>";});
+}
+</script>
+{% endblock %}

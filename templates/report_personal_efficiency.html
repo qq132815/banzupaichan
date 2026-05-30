@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><h1>👤 个人效率查询</h1></div>
+<div class="toolbar">
+<input type="text" id="emp-search" placeholder="输入员工姓名..." style="width:180px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<input type="date" id="date-from" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<span style="color:#9ca3af">至</span>
+<input type="date" id="date-to" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<button class="btn btn-primary" onclick="loadData()">查询</button>
+</div>
+<div class="card"><div class="card-body">
+<div class="table-wrap" style="overflow-x:auto">
+<table class="report-table">
+<thead id="thead"></thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+</div></div>
+<style>
+.tab-btn{padding:10px 20px;border:none;background:none;font-size:14px;font-weight:500;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s}
+.tab-btn:hover{color:#3b82f6}
+.tab-btn.active{color:#3b82f6;border-bottom-color:#3b82f6}
+.overtime{background:#fef2f2;color:#dc2626;font-weight:600}
+.report-table th{position:sticky;top:0;z-index:2}
+.report-table td{text-align:center}
+.report-table td:first-child,.report-table th:first-child{text-align:left;position:sticky;left:0;background:#fff;z-index:1}
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+(function(){
+    var today=new Date();var from=new Date(today);from.setDate(from.getDate()-6);
+    document.getElementById("date-to").value=today.toISOString().split('T')[0];
+    document.getElementById("date-from").value=from.toISOString().split('T')[0];
+})();
+function loadData(){
+    var name=document.getElementById("emp-search").value;
+    var df=document.getElementById("date-from").value;
+    var dt=document.getElementById("date-to").value;
+    if(!name){toast("请输入员工姓名","warning");return;}
+    fetch("/api/reports/personal?name="+encodeURIComponent(name)+"&date_from="+df+"&date_to="+dt).then(function(r){return r.json()}).then(function(d){
+        if(d.error){toast(d.error,"error");return;}
+        var thead=document.getElementById("thead");
+        var tbody=document.getElementById("tbody");
+        thead.innerHTML="";tbody.innerHTML="";
+        var fields=[
+            {key:'efficiency',label:'生产效率',fmt:function(v){return v>0?v+'%':'-';}},
+            {key:'hours',label:'生产工时',fmt:function(v){return v>0?v+'h':'-';}},
+            {key:'qty',label:'总产量',fmt:function(v){return v||0;}},
+            {key:'good_rate',label:'良品率',fmt:function(v){return v>0?v+'%':'-';}},
+            {key:'attendance_hours',label:'实际上班工时',fmt:function(v){return v>0?v+'h':'-';}},
+            {key:'is_overtime',label:'是否加班',fmt:function(v){return v?'<span class="overtime">加班</span>':'-';}}
+        ];
+        var h1='<tr><th style="text-align:left;min-width:120px">指标</th>';
+        d.days.forEach(function(day){h1+='<th>'+day.date.substring(5)+'</th>';});
+        h1+='</tr>';thead.innerHTML=h1;
+        fields.forEach(function(f){
+            var tr=document.createElement("tr");
+            var td='<td style="text-align:left;font-weight:600">'+f.label+'</td>';
+            d.days.forEach(function(day){
+                var val=day[f.key];
+                var cls='';
+                if(f.key==='is_overtime'&&val)cls=' class="overtime"';
+                td+='<td'+cls+'>'+f.fmt(val)+'</td>';
+            });
+            tr.innerHTML=td;tbody.appendChild(tr);
+        });
+    });
+}
+</script>
+{% endblock %}

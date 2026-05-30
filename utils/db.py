@@ -65,6 +65,8 @@ def init_database():
 
     c.execute("CREATE TABLE IF NOT EXISTS work_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, report_qty REAL, good_qty REAL, bad_qty REAL, report_unit TEXT, good_rate TEXT, operator TEXT, start_time TEXT, end_time TEXT, approve_status TEXT, approver TEXT, approve_time TEXT, creator TEXT, create_time TEXT, process_name TEXT, order_no TEXT, product_code TEXT, product_name TEXT, related_no TEXT, equipment TEXT, report_hours REAL, weld_count REAL, attendance_note TEXT, created_at TEXT DEFAULT (datetime('now','localtime')))")
 
+    c.execute("CREATE TABLE IF NOT EXISTS attendance (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, name TEXT NOT NULL, work_date TEXT NOT NULL, check_in TEXT, check_out TEXT, work_hours REAL DEFAULT 0, plan_hours REAL DEFAULT 8, is_overtime INTEGER DEFAULT 0, leave_type TEXT, created_at TEXT DEFAULT (datetime('now','localtime')), UNIQUE(user_id, work_date))")
+
     c.execute("CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT DEFAULT (datetime('now','localtime')))")
 
     # Insert default publish time if not exists

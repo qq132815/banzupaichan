@@ -187,6 +187,26 @@ def admin_settings_page():
 def work_reports_page():
     return render_template('work_reports.html')
 
+@app.route('/reports/efficiency-daily')
+@login_required
+def report_efficiency_daily_page():
+    return render_template('report_efficiency_daily.html')
+
+@app.route('/reports/personal-efficiency')
+@login_required
+def report_personal_efficiency_page():
+    return render_template('report_personal_efficiency.html')
+
+@app.route('/reports/weekly')
+@login_required
+def report_weekly_page():
+    return render_template('report_weekly.html')
+
+@app.route('/reports/monthly')
+@login_required
+def report_monthly_page():
+    return render_template('report_monthly.html')
+
 @app.route('/planner/plans')
 @login_required
 def planner_plans_page():
@@ -1410,6 +1430,350 @@ def api_standard_hours_capacity():
     conn.close()
     total_pages = max(1, (total + page_size - 1) // page_size)
     return jsonify({'data': rows, 'total': total, 'page': page, 'page_size': page_size, 'total_pages': total_pages})
+
+# ========== Personnel Reports API ==========
+
+def _get_personnel_map():
+    """Build name -> {team_id, department, position} mapping."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT name, team_id, department, position FROM personnel")
+    mapping = {row[0]: {'team_id': row[1], 'department': row[2], 'position': row[3]} for row in c.fetchall()}
+    conn.close()
+    return mapping
+
+def _get_standard_capacity_map():
+    """Build (product_code, process_name) -> standard_hours mapping."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT product_code, process_name, standard_hours FROM standard_hours WHERE standard_hours > 0")
+    mapping = {}
+    for row in c.fetchall():
+        key = (row[0], row[1])
+        if key not in mapping:
+            mapping[key] = []
+        mapping[key].append(row[2])
+    conn.close()
+    # Average for each combo
+    return {k: sum(v)/len(v) for k, v in mapping.items()}
+
+@app.route('/api/reports/daily')
+@login_required
+def api_report_daily():
+    date = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
+    team_id = request.args.get('team_id', type=int)
+    
+    conn = get_connection()
+    c = conn.cursor()
+    personnel_map = _get_personnel_map()
+    std_cap = _get_standard_capacity_map()
+    
+    # Get work reports for the date
+    c.execute("""SELECT operator, SUM(report_qty), SUM(report_hours), SUM(good_qty)
+        FROM work_reports WHERE create_time LIKE ? AND report_hours > 0
+        GROUP BY operator""", (date + '%',))
+    report_data = {r[0]: {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0} for r in c.fetchall()}
+    
+    # Get attendance for the date
+    c.execute("SELECT name, work_hours, is_overtime, leave_type FROM attendance WHERE work_date=?", (date,))
+    attend_data = {r[0]: {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or ''} for r in c.fetchall()}
+    
+    # Get schedule capacity for efficiency calc
+    c.execute("SELECT product_code, process_name, capacity_per_hour FROM schedules WHERE schedule_date=? AND capacity_per_hour > 0", (date,))
+    sched_cap = {}
+    for r in c.fetchall():
+        sched_cap[(r[0], r[1])] = r[2]
+    
+    conn.close()
+    
+    rows = []
+    for name, info in personnel_map.items():
+        if team_id and info['team_id'] != team_id:
+            continue
+        rd = report_data.get(name, {'qty': 0, 'hours': 0, 'good_qty': 0})
+        ad = attend_data.get(name, {'hours': 0, 'overtime': 0, 'leave': ''})
+        if rd['qty'] == 0 and rd['hours'] == 0 and ad['hours'] == 0:
+            continue
+        
+        good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0
+        # Efficiency: actual rate vs standard capacity average
+        eff = 0
+        if rd['hours'] > 0:
+            actual_rate = rd['qty'] / rd['hours']
+            # Use average of all matching standard capacities
+            caps = []
+            for (pc, pn), sc in std_cap.items():
+                if name in [r for r in report_data]:  # Simplified - use first match
+                    caps.append(sc)
+            avg_cap = sum(caps) / len(caps) if caps else 0
+            if avg_cap > 0:
+                eff = round(actual_rate / avg_cap * 100, 1)
+        
+        rows.append({
+            'name': name,
+            'department': info['department'],
+            'attendance_hours': ad['hours'],
+            'production_hours': rd['hours'],
+            'qty': rd['qty'],
+            'good_rate': good_rate,
+            'efficiency': eff,
+            'is_overtime': ad['overtime'],
+            'leave_type': ad['leave'],
+        })
+    
+    return jsonify({'date': date, 'data': rows})
+
+@app.route('/api/reports/personal')
+@login_required
+def api_report_personal():
+    name = request.args.get('name', '')
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+    if not name or not date_from or not date_to:
+        return jsonify({'error': '参数不完整'}), 400
+    
+    conn = get_connection()
+    c = conn.cursor()
+    std_cap = _get_standard_capacity_map()
+    
+    # Get work reports
+    c.execute("""SELECT create_time, SUM(report_qty), SUM(report_hours), SUM(good_qty)
+        FROM work_reports WHERE operator=? AND create_time BETWEEN ? AND ? AND report_hours > 0
+        GROUP BY SUBSTR(create_time, 1, 10)""",
+        (name, date_from + ' 00:00:00', date_to + ' 23:59:59'))
+    report_data = {}
+    for r in c.fetchall():
+        dt = r[0][:10]
+        report_data[dt] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0}
+    
+    # Get attendance
+    c.execute("SELECT work_date, work_hours, is_overtime, leave_type FROM attendance WHERE name=? AND work_date BETWEEN ? AND ?",
+              (name, date_from, date_to))
+    attend_data = {}
+    for r in c.fetchall():
+        attend_data[r[0]] = {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or ''}
+    
+    conn.close()
+    
+    # Build date columns
+    days = []
+    current = datetime.strptime(date_from, '%Y-%m-%d').date()
+    end = datetime.strptime(date_to, '%Y-%m-%d').date()
+    while current <= end:
+        ds = current.strftime('%Y-%m-%d')
+        rd = report_data.get(ds, {'qty': 0, 'hours': 0, 'good_qty': 0})
+        ad = attend_data.get(ds, {'hours': 0, 'overtime': 0, 'leave': ''})
+        good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0
+        eff = 0
+        if rd['hours'] > 0:
+            caps = list(std_cap.values())
+            avg_cap = sum(caps) / len(caps) if caps else 0
+            if avg_cap > 0:
+                eff = round((rd['qty'] / rd['hours']) / avg_cap * 100, 1)
+        days.append({
+            'date': ds,
+            'qty': rd['qty'],
+            'hours': rd['hours'],
+            'good_rate': good_rate,
+            'efficiency': eff,
+            'attendance_hours': ad['hours'],
+            'is_overtime': ad['overtime'],
+            'leave_type': ad['leave'],
+        })
+        current += timedelta(days=1)
+    
+    return jsonify({'name': name, 'days': days})
+
+@app.route('/api/reports/weekly')
+@login_required
+def api_report_weekly():
+    week_start = request.args.get('week_start', '')
+    team_id = request.args.get('team_id', type=int)
+    if not week_start:
+        today = datetime.now().date()
+        week_start = (today - timedelta(days=today.weekday())).strftime('%Y-%m-%d')
+    week_end = (datetime.strptime(week_start, '%Y-%m-%d').date() + timedelta(days=6)).strftime('%Y-%m-%d')
+    
+    conn = get_connection()
+    c = conn.cursor()
+    personnel_map = _get_personnel_map()
+    std_cap = _get_standard_capacity_map()
+    
+    # Work reports for the week
+    c.execute("""SELECT operator, SUM(report_qty), SUM(report_hours), SUM(good_qty), COUNT(DISTINCT SUBSTR(create_time,1,10))
+        FROM work_reports WHERE create_time BETWEEN ? AND ? AND report_hours > 0
+        GROUP BY operator""", (week_start + ' 00:00:00', week_end + ' 23:59:59'))
+    report_data = {}
+    for r in c.fetchall():
+        report_data[r[0]] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'days': r[4] or 0}
+    
+    # Attendance for the week
+    c.execute("SELECT name, SUM(work_hours), SUM(is_overtime), COUNT(*) FROM attendance WHERE work_date BETWEEN ? AND ? GROUP BY name",
+              (week_start, week_end))
+    attend_data = {}
+    for r in c.fetchall():
+        attend_data[r[0]] = {'total_hours': r[1] or 0, 'overtime_days': r[2] or 0, 'work_days': r[3] or 0}
+    
+    conn.close()
+    
+    rows = []
+    for name, info in personnel_map.items():
+        if team_id and info['team_id'] != team_id:
+            continue
+        rd = report_data.get(name, {'qty': 0, 'hours': 0, 'good_qty': 0, 'days': 0})
+        ad = attend_data.get(name, {'total_hours': 0, 'overtime_days': 0, 'work_days': 0})
+        if rd['qty'] == 0 and rd['hours'] == 0 and ad['total_hours'] == 0:
+            continue
+        
+        good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0
+        caps = list(std_cap.values())
+        avg_cap = sum(caps) / len(caps) if caps else 0
+        eff = round((rd['qty'] / rd['hours']) / avg_cap * 100, 1) if rd['hours'] > 0 and avg_cap > 0 else 0
+        util_rate = round(rd['hours'] / ad['total_hours'] * 100, 1) if ad['total_hours'] > 0 else 0
+        daily_avg = round(rd['qty'] / rd['days'], 1) if rd['days'] > 0 else 0
+        
+        rows.append({
+            'name': name, 'department': info['department'],
+            'work_days': ad['work_days'],
+            'total_attendance_hours': ad['total_hours'],
+            'total_production_hours': rd['hours'],
+            'total_qty': rd['qty'],
+            'good_rate': good_rate,
+            'avg_efficiency': eff,
+            'overtime_days': ad['overtime_days'],
+            'utilization_rate': util_rate,
+            'daily_avg_qty': daily_avg,
+        })
+    
+    return jsonify({'week_start': week_start, 'week_end': week_end, 'data': rows})
+
+@app.route('/api/reports/monthly')
+@login_required
+def api_report_monthly():
+    month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    team_id = request.args.get('team_id', type=int)
+    date_from = month + '-01'
+    import calendar
+    y, m = map(int, month.split('-'))
+    last_day = calendar.monthrange(y, m)[1]
+    date_to = f"{month}-{last_day:02d}"
+    
+    conn = get_connection()
+    c = conn.cursor()
+    personnel_map = _get_personnel_map()
+    std_cap = _get_standard_capacity_map()
+    
+    # Work reports
+    c.execute("""SELECT operator, SUM(report_qty), SUM(report_hours), SUM(good_qty), COUNT(DISTINCT SUBSTR(create_time,1,10))
+        FROM work_reports WHERE create_time BETWEEN ? AND ? AND report_hours > 0
+        GROUP BY operator""", (date_from + ' 00:00:00', date_to + ' 23:59:59'))
+    report_data = {}
+    for r in c.fetchall():
+        report_data[r[0]] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'days': r[4] or 0}
+    
+    # Attendance
+    c.execute("SELECT name, SUM(work_hours), SUM(is_overtime), COUNT(*), SUM(CASE WHEN leave_type != '' AND leave_type IS NOT NULL THEN 1 ELSE 0 END) FROM attendance WHERE work_date BETWEEN ? AND ? GROUP BY name",
+              (date_from, date_to))
+    attend_data = {}
+    for r in c.fetchall():
+        attend_data[r[0]] = {'total_hours': r[1] or 0, 'overtime_days': r[2] or 0, 'work_days': r[3] or 0, 'leave_days': r[4] or 0}
+    
+    # Planned qty from schedules
+    c.execute("SELECT team_id, SUM(quantity) FROM schedules WHERE schedule_date BETWEEN ? AND ? GROUP BY team_id",
+              (date_from, date_to))
+    planned_by_team = {r[0]: r[1] for r in c.fetchall()}
+    
+    conn.close()
+    
+    rows = []
+    for name, info in personnel_map.items():
+        if team_id and info['team_id'] != team_id:
+            continue
+        rd = report_data.get(name, {'qty': 0, 'hours': 0, 'good_qty': 0, 'days': 0})
+        ad = attend_data.get(name, {'total_hours': 0, 'overtime_days': 0, 'work_days': 0, 'leave_days': 0})
+        if rd['qty'] == 0 and rd['hours'] == 0 and ad['total_hours'] == 0:
+            continue
+        
+        good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0
+        caps = list(std_cap.values())
+        avg_cap = sum(caps) / len(caps) if caps else 0
+        eff = round((rd['qty'] / rd['hours']) / avg_cap * 100, 1) if rd['hours'] > 0 and avg_cap > 0 else 0
+        util_rate = round(rd['hours'] / ad['total_hours'] * 100, 1) if ad['total_hours'] > 0 else 0
+        daily_avg = round(rd['qty'] / rd['days'], 1) if rd['days'] > 0 else 0
+        planned = planned_by_team.get(info['team_id'], 0)
+        achieve_rate = round(rd['qty'] / planned * 100, 1) if planned > 0 else 0
+        
+        rows.append({
+            'name': name, 'department': info['department'],
+            'work_days': ad['work_days'],
+            'total_attendance_hours': ad['total_hours'],
+            'total_production_hours': rd['hours'],
+            'total_qty': rd['qty'],
+            'good_rate': good_rate,
+            'avg_efficiency': eff,
+            'overtime_days': ad['overtime_days'],
+            'utilization_rate': util_rate,
+            'daily_avg_qty': daily_avg,
+            'achieve_rate': achieve_rate,
+            'leave_days': ad['leave_days'],
+        })
+    
+    return jsonify({'month': month, 'data': rows})
+
+@app.route('/api/attendance/sync', methods=['POST'])
+@login_required
+@planner_required
+def api_attendance_sync():
+    data = request.json
+    date_from = data.get('date_from', '')
+    date_to = data.get('date_to', '')
+    if not date_from or not date_to:
+        return jsonify({'error': '请选择日期范围'}), 400
+    try:
+        from utils.dingtalk import sync_attendance
+        count = sync_attendance(date_from, date_to)
+        return jsonify({'ok': True, 'count': count})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/attendance/test', methods=['POST'])
+@login_required
+@planner_required
+def api_attendance_test():
+    try:
+        from utils.dingtalk import get_access_token
+        token = get_access_token()
+        if token:
+            return jsonify({'ok': True})
+        else:
+            return jsonify({'ok': False, 'error': '无法获取access_token，请检查AppKey和AppSecret'})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
+@app.route('/api/attendance', methods=['GET'])
+@login_required
+def api_attendance():
+    name = request.args.get('name', '')
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+    conn = get_connection()
+    c = conn.cursor()
+    sql = "SELECT * FROM attendance WHERE 1=1"
+    params = []
+    if name:
+        sql += " AND name=?"
+        params.append(name)
+    if date_from:
+        sql += " AND work_date>=?"
+        params.append(date_from)
+    if date_to:
+        sql += " AND work_date<=?"
+        params.append(date_to)
+    sql += " ORDER BY work_date DESC LIMIT 100"
+    c.execute(sql, params)
+    r = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return jsonify(r)
 
 # ========== Export API ==========
 @app.route('/api/export/<data_type>')
