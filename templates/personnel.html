@@ -9,6 +9,7 @@
 <option value="">全部班组</option>
 </select>
 <div style="margin-left:auto;display:flex;gap:8px">
+<button class="btn btn-danger readonly-hide" onclick="downloadPersonnelTpl()">📄 模板</button>
 <button class="btn btn-outline readonly-hide" onclick="exportPersonnel()">📤 导出</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/personnel', function(){setTimeout(function(){loadPersonnel();}, 500);})">📥 导入</button>
 <button class="btn btn-primary readonly-hide" onclick="showAddPersonnel()">＋ 新增</button>
@@ -109,5 +110,6 @@ var url=editPlId?"/api/personnel/"+editPlId:"/api/personnel";
 api(url,{method:editPlId?"PUT":"POST",body:data}).then(function(){toast("保存成功","success");closePlModal();loadPersonnel();}).catch(function(){toast("保存失败","error");});
 }
 function deletePersonnel(id){if(!confirm("确定删除？"))return;api("/api/personnel/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadPersonnel();});}
+function downloadPersonnelTpl(){var headers=["员工UserID","姓名","3级部门","职位"];var rows=["001,张三,前道班,操作工","002,李四,焊接班,自动焊"];var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="人员导入模板.csv";a.click();}
 </script>
 {% endblock %}

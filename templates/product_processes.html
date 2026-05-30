@@ -7,6 +7,7 @@
 <input type="text" id="search" placeholder="搜索工序..." oninput="window._page=1;loadData()" style="width:200px">
 <select id="team-filter" onchange="window._page=1;loadData()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"><option value="">全部班组</option></select>
 <div style="margin-left:auto;display:flex;gap:8px">
+<button class="btn btn-danger readonly-hide" onclick="downloadProcTpl()">📄 模板</button>
 <button class="btn btn-outline readonly-hide" onclick="exportProcesses()">📥 导出</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/processes', function(){setTimeout(function(){loadData();}, 500);})">📤 导入</button>
 <button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>
@@ -156,5 +157,6 @@ document.addEventListener("DOMContentLoaded", function(){
         if(USER_ROLE!=="planner"){document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});}
     }
 });
+function downloadProcTpl(){var headers=["工序编号","工序名称","报工权限"];var rows=["1A,下料,前段","2DW-1,一端外角,前段"];var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="工序导入模板.csv";a.click();}
 </script>
 {% endblock %}

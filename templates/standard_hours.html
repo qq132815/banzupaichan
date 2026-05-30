@@ -7,6 +7,7 @@
 <input type="text" id="search" placeholder="搜索产品编号/名称/工序..." oninput="window._page=1;loadData()" style="width:240px">
 <div style="margin-left:auto;display:flex;gap:8px">
 <button class="btn btn-outline readonly-hide" onclick="initFromRoutes()">🔄 从工艺路线初始化</button>
+<button class="btn btn-danger readonly-hide" onclick="downloadShTpl()">📄 模板</button>
 <button class="btn btn-outline readonly-hide" onclick="doExport()">📤 导出</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/standard_hours', function(){setTimeout(function(){loadData();}, 500);})">📥 导入</button>
 <button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>
@@ -239,5 +240,6 @@ function doExport(){
 }
 
 loadData();
+function downloadShTpl(){var headers=["产品编号","产品名称","工序","班组","标准工时(分)","换线时间(分)","备注"];var rows=["F01-ABC,成品F01,焊接压板1（自动）,焊接,2.5,15,"];var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="标准工时导入模板.csv";a.click();}
 </script>
 {% endblock %}

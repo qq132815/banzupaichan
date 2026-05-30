@@ -9,6 +9,7 @@
 <option value="">全部班组</option>
 </select>
 <div style="margin-left:auto;display:flex;gap:8px">
+<button class="btn btn-danger readonly-hide" onclick="downloadMoldTpl()">📄 模板</button>
 <button class="btn btn-outline readonly-hide" onclick="exportMolds()">📤 导出</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/molds', function(){setTimeout(function(){loadMolds();}, 500);})">📥 导入</button>
 <button class="btn btn-primary readonly-hide" onclick="showAddMold()">＋ 新增</button>
@@ -109,5 +110,6 @@ var url=editMdId?"/api/molds/"+editMdId:"/api/molds";
 api(url,{method:editMdId?"PUT":"POST",body:data}).then(function(){toast("保存成功","success");closeMdModal();loadMolds();}).catch(function(){toast("保存失败","error");});
 }
 function deleteMold(id){if(!confirm("确定删除？"))return;api("/api/molds/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadMolds();});}
+function downloadMoldTpl(){var headers=["模具编号","模具名称","模具类型","关联产品编码","存放位置","备注"];var rows=["MJ-001,弯管模具A,弯管,F01-ABC,模具架A1,"];var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="模具导入模板.csv";a.click();}
 </script>
 {% endblock %}

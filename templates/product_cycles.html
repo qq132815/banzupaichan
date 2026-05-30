@@ -5,7 +5,8 @@
 </div></div>
 <div class="toolbar">
 <input type="text" id="search" placeholder="搜索产品编码" oninput="window._page=1;load()">
-<div style="margin-left:auto;display:flex;gap:8px"><button class="btn btn-outline readonly-hide" onclick="doExport()">📥 导出</button>
+<div style="margin-left:auto;display:flex;gap:8px"><button class="btn btn-danger readonly-hide" onclick="downloadCycleTpl()">📄 模板</button>
+<button class="btn btn-outline readonly-hide" onclick="doExport()">📥 导出</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/cycles', function(){setTimeout(function(){load();}, 500);})">📤 导入</button>
 {% if session.get('role') == 'planner' %}<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>{% endif %}</div>
 </div>
@@ -63,5 +64,6 @@ document.addEventListener("DOMContentLoaded", function(){
         if(USER_ROLE!=="planner"){document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});}
     }
 });
+function downloadCycleTpl(){var headers=["产品名称","生产周期","提前生产时间"];var rows=["F01-ABC,3,1"];var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="生产周期导入模板.csv";a.click();}
 </script>
 {% endblock %}

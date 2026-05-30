@@ -9,6 +9,7 @@
 <option value="">全部班组</option>
 </select>
 <div style="margin-left:auto;display:flex;gap:8px">
+<button class="btn btn-danger readonly-hide" onclick="downloadEquipTpl()">📄 模板</button>
 <button class="btn btn-outline readonly-hide" onclick="exportEquip()">📤 导出</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/equipment', function(){setTimeout(function(){loadEquipments();}, 500);})">📥 导入</button>
 <button class="btn btn-primary readonly-hide" onclick="showAddEquip()">＋ 新增</button>
@@ -111,5 +112,6 @@ api(url,{method:editEqId?"PUT":"POST",body:data}).then(function(){toast("保存�
 }
 function deleteEquip(id){if(!confirm("确定删除？"))return;api("/api/equipments/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadEquipments();});}
 loadEquipments();
+function downloadEquipTpl(){var headers=["设备编号","设备名称","产线名称","归属班组"];var rows=["FX19-1,涂装机1号（自动）,产线A,装配包装","TJ12-1,涂装1号,产线A,装配包装"];var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="设备导入模板.csv";a.click();}
 </script>
 {% endblock %}

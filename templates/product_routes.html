@@ -8,7 +8,8 @@
 </div>
 <div class="toolbar">
 <input type="text" id="search" placeholder="搜索路线/产品/工序..." oninput="doSearch()" style="width:260px">
-<div style="margin-left:auto;display:flex;gap:8px"><button class="btn btn-outline readonly-hide" onclick="doExport()">📥 导出</button>
+<div style="margin-left:auto;display:flex;gap:8px"><button class="btn btn-danger readonly-hide" onclick="downloadRouteTpl()">📄 模板</button>
+<button class="btn btn-outline readonly-hide" onclick="doExport()">📥 导出</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/process_routes', function(){setTimeout(function(){load();}, 500);})">📤 导入</button>
 <button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button></div>
 </div>
@@ -71,5 +72,6 @@ document.addEventListener("DOMContentLoaded", function(){
         if(USER_ROLE!=="planner"){document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});}
     }
 });
+function downloadRouteTpl(){var headers=["路线编码","路线名称","产品编号","包含工序列表","成品件号"];var rows=["F01-ABC-焊接,F01-ABC工艺路线-焊接,F01-ABC-焊接,焊接压板1（自动）,清洗（酸洗）（烘干）,半成品入库,F01-ABC"];var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="工艺路线导入模板.csv";a.click();}
 </script>
 {% endblock %}
