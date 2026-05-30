@@ -58,7 +58,7 @@ a{color:#2563eb;text-decoration:none}
 /* ========== Tables ========== */
 .table-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse}
-th{padding:10px 14px;text-align:left;font-weight:600;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;border-bottom:2px solid #e5e7eb}
+th{padding:10px 14px;text-align:left;font-weight:600;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;border-bottom:2px solid #e5e7eb;position:sticky;top:0;z-index:2}
 td{padding:10px 14px;border-bottom:1px solid #f3f4f6;font-size:13px}
 tr:hover{background:#f9fafb}
 .table-empty{padding:40px;text-align:center;color:#9ca3af}
