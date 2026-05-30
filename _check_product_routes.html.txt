@@ -1,6 +1,0 @@
-TOOLBAR: 
-<label>搜索：</label>
-<input type="text" id="search" placeholder="搜索路线/产品/工序..." oninput="doSearch()" style="width:260px">
-
-
-BUTTONS:
