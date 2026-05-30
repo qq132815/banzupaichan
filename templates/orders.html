@@ -72,8 +72,9 @@ function loadOrders(){
     var s = document.getElementById("status-filter").value;
     var url = "/api/orders?";
     if(q) url += "q="+encodeURIComponent(q)+"&";
-    if(s) url += "status="+s;
-    fetch(url).then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('orders-pagination',resp.page||1,resp.total_pages||1,'loadOrders');return r.json()}).then(function(resp){var d=resp.data||resp;window._total=resp.total||d.length;renderPagination('orders-pagination',resp.page||1,resp.total_pages||1,'loadOrders');
+    if(s) url += "status="+s+"&";
+    url += "page="+window._page+"&page_size="+window._pageSize;
+    fetch(url).then(function(r){return r.json()}).then(function(resp){var d=resp.data||resp;window._total=resp.total||d.length;renderPagination('orders-pagination',resp.page||1,resp.total_pages||1,'loadOrders');
         var tb = document.getElementById("orders-tbody");
         var empty = document.getElementById("orders-empty");
         tb.innerHTML = "";

@@ -149,7 +149,7 @@ function loadData(){
     var url="/api/standard-hours";
     url+=(url.indexOf('?')>=0?'&':'?')+'page='+window._page+'&page_size='+window._pageSize;
     if(q)url+="?q="+encodeURIComponent(q);
-    fetch(url).then(function(r){return r.json()}).then(function(d){
+    fetch(url).then(function(r){return r.json()}).then(function(resp){var d=resp.data||resp;window._total=resp.total||d.length;renderPagination('sh-pagination',resp.page||1,resp.total_pages||1,'loadData');
         var tb=document.getElementById("tbody");tb.innerHTML="";
         var empty=document.getElementById("empty-msg");
         if(!d.length){empty.style.display="block";return;}

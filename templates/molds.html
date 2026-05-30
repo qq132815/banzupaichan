@@ -75,7 +75,7 @@ var params=[];
 if(tid)params.push("team_id="+tid);
 if(q)params.push("q="+encodeURIComponent(q));
 if(params.length)url+="?"+params.join("&");
-fetch(url).then(function(r){return r.json()}).then(function(d){
+fetch(url).then(function(r){return r.json()}).then(function(resp){var d=resp.data||resp;window._total=resp.total||d.length;renderPagination('md-pagination',resp.page||1,resp.total_pages||1,'loadMolds');
 var tb=document.getElementById("md-tbody");tb.innerHTML="";
 var teamMap={};teams.forEach(function(t){teamMap[t.id]=t.name;});
 d.forEach(function(m){
