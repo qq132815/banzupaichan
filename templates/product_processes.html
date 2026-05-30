@@ -80,7 +80,7 @@ function loadData(){
             tr.innerHTML='<td>'+r.process_code+'</td>'
                 +'<td><strong>'+r.process_name+'</strong></td>'
                 +'<td>'+(r.team_name||'-')+'</td>'
-                +'<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="showEdit('+r.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="del('+r.id+')">删除</button></div></td>';
+                +'<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="showEdit('+r.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="deleteProcess('+r.id+')">删除</button></div></td>';
             tb.appendChild(tr);
         });
     });
@@ -119,7 +119,7 @@ function save(){
         toast("已保存","success");closeModal();loadData();
     }).catch(function(e){toast(e.error||"保存失败","error");});
 }
-function del(id){if(!confirm("确定删除？"))return;api("/api/processes/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadData();});}
+function deleteProcess(id){if(!confirm("确定删除？"))return;api("/api/processes/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadData();}).catch(function(e){toast(e.error||"删除失败","error");});}
 
 function importProcesses(){
     var f=document.getElementById("import-file").files[0];
