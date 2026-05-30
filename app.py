@@ -1523,8 +1523,8 @@ def api_statistics():
     for team in teams:
         tid = team['id']
         tname = team['name']
-        # Map team_name to process names
-        c.execute("SELECT process_name FROM processes WHERE team_name=?", (tname,))
+        # Map team_name to process names (team_name may be comma-separated)
+        c.execute("SELECT process_name FROM processes WHERE team_name LIKE ?", ('%' + tname + '%',))
         proc_names = [r[0] for r in c.fetchall()]
         
         days = []
