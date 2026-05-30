@@ -3,5 +3,9 @@
 *.pyo
 data/production.db
 tmp_*.py
+tmp_*.ps1
+test_*.py
+*_backup.*
 *.tmp
 imports/
+scripts/tmp_*
