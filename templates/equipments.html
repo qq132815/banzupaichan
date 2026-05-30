@@ -65,8 +65,13 @@ var o2=document.createElement("option");o2.value=t.id;o2.textContent=t.name;sel2
 });
 
 function loadEquipments(){
+var q=document.getElementById("eq-search").value;
 var tid=document.getElementById("eq-team-filter").value;
-var url="/api/equipments";if(tid)url+="?team_id="+tid;
+var url="/api/equipments";
+var params=[];
+if(tid)params.push("team_id="+tid);
+if(q)params.push("q="+encodeURIComponent(q));
+if(params.length)url+="?"+params.join("&");
 fetch(url).then(function(r){return r.json()}).then(function(d){
 var tb=document.getElementById("eq-tbody");tb.innerHTML="";
 var teamMap={};teams.forEach(function(t){teamMap[t.id]=t.name;});

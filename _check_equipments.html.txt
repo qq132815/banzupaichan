@@ -1,0 +1,8 @@
+TOOLBAR: 
+<label>班组：</label>
+<select id="eq-team-filter" onchange="loadEquipments()">
+<option value="">全部</option>
+</select>
+
+
+BUTTONS:

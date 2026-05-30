@@ -204,7 +204,8 @@ def api_teams():
 @login_required
 def api_equipments():
     team_id = request.args.get('team_id', type=int)
-    return jsonify(get_all_equipments(team_id))
+    q = request.args.get('q', '').strip()
+    return jsonify(get_all_equipments(team_id, q))
 
 @app.route('/api/equipments', methods=['POST'])
 @login_required

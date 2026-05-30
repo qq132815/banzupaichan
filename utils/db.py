@@ -271,13 +271,20 @@ def get_all_teams():
     conn.close()
     return r
 
-def get_all_equipments(team_id=None):
+def get_all_equipments(team_id=None, q=None):
     conn = get_connection()
     c = conn.cursor()
+    sql = "SELECT * FROM equipments WHERE 1=1"
+    params = []
     if team_id:
-        c.execute("SELECT * FROM equipments WHERE team_id=?", (team_id,))
-    else:
-        c.execute("SELECT * FROM equipments ORDER BY team_id, equipment_code")
+        sql += " AND team_id=?"
+        params.append(team_id)
+    if q:
+        like = "%" + q + "%"
+        sql += " AND (equipment_code LIKE ? OR equipment_name LIKE ? OR location LIKE ?)"
+        params.extend([like, like, like])
+    sql += " ORDER BY team_id, equipment_code"
+    c.execute(sql, params)
     r = [dict(row) for row in c.fetchall()]
     conn.close()
     return r

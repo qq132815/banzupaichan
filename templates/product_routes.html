@@ -2,16 +2,15 @@
 {% block content %}
 <div class="page-header"><h1>🔗 工艺路线</h1>
 <div class="page-actions">
-<button class="btn btn-outline readonly-hide" onclick="doExport()">📥 导出</button>
-<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/process_routes', function(){setTimeout(function(){load();}, 500);})">📤 导入</button>
 {% if session.get('role') == 'planner' %}
-<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>
 {% endif %}
 </div>
 </div>
 <div class="toolbar">
-<label>搜索：</label>
 <input type="text" id="search" placeholder="搜索路线/产品/工序..." oninput="doSearch()" style="width:260px">
+<div style="margin-left:auto;display:flex;gap:8px"><button class="btn btn-outline readonly-hide" onclick="doExport()">📥 导出</button>
+<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/process_routes', function(){setTimeout(function(){load();}, 500);})">📤 导入</button>
+<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button></div>
 </div>
 <div class="card"><div class="card-body">
 <div class="table-wrap"><table style="white-space:nowrap">

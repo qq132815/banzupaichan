@@ -2,20 +2,18 @@
 {% block content %}
 <div class="page-header">
 <h1>⚙️ 工序管理</h1>
-<div class="page-actions">
-<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/processes', function(){setTimeout(function(){load();}, 500);})">📥 导入</button>
-<button class="btn btn-outline readonly-hide" onclick="exportProcesses()">📤 导出</button>
+</div>
+<div class="toolbar">
+<input type="text" id="search" placeholder="搜索工序..." oninput="loadData()" style="width:200px">
+<select id="team-filter" onchange="loadData()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"><option value="">全部班组</option></select>
+<div style="margin-left:auto;display:flex;gap:8px">
+<button class="btn btn-outline readonly-hide" onclick="exportProcesses()">📥 导出</button>
+<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/processes', function(){setTimeout(function(){loadData();}, 500);})">📤 导入</button>
 <button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>
 </div>
 </div>
 <div class="card">
 <div class="card-body">
-<div class="toolbar">
-<input type="text" class="form-control" id="search" placeholder="搜索工序名称/编码..." oninput="loadData()" style="width:260px">
-<select id="team-filter" class="form-control" onchange="loadData()" style="width:150px;margin-left:8px">
-<option value="">全部班组</option>
-</select>
-</div>
 <div class="table-wrap">
 <table>
 <thead><tr><th>工序编码</th><th>工序名称</th><th>所属班组</th><th>操作</th></tr></thead>

@@ -1,0 +1,3 @@
+TOOLBAR: <input type="text" id="search" placeholder="搜索产品编码" oninput="load()">
+
+BUTTONS:

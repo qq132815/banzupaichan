@@ -1,0 +1,6 @@
+TOOLBAR: 
+<label>搜索：</label>
+<input type="text" id="search" placeholder="搜索父件/子件编码或名称..." oninput="doSearch()" style="width:300px">
+
+
+BUTTONS:
