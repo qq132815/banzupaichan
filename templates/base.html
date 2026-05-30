@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -29,26 +29,38 @@
 <li><a href="/alerts-page" class="nav-link"><span class="icon">🔔</span><span>预警中心</span></a></li>
 <li><a href="/orders-page" class="nav-link"><span class="icon">📦</span><span>订单管理</span></a></li>
 {% endif %}
-<li class="nav-section"><span>基础数据</span></li>
-<li><a href="/products/processes" class="nav-link"><span class="icon">⚙️</span><span>工序管理</span></a></li>
-<li><a href="/products/routes" class="nav-link"><span class="icon">🔗</span><span>工艺路线</span></a></li>
-<li><a href="/products/cycles" class="nav-link"><span class="icon">⏱️</span><span>生产周期</span></a></li>
-<li><a href="/products/bom" class="nav-link"><span class="icon">🔩</span><span>物料清单</span></a></li>
-<li><a href="/equipments-page" class="nav-link"><span class="icon">⚙️</span><span>设备管理</span></a></li>
-<li><a href="/personnel-page" class="nav-link"><span class="icon">👥</span><span>人员管理</span></a></li>
-<li><a href="/molds-page" class="nav-link"><span class="icon">🔧</span><span>模具管理</span></a></li>
+<li class="nav-item has-sub">
+<a href="javascript:void(0)" class="nav-link has-sub-link" onclick="toggleSub(this)"><span class="icon">📂</span><span>基础数据</span><span class="arrow">▸</span></a>
+<ul class="sub-menu">
+<li><a href="/products/processes" class="nav-link sub"><span class="icon">⚙️</span><span>工序管理</span></a></li>
+<li><a href="/products/routes" class="nav-link sub"><span class="icon">🔗</span><span>工艺路线</span></a></li>
+<li><a href="/products/cycles" class="nav-link sub"><span class="icon">⏱️</span><span>生产周期</span></a></li>
+<li><a href="/products/bom" class="nav-link sub"><span class="icon">🔩</span><span>物料清单</span></a></li>
+<li><a href="/equipments-page" class="nav-link sub"><span class="icon">⚙️</span><span>设备管理</span></a></li>
+<li><a href="/personnel-page" class="nav-link sub"><span class="icon">👥</span><span>人员管理</span></a></li>
+<li><a href="/molds-page" class="nav-link sub"><span class="icon">🔧</span><span>模具管理</span></a></li>
+</ul>
+</li>
 {% if session.get('role') == 'planner' %}
-<li class="nav-section"><span>生产报表</span></li>
-<li><a href="/statistics-page" class="nav-link"><span class="icon">📈</span><span>完成率统计</span></a></li>
-<li><a href="/work-reports-page" class="nav-link"><span class="icon">📋</span><span>报工数据</span></a></li>
-<li><a href="/reports/efficiency-daily" class="nav-link"><span class="icon">📊</span><span>效率日报</span></a></li>
-<li><a href="/reports/personal-efficiency" class="nav-link"><span class="icon">👤</span><span>个人效率查询</span></a></li>
-<li><a href="/reports/weekly" class="nav-link"><span class="icon">📅</span><span>周报表</span></a></li>
-<li><a href="/reports/monthly" class="nav-link"><span class="icon">📆</span><span>月报表</span></a></li>
-<li class="nav-section"><span>系统管理</span></li>
-<li><a href="/admin/users" class="nav-link"><span class="icon">👤</span><span>账户管理</span></a></li>
-<li><a href="/standard-hours-page" class="nav-link"><span class="icon">⏱️</span><span>标准工时</span></a></li>
-<li><a href="/admin/settings" class="nav-link"><span class="icon">⚙️</span><span>计划发布时间设置</span></a></li>
+<li class="nav-item has-sub">
+<a href="javascript:void(0)" class="nav-link has-sub-link" onclick="toggleSub(this)"><span class="icon">📊</span><span>生产报表</span><span class="arrow">▸</span></a>
+<ul class="sub-menu">
+<li><a href="/statistics-page" class="nav-link sub"><span class="icon">📈</span><span>完成率统计</span></a></li>
+<li><a href="/work-reports-page" class="nav-link sub"><span class="icon">📋</span><span>报工数据</span></a></li>
+<li><a href="/reports/efficiency-daily" class="nav-link sub"><span class="icon">📊</span><span>效率日报</span></a></li>
+<li><a href="/reports/personal-efficiency" class="nav-link sub"><span class="icon">👤</span><span>个人效率查询</span></a></li>
+<li><a href="/reports/weekly" class="nav-link sub"><span class="icon">📅</span><span>周报表</span></a></li>
+<li><a href="/reports/monthly" class="nav-link sub"><span class="icon">📆</span><span>月报表</span></a></li>
+</ul>
+</li>
+<li class="nav-item has-sub">
+<a href="javascript:void(0)" class="nav-link has-sub-link" onclick="toggleSub(this)"><span class="icon">⚙️</span><span>系统管理</span><span class="arrow">▸</span></a>
+<ul class="sub-menu">
+<li><a href="/admin/users" class="nav-link sub"><span class="icon">👤</span><span>账户管理</span></a></li>
+<li><a href="/standard-hours-page" class="nav-link sub"><span class="icon">⏱️</span><span>标准工时</span></a></li>
+<li><a href="/admin/settings" class="nav-link sub"><span class="icon">⚙️</span><span>计划发布时间设置</span></a></li>
+</ul>
+</li>
 {% endif %}
 </ul>
 <div class="sidebar-footer">
@@ -77,7 +89,6 @@ var path=window.location.pathname;
 links.forEach(function(a){
 if(a.getAttribute("href")===path){
     a.classList.add("active");
-    // Auto-expand parent menu if this is a sub-item
     var parentItem=a.closest('.has-sub');
     if(parentItem)parentItem.classList.add('open');
 }
