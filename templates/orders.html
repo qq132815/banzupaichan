@@ -4,7 +4,7 @@
 <h1>📦 订单管理</h1>
 </div>
 <div class="toolbar">
-<input type="text" id="order-search" placeholder="搜索工单号/产品名称..." oninput="window._page=1;loadOrders()" style="width:220px">
+<input type="text" id="order-search" placeholder="搜索工单号/产品编号..." oninput="window._page=1;loadOrders()" style="width:220px">
 <label>状态：</label>
 <select id="status-filter" onchange="window._page=1;loadOrders()">
 <option value="">全部</option>
@@ -22,7 +22,7 @@
 <div class="card-body">
 <div class="table-wrap">
 <table>
-<thead><tr><th>工单号</th><th>产品名称</th><th>数量</th><th>完成数</th><th>交期</th><th>优先级</th><th>状态</th><th>工序进度</th><th>操作</th></tr></thead>
+<thead><tr><th>工单号</th><th>产品编号</th><th>数量</th><th>完成数</th><th>交期</th><th>优先级</th><th>状态</th><th>工序进度</th><th>操作</th></tr></thead>
 <tbody id="orders-tbody"></tbody>
 </table>
 <div id="orders-empty" class="table-empty" style="display:none">暂无订单数据，请导入工单</div>
@@ -81,7 +81,7 @@ function loadOrders(){
             var statusText = o.status==='completed'?'已完成':(o.status==='in_progress'||o.status.indexOf('\u6267')>=0)?'进行中':'待排';
             var statusColor = o.status==='completed'?'green':statusText==='进行中'?'blue':'gray';
             tr.innerHTML='<td><strong>'+o.order_no+'</strong></td>'
-                +'<td>'+(o.product_name||o.product_code||'')+'</td>'
+                +'<td>'+(o.product_code||'')+'</td>'
                 +'<td>'+o.quantity+'</td>'
                 +'<td>'+(o.completed_qty||0)+'</td>'
                 +'<td>'+(o.due_date||'')+'</td>'
@@ -148,7 +148,7 @@ function importOrders(input){
 function exportOrders(){
     fetch("/api/orders").then(function(r){return r.json()}).then(function(d){
         if(!d.length){toast("无数据可导出","warning");return;}
-        var headers=["工单号","产品编码","产品名称","数量","完成数","交期","优先级","状态","工序进度"];
+        var headers=["工单号","产品编号","数量","完成数","交期","优先级","状态","工序进度"];
         var csv=headers.join(",")+"\n";
         d.forEach(function(o){
             var row=[o.order_no,o.product_code,'"'+(o.product_name||'')+'"',o.quantity,o.completed_qty||0,o.due_date||'',o.priority||'',o.status||'"'+(o.process_progress||'').replace(/,/g,';')+'"'];
