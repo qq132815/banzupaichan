@@ -36,7 +36,7 @@ a{color:#2563eb;text-decoration:none}
 .card{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:20px;overflow:hidden}
 .card-header{padding:16px 20px;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;z-index:10}
 .card-header h2{font-size:16px;font-weight:600;color:#111827}
-.card-body{padding:0;max-height:calc(100vh - 280px);overflow-y:auto}
+.card-body{padding:0}
 
 /* ========== Toolbar ========== */
 .toolbar{display:flex;gap:12px;margin-bottom:20px;align-items:center;flex-wrap:wrap;background:#fff;padding:14px 20px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);position:sticky;top:0;z-index:10}
@@ -56,9 +56,10 @@ a{color:#2563eb;text-decoration:none}
 .btn-group{display:flex;gap:6px}
 
 /* ========== Tables ========== */
-.table-wrap{overflow-x:auto}
+.table-wrap{overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 280px)}
 table{width:100%;border-collapse:separate;border-spacing:0}
-th{padding:10px 14px;text-align:left;font-weight:600;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;border-bottom:2px solid #e5e7eb;position:sticky;top:0;z-index:2}
+th{padding:10px 14px;text-align:left;font-weight:600;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;background:#f9fafb;border-bottom:2px solid #e5e7eb}
+thead{position:sticky;top:0;z-index:2}
 td{padding:10px 14px;border-bottom:1px solid #f3f4f6;font-size:13px}
 tr:hover{background:#f9fafb}
 .table-empty{padding:40px;text-align:center;color:#9ca3af}
