@@ -96,32 +96,71 @@ def import_production_cycles(file_path):
 
 
 def import_work_orders(file_path):
-    wb = openpyxl.load_workbook(file_path)
+    wb = openpyxl.load_workbook(file_path, data_only=True)
     ws = wb.active
     conn = get_connection()
     c = conn.cursor()
-    # Ensure process_progress column exists
     try:
         c.execute("ALTER TABLE work_orders ADD COLUMN process_progress TEXT")
     except:
         pass
+    cols, headers = _match_headers(ws, {
+        'order_no': ['工单编号', '工单号', '订单编号'],
+        'product_code': ['产品编号', '产品编码', '件号'],
+        'product_name': ['产品名称', '产品图', '品名'],
+        'status': ['工单状态', '状态'],
+        'process_progress': ['工单进度条', '工序进度', '进度条'],
+        'quantity': ['计划数', '数量', '计划数量'],
+        'priority': ['优先级'],
+        'due_date': ['计划结束时间', '交期', '截止日期', '完工日期'],
+        'completed_qty': ['完工数', '完成数', '已完工数'],
+        'source': ['产品来源', '来源'],
+        'route_code': ['关联单据', '关联编号'],
+    })
     count = 0
-    # Row 1 = title, Row 2 = headers, Row 3+ = data
-    for row in ws.iter_rows(min_row=3, values_only=True):
-        if not row or not row[0]:
+    header_row = ws._import_header_row
+    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+        if not row or not row[cols['order_no']]:
             continue
-        order_no = str(row[0]).strip()
-        product_code = str(row[2]).strip() if row[2] else ''
-        product_name = str(row[2]).strip() if row[2] else ''
-        quantity = row[5] if row[5] else 0
-        priority = str(row[6]).strip() if row[6] else 'P2'
-        due_date = row[10].strftime('%Y-%m-%d') if hasattr(row[10], 'strftime') else str(row[10]) if row[10] else None
-        status = str(row[3]).strip() if len(row) > 3 and row[3] else 'pending'
-        completed_qty = row[13] if len(row) > 13 and row[13] else 0
-        # Col4: process progress string
-        process_progress = str(row[4]).strip() if len(row) > 4 and row[4] else ''
-        c.execute("INSERT OR REPLACE INTO work_orders (order_no, product_code, product_name, quantity, completed_qty, due_date, priority, status, process_progress) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                  (order_no, product_code, product_name, quantity, completed_qty, due_date, priority, status, process_progress))
+        order_no = str(row[cols['order_no']] or '').strip()
+        if not order_no:
+            continue
+        product_code = str(row[cols.get('product_code', -1)] or '').strip() if 'product_code' in cols and cols.get('product_code', -1) < len(row) else ''
+        product_name = str(row[cols.get('product_name', -1)] or '').strip() if 'product_name' in cols and cols.get('product_name', -1) < len(row) else ''
+        if not product_name:
+            product_name = product_code
+        quantity = 0
+        if 'quantity' in cols and cols['quantity'] < len(row) and row[cols['quantity']]:
+            try: quantity = float(row[cols['quantity']])
+            except: pass
+        priority = 'P2'
+        if 'priority' in cols and cols['priority'] < len(row) and row[cols['priority']]:
+            priority = str(row[cols['priority']]).strip()
+        due_date = None
+        if 'due_date' in cols and cols['due_date'] < len(row) and row[cols['due_date']]:
+            val = row[cols['due_date']]
+            if hasattr(val, 'strftime'):
+                due_date = val.strftime('%Y-%m-%d')
+            else:
+                due_date = str(val).strip()[:10]
+        status = 'pending'
+        if 'status' in cols and cols['status'] < len(row) and row[cols['status']]:
+            status = str(row[cols['status']]).strip()
+        completed_qty = 0
+        if 'completed_qty' in cols and cols['completed_qty'] < len(row) and row[cols['completed_qty']]:
+            try: completed_qty = float(row[cols['completed_qty']])
+            except: pass
+        process_progress = ''
+        if 'process_progress' in cols and cols['process_progress'] < len(row) and row[cols['process_progress']]:
+            process_progress = str(row[cols['process_progress']]).strip()
+        source = ''
+        if 'source' in cols and cols['source'] < len(row) and row[cols['source']]:
+            source = str(row[cols['source']]).strip()
+        route_code = ''
+        if 'route_code' in cols and cols['route_code'] < len(row) and row[cols['route_code']]:
+            route_code = str(row[cols['route_code']]).strip()
+        c.execute("INSERT OR REPLACE INTO work_orders (order_no, product_code, product_name, quantity, completed_qty, due_date, priority, status, source, route_code, process_progress) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                  (order_no, product_code, product_name, quantity, completed_qty, due_date, priority, status, source, route_code, process_progress))
         count += 1
     conn.commit()
     conn.close()
