@@ -205,8 +205,8 @@ select.form-control{appearance:auto}
 .timeline-bar:hover{box-shadow:0 4px 12px rgba(0,0,0,.2);z-index:5}
 
 /* ========== Sidebar Sections ========== */
-.nav-section{padding:16px 24px 6px;font-size:11px;font-weight:700;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:1px}
-.nav-link.sub{padding-left:44px;font-size:13px}
+.nav-section{padding:16px 24px 6px;font-size:14px;font-weight:700;color:rgba(255,255,255,0.35);text-transform:none;letter-spacing:0}
+.nav-link.sub{padding-left:48px;font-size:14px}
 .sidebar-footer{padding:12px 16px;border-top:1px solid rgba(255,255,255,0.08)}
 .user-info{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .user-name{font-size:13px;color:rgba(255,255,255,0.8)}
@@ -236,7 +236,7 @@ select.form-control{appearance:auto}
 .has-sub.open .sub-menu{display:block}
 .has-sub .arrow{float:right;font-size:10px;transition:transform .2s}
 .has-sub.open .arrow{transform:rotate(90deg)}
-.nav-link.sub{padding-left:40px;font-size:13px}
+.nav-link.sub{padding-left:40px;font-size:14px}
 .has-sub-link{cursor:pointer;user-select:none}
 
 /* ========== Pagination ========== */
