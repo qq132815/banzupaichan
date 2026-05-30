@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>🔧 模具管理</h1>
+</div>
+<div class="toolbar">
+<input type="text" id="md-search" placeholder="搜索模具编号/名称/产品编码..." oninput="loadMolds()" style="width:220px">
+<select id="md-team-filter" onchange="loadMolds()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<option value="">全部班组</option>
+</select>
+<div style="margin-left:auto;display:flex;gap:8px">
+<button class="btn btn-outline readonly-hide" onclick="exportMolds()">📤 导出</button>
+<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/molds', function(){setTimeout(function(){loadMolds();}, 500);})">📥 导入</button>
+<button class="btn btn-primary readonly-hide" onclick="showAddMold()">＋ 新增</button>
+</div>
+</div>
+<div class="card">
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>模具编号</th><th>模具名称</th><th>类型</th><th>关联产品</th><th>存放位置</th><th>状态</th><th>备注</th><th>操作</th></tr></thead>
+<tbody id="md-tbody"></tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="modal-overlay" id="md-modal">
+<div class="modal">
+<div class="modal-header"><h3 id="mdm-title">新增模具</h3><button class="modal-close" onclick="closeMdModal()">&times;</button></div>
+<div class="modal-body">
+<div class="form-row">
+<div class="form-group"><label>模具编号</label><input type="text" class="form-control" id="mdm-code"></div>
+<div class="form-group"><label>模具名称</label><input type="text" class="form-control" id="mdm-name"></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>类型</label><input type="text" class="form-control" id="mdm-type"></div>
+<div class="form-group"><label>关联产品编码</label><input type="text" class="form-control" id="mdm-product"></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>存放位置</label><input type="text" class="form-control" id="mdm-location"></div>
+<div class="form-group"><label>归属班组</label><select class="form-control" id="mdm-team"></select></div>
+</div>
+<div class="form-group"><label>备注</label><input type="text" class="form-control" id="mdm-remark"></div>
+</div>
+<div class="modal-footer">
+<button class="btn btn-secondary" onclick="closeMdModal()">取消</button>
+<button class="btn btn-primary" onclick="saveMold()">保存</button>
+</div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var editMdId=null;var teams=[];
+fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
+teams=d;
+var sel1=document.getElementById("md-team-filter");
+var sel2=document.getElementById("mdm-team");
+d.forEach(function(t){
+var o1=document.createElement("option");o1.value=t.id;o1.textContent=t.name;sel1.appendChild(o1);
+var o2=document.createElement("option");o2.value=t.id;o2.textContent=t.name;sel2.appendChild(o2);
+});
+loadMolds();
+});
+
+function loadMolds(){
+var q=document.getElementById("md-search").value;
+var tid=document.getElementById("md-team-filter").value;
+var url="/api/molds";
+var params=[];
+if(tid)params.push("team_id="+tid);
+if(q)params.push("q="+encodeURIComponent(q));
+if(params.length)url+="?"+params.join("&");
+fetch(url).then(function(r){return r.json()}).then(function(d){
+var tb=document.getElementById("md-tbody");tb.innerHTML="";
+var teamMap={};teams.forEach(function(t){teamMap[t.id]=t.name;});
+d.forEach(function(m){
+var tr=document.createElement("tr");
+var st=m.status==='normal'?'<span class="badge badge-green">正常</span>':m.status==='maintenance'?'<span class="badge badge-yellow">维修</span>':'<span class="badge badge-red">报废</span>';
+tr.innerHTML='<td><strong>'+m.mold_code+'</strong></td><td>'+m.mold_name+'</td><td>'+(m.mold_type||'')+'</td><td>'+(m.product_code||'')+'</td><td>'+(m.location||'')+'</td><td>'+st+'</td><td>'+(m.remark||'')+'</td><td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editMold('+m.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="deleteMold('+m.id+')">删除</button></div></td>';
+tb.appendChild(tr);});});
+}
+
+function exportMolds(){
+fetch("/api/molds").then(function(r){return r.json()}).then(function(d){
+if(!d.length){toast("无数据可导出","warning");return;}
+var headers=["模具编号","模具名称","类型","关联产品","位置","状态","备注"];
+var csv=headers.join(",")+"\n";
+d.forEach(function(m){
+var row=['"'+m.mold_code+'"','"'+m.mold_name+'"','"'+(m.mold_type||'')+'"','"'+(m.product_code||'')+'"','"'+(m.location||'')+'"','"'+m.status+'"','"'+(m.remark||'')+'"'];
+csv+=row.join(",")+"\n";
+});
+var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="模具清单导出.csv";a.click();
+});
+}
+
+function showAddMold(){editMdId=null;document.getElementById("mdm-title").textContent="新增模具";["mdm-code","mdm-name","mdm-type","mdm-product","mdm-location","mdm-remark"].forEach(function(id){document.getElementById(id).value=""});document.getElementById("md-modal").classList.add("show");}
+function closeMdModal(){document.getElementById("md-modal").classList.remove("show");}
+function editMold(id){fetch("/api/molds").then(function(r){return r.json()}).then(function(d){var m=d.find(function(x){return x.id===id});if(!m)return;editMdId=id;document.getElementById("mdm-title").textContent="编辑模具";document.getElementById("mdm-code").value=m.mold_code;document.getElementById("mdm-name").value=m.mold_name;document.getElementById("mdm-type").value=m.mold_type||"";document.getElementById("mdm-product").value=m.product_code||"";document.getElementById("mdm-location").value=m.location||"";document.getElementById("mdm-team").value=m.team_id||"";document.getElementById("mdm-remark").value=m.remark||"";document.getElementById("md-modal").classList.add("show");});}
+function saveMold(){
+var data={mold_code:document.getElementById("mdm-code").value,mold_name:document.getElementById("mdm-name").value,mold_type:document.getElementById("mdm-type").value,product_code:document.getElementById("mdm-product").value,location:document.getElementById("mdm-location").value,team_id:parseInt(document.getElementById("mdm-team").value)||null,remark:document.getElementById("mdm-remark").value,status:'normal'};
+if(!data.mold_code){toast("模具编号必填","warning");return;}
+var url=editMdId?"/api/molds/"+editMdId:"/api/molds";
+api(url,{method:editMdId?"PUT":"POST",body:data}).then(function(){toast("保存成功","success");closeMdModal();loadMolds();}).catch(function(){toast("保存失败","error");});
+}
+function deleteMold(id){if(!confirm("确定删除？"))return;api("/api/molds/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadMolds();});}
+</script>
+{% endblock %}

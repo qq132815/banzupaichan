@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>👥 人员管理</h1>
+</div>
+<div class="toolbar">
+<input type="text" id="pl-search" placeholder="搜索姓名/工号/部门/职位..." oninput="loadPersonnel()" style="width:220px">
+<select id="pl-team-filter" onchange="loadPersonnel()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<option value="">全部班组</option>
+</select>
+<div style="margin-left:auto;display:flex;gap:8px">
+<button class="btn btn-outline readonly-hide" onclick="exportPersonnel()">📤 导出</button>
+<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/personnel', function(){setTimeout(function(){loadPersonnel();}, 500);})">📥 导入</button>
+<button class="btn btn-primary readonly-hide" onclick="showAddPersonnel()">＋ 新增</button>
+</div>
+</div>
+<div class="card">
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>工号</th><th>姓名</th><th>部门</th><th>班组</th><th>职位</th><th>状态</th><th>操作</th></tr></thead>
+<tbody id="pl-tbody"></tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="modal-overlay" id="pl-modal">
+<div class="modal">
+<div class="modal-header"><h3 id="plm-title">新增人员</h3><button class="modal-close" onclick="closePlModal()">&times;</button></div>
+<div class="modal-body">
+<div class="form-row">
+<div class="form-group"><label>工号</label><input type="text" class="form-control" id="plm-userid"></div>
+<div class="form-group"><label>姓名</label><input type="text" class="form-control" id="plm-name"></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>部门</label><input type="text" class="form-control" id="plm-dept"></div>
+<div class="form-group"><label>职位</label><input type="text" class="form-control" id="plm-position"></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>归属班组</label><select class="form-control" id="plm-team"></select></div>
+<div class="form-group"><label>状态</label><select class="form-control" id="plm-active"><option value="1">在职</option><option value="0">离职</option></select></div>
+</div>
+</div>
+<div class="modal-footer">
+<button class="btn btn-secondary" onclick="closePlModal()">取消</button>
+<button class="btn btn-primary" onclick="savePersonnel()">保存</button>
+</div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var editPlId=null;var teams=[];
+fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
+teams=d;
+var sel1=document.getElementById("pl-team-filter");
+var sel2=document.getElementById("plm-team");
+d.forEach(function(t){
+var o1=document.createElement("option");o1.value=t.id;o1.textContent=t.name;sel1.appendChild(o1);
+var o2=document.createElement("option");o2.value=t.id;o2.textContent=t.name;sel2.appendChild(o2);
+});
+loadPersonnel();
+});
+
+function loadPersonnel(){
+var q=document.getElementById("pl-search").value;
+var tid=document.getElementById("pl-team-filter").value;
+var url="/api/personnel";
+var params=[];
+if(tid)params.push("team_id="+tid);
+if(q)params.push("q="+encodeURIComponent(q));
+if(params.length)url+="?"+params.join("&");
+fetch(url).then(function(r){return r.json()}).then(function(d){
+var tb=document.getElementById("pl-tbody");tb.innerHTML="";
+var teamMap={};teams.forEach(function(t){teamMap[t.id]=t.name;});
+d.forEach(function(p){
+var tr=document.createElement("tr");
+var st=p.is_active?'<span class="badge badge-green">在职</span>':'<span class="badge badge-red">离职</span>';
+tr.innerHTML='<td>'+(p.user_id||'')+'</td><td><strong>'+p.name+'</strong></td><td>'+(p.department||'')+'</td><td>'+(teamMap[p.team_id]||'')+'</td><td>'+(p.position||'')+'</td><td>'+st+'</td><td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editPersonnel('+p.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="deletePersonnel('+p.id+')">删除</button></div></td>';
+tb.appendChild(tr);});});
+}
+
+function exportPersonnel(){
+fetch("/api/personnel").then(function(r){return r.json()}).then(function(d){
+if(!d.length){toast("无数据可导出","warning");return;}
+var teamMap={};teams.forEach(function(t){teamMap[t.id]=t.name;});
+var headers=["工号","姓名","部门","班组","职位","状态"];
+var csv=headers.join(",")+"\n";
+d.forEach(function(p){
+var row=['"'+(p.user_id||'')+'"','"'+p.name+'"','"'+(p.department||'')+'"','"'+(teamMap[p.team_id]||'')+'"','"'+(p.position||'')+'"',(p.is_active?"在职":"离职")];
+csv+=row.join(",")+"\n";
+});
+var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="人员清单导出.csv";a.click();
+});
+}
+
+function showAddPersonnel(){editPlId=null;document.getElementById("plm-title").textContent="新增人员";["plm-userid","plm-name","plm-dept","plm-position"].forEach(function(id){document.getElementById(id).value=""});document.getElementById("plm-active").value="1";document.getElementById("pl-modal").classList.add("show");}
+function closePlModal(){document.getElementById("pl-modal").classList.remove("show");}
+function editPersonnel(id){fetch("/api/personnel").then(function(r){return r.json()}).then(function(d){var p=d.find(function(x){return x.id===id});if(!p)return;editPlId=id;document.getElementById("plm-title").textContent="编辑人员";document.getElementById("plm-userid").value=p.user_id||"";document.getElementById("plm-name").value=p.name;document.getElementById("plm-dept").value=p.department||"";document.getElementById("plm-position").value=p.position||"";document.getElementById("plm-team").value=p.team_id||"";document.getElementById("plm-active").value=p.is_active?1:0;document.getElementById("pl-modal").classList.add("show");});}
+function savePersonnel(){
+var data={user_id:document.getElementById("plm-userid").value,name:document.getElementById("plm-name").value,department:document.getElementById("plm-dept").value,position:document.getElementById("plm-position").value,team_id:parseInt(document.getElementById("plm-team").value)||null,is_active:parseInt(document.getElementById("plm-active").value)};
+if(!data.name){toast("姓名必填","warning");return;}
+var url=editPlId?"/api/personnel/"+editPlId:"/api/personnel";
+api(url,{method:editPlId?"PUT":"POST",body:data}).then(function(){toast("保存成功","success");closePlModal();loadPersonnel();}).catch(function(){toast("保存失败","error");});
+}
+function deletePersonnel(id){if(!confirm("确定删除？"))return;api("/api/personnel/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadPersonnel();});}
+</script>
+{% endblock %}

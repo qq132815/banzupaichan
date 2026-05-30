@@ -124,6 +124,16 @@ def product_bom_page():
 def equipments_page():
     return render_template('equipments.html')
 
+@app.route('/personnel-page')
+@login_required
+def personnel_page():
+    return render_template('personnel.html')
+
+@app.route('/molds-page')
+@login_required
+def molds_page():
+    return render_template('molds.html')
+
 @app.route('/statistics-page')
 @login_required
 def statistics_page():
@@ -971,6 +981,153 @@ def api_bom_delete(bid):
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
+
+# ========== Personnel API ==========
+@app.route('/api/personnel')
+@login_required
+def api_personnel():
+    team_id = request.args.get('team_id', type=int)
+    q = request.args.get('q', '').strip()
+    conn = get_connection()
+    c = conn.cursor()
+    sql = "SELECT * FROM personnel WHERE 1=1"
+    params = []
+    if team_id:
+        sql += " AND team_id=?"
+        params.append(team_id)
+    if q:
+        like = "%" + q + "%"
+        sql += " AND (name LIKE ? OR user_id LIKE ? OR department LIKE ? OR position LIKE ?)"
+        params.extend([like, like, like, like])
+    sql += " ORDER BY team_id, name"
+    c.execute(sql, params)
+    r = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return jsonify(r)
+
+@app.route('/api/personnel', methods=['POST'])
+@login_required
+def api_personnel_create():
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("INSERT INTO personnel (user_id, name, department, position, team_id) VALUES (?, ?, ?, ?, ?)",
+              (data.get('user_id',''), data['name'], data.get('department',''), data.get('position',''), data.get('team_id')))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/personnel/<int:pid>', methods=['PUT'])
+@login_required
+def api_personnel_update(pid):
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE personnel SET user_id=?, name=?, department=?, position=?, team_id=?, is_active=? WHERE id=?",
+              (data.get('user_id',''), data['name'], data.get('department',''), data.get('position',''), data.get('team_id'), data.get('is_active',1), pid))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/personnel/<int:pid>', methods=['DELETE'])
+@login_required
+def api_personnel_delete(pid):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM personnel WHERE id=?", (pid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+# ========== Molds API ==========
+@app.route('/api/molds')
+@login_required
+def api_molds():
+    team_id = request.args.get('team_id', type=int)
+    q = request.args.get('q', '').strip()
+    conn = get_connection()
+    c = conn.cursor()
+    sql = "SELECT * FROM molds WHERE 1=1"
+    params = []
+    if team_id:
+        sql += " AND team_id=?"
+        params.append(team_id)
+    if q:
+        like = "%" + q + "%"
+        sql += " AND (mold_code LIKE ? OR mold_name LIKE ? OR product_code LIKE ? OR location LIKE ?)"
+        params.extend([like, like, like, like])
+    sql += " ORDER BY mold_code"
+    c.execute(sql, params)
+    r = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return jsonify(r)
+
+@app.route('/api/molds', methods=['POST'])
+@login_required
+def api_molds_create():
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("INSERT INTO molds (mold_code, mold_name, mold_type, product_code, status, location, team_id, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+              (data['mold_code'], data.get('mold_name',''), data.get('mold_type',''), data.get('product_code',''), data.get('status','normal'), data.get('location',''), data.get('team_id'), data.get('remark','')))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/molds/<int:mid>', methods=['PUT'])
+@login_required
+def api_molds_update(mid):
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE molds SET mold_code=?, mold_name=?, mold_type=?, product_code=?, status=?, location=?, team_id=?, remark=? WHERE id=?",
+              (data['mold_code'], data.get('mold_name',''), data.get('mold_type',''), data.get('product_code',''), data.get('status','normal'), data.get('location',''), data.get('team_id'), data.get('remark',''), mid))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/molds/<int:mid>', methods=['DELETE'])
+@login_required
+def api_molds_delete(mid):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM molds WHERE id=?", (mid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+# ========== Personnel & Mold Import ==========
+@app.route('/api/import/personnel', methods=['POST'])
+@login_required
+def api_import_personnel():
+    from utils.excel import import_personnel
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': '请上传文件'}), 400
+    path = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    f.save(path)
+    try:
+        count = import_personnel(path)
+        return jsonify({'ok': True, 'count': count})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/import/molds', methods=['POST'])
+@login_required
+def api_import_molds():
+    from utils.excel import import_molds
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': '请上传文件'}), 400
+    path = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    f.save(path)
+    try:
+        count = import_molds(path)
+        return jsonify({'ok': True, 'count': count})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 # ========== Export API ==========
 @app.route('/api/export/<data_type>')

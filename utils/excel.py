@@ -287,3 +287,95 @@ def import_equipments(file_path):
     conn.commit()
     conn.close()
     return count
+
+def import_personnel(filepath):
+    """Import personnel from Excel. Columns: 员工UserID, 姓名, 3级部门, 职位"""
+    DEPT_MAP = {
+        "前道班": "前段",
+        "焊接班": "焊接",
+        "扣压班": "扣压",
+        "后道班": "装配包装",
+    }
+    import openpyxl
+    from utils.db import get_connection, get_all_teams
+    wb = openpyxl.load_workbook(filepath, data_only=True)
+    ws = wb.active
+    cols, headers = _match_headers(ws, {
+        'user_id': ['员工UserID', 'UserID', '工号', '员工ID'],
+        'name': ['姓名', '员工姓名', '名字'],
+        'department': ['3级部门', '部门', '班组', '班组名称'],
+        'position': ['职位', '岗位', '职务'],
+    })
+    teams = get_all_teams()
+    team_map = {t['name']: t['id'] for t in teams}
+    conn = get_connection()
+    c = conn.cursor()
+    count = 0
+    header_row = ws._import_header_row
+    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+        if not row or not row[cols['name']]:
+            continue
+        user_id = str(row[cols['user_id']] or '').strip() if 'user_id' in cols else ''
+        name = str(row[cols['name']] or '').strip()
+        dept_raw = str(row[cols['department']] or '').strip() if 'department' in cols else ''
+        position = str(row[cols['position']] or '').strip() if 'position' in cols else ''
+        if not name:
+            continue
+        dept_mapped = DEPT_MAP.get(dept_raw, dept_raw)
+        team_id = team_map.get(dept_mapped)
+        if team_id is None:
+            for tn, tid in team_map.items():
+                if tn in dept_mapped or dept_mapped in tn:
+                    team_id = tid
+                    break
+        c.execute("INSERT OR REPLACE INTO personnel (user_id, name, department, position, team_id) VALUES (?, ?, ?, ?, ?)",
+                  (user_id, name, dept_raw, position, team_id))
+        count += 1
+    conn.commit()
+    conn.close()
+    return count
+
+
+def import_molds(filepath):
+    """Import molds from Excel."""
+    import openpyxl
+    from utils.db import get_connection, get_all_teams
+    wb = openpyxl.load_workbook(filepath, data_only=True)
+    ws = wb.active
+    try:
+        cols, headers = _match_headers(ws, {
+            'mold_code': ['模具编号', '模具编码', '编号'],
+            'mold_name': ['模具名称', '名称'],
+            'mold_type': ['模具类型', '类型'],
+            'product_code': ['产品编码', '产品编号', '关联产品'],
+            'location': ['位置', '存放位置', '库位'],
+            'remark': ['备注', '说明'],
+        })
+    except ValueError:
+        cols, headers = _match_headers(ws, {
+            'mold_code': ['模具编号', '模具编码', '编号'],
+            'mold_name': ['模具名称', '名称'],
+        })
+    teams = get_all_teams()
+    team_map = {t['name']: t['id'] for t in teams}
+    conn = get_connection()
+    c = conn.cursor()
+    count = 0
+    header_row = ws._import_header_row
+    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+        if not row or not row[cols['mold_code']]:
+            continue
+        mold_code = str(row[cols['mold_code']] or '').strip()
+        mold_name = str(row[cols['mold_name']] or '').strip() if 'mold_name' in cols else ''
+        if not mold_code:
+            continue
+        mold_type = str(row[cols.get('mold_type', -1)] or '').strip() if 'mold_type' in cols and cols.get('mold_type', -1) < len(row) else ''
+        product_code = str(row[cols.get('product_code', -1)] or '').strip() if 'product_code' in cols and cols.get('product_code', -1) < len(row) else ''
+        location = str(row[cols.get('location', -1)] or '').strip() if 'location' in cols and cols.get('location', -1) < len(row) else ''
+        remark = str(row[cols.get('remark', -1)] or '').strip() if 'remark' in cols and cols.get('remark', -1) < len(row) else ''
+        c.execute("INSERT OR REPLACE INTO molds (mold_code, mold_name, mold_type, product_code, status, location, remark) VALUES (?,?,?,?,?,?,?)",
+                  (mold_code, mold_name, mold_type, product_code, 'normal', location, remark))
+        count += 1
+    conn.commit()
+    conn.close()
+    return count
