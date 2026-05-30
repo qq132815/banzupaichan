@@ -1,21 +1,18 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block content %}
 <div class="page-header">
 <h1>⚙️ 设备管理</h1>
-<div class="page-actions">
-<label class="btn btn-outline" style="cursor:pointer">
-📥 导入设备
-</label>
-<button class="btn btn-outline" onclick="exportEquip()">📤 导出</button>
-<button class="btn btn-outline" onclick="downloadTemplate()">📄 下载模板</button>
-<button class="btn btn-primary" onclick="showAddEquip()">＋ 新增设备</button>
-</div>
 </div>
 <div class="toolbar">
-<label>班组：</label>
-<select id="eq-team-filter" onchange="loadEquipments()">
-<option value="">全部</option>
+<input type="text" id="eq-search" placeholder="搜索设备编码/名称/位置..." oninput="loadEquipments()" style="width:200px">
+<select id="eq-team-filter" onchange="loadEquipments()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<option value="">全部班组</option>
 </select>
+<div style="margin-left:auto;display:flex;gap:8px">
+<button class="btn btn-outline readonly-hide" onclick="exportEquip()">📤 导出</button>
+<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/equipment', function(){setTimeout(function(){loadEquipments();}, 500);})">📥 导入</button>
+<button class="btn btn-primary readonly-hide" onclick="showAddEquip()">＋ 新增</button>
+</div>
 </div>
 <div class="card">
 <div class="card-body">
@@ -82,19 +79,6 @@ tr.innerHTML='<td><strong>'+eq.equipment_code+'</strong></td><td>'+eq.equipment_
 tb.appendChild(tr);});});
 }
 
-function importEquip(input){
-if(!input.files.length) return;
-var fd = new FormData();
-fd.append("file", input.files[0]);
-toast("正在导入...", "info");
-fetch("/api/import/equipment", {method:"POST", body:fd}).then(function(r){return r.json()}).then(function(d){
-if(d.error){toast(d.error,"error");return;}
-toast("导入成功，共 "+d.count+" 台设备","success");
-loadEquipments();
-}).catch(function(){toast("导入失败","error");});
-input.value = "";
-}
-
 function exportEquip(){
 fetch("/api/equipments").then(function(r){return r.json()}).then(function(d){
 if(!d.length){toast("无数据可导出","warning");return;}
@@ -108,14 +92,6 @@ csv+=row.join(",")+"\n";
 var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
 var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="设备清单导出.csv";a.click();
 });
-}
-
-function downloadTemplate(){
-var headers=["序号","设备编码","设备名称","所属班组"];
-var rows=["1,FX19-1,涂装机1号（自动）,装配包装","2,TJ12-1,涂装1号,装配包装"];
-var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";
-var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
-var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="设备导入模板.csv";a.click();
 }
 
 function showAddEquip(){editEqId=null;document.getElementById("eqm-title").textContent="新增设备";["eqm-code","eqm-name","eqm-capacity","eqm-location"].forEach(function(id){document.getElementById(id).value=""});document.getElementById("eqm-type").value="auto";document.getElementById("eq-modal").classList.add("show");}
