@@ -54,36 +54,40 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 // ========== Pagination ==========
+function goToPage(p, funcName) {
+    window._page = parseInt(p);
+    window[funcName]();
+}
 function changePageSize(size, funcName) {
     window._pageSize = parseInt(size);
     window._page = 1;
     window[funcName]();
 }
-function renderPagination(containerId, currentPage, totalPages, onPageChange) {
+function renderPagination(containerId, currentPage, totalPages, funcName) {
     var c = document.getElementById(containerId);
     if (!c) return;
     var html = '<div class="pagination-wrap">';
-    html += '<select class="pagination-size" onchange="changePageSize(this.value,\''+onPageChange+'\')">';
+    html += '<select class="pagination-size" onchange="changePageSize(this.value,\''+funcName+'\')">';
     [20,50,100,200].forEach(function(n){
         html += '<option value="'+n+'"'+(window._pageSize===n?' selected':'')+'>'+n+'/页</option>';
     });
     html += '</select>';
     html += '<div class="pagination-btns">';
-    html += '<button class="btn-page" '+ (currentPage<=1?'disabled':'') +' onclick="'+onPageChange+'('+(currentPage-1)+')">‹</button>';
+    html += '<button class="btn-page" '+ (currentPage<=1?'disabled':'') +' onclick="goToPage('+(currentPage-1)+',\''+funcName+'\')">‹</button>';
     var start = Math.max(1, currentPage - 2);
     var end = Math.min(totalPages, currentPage + 2);
     if (start > 1) {
-        html += '<button class="btn-page" onclick="'+onPageChange+'(1)">1</button>';
+        html += '<button class="btn-page" onclick="goToPage(1,\''+funcName+'\')">1</button>';
         if (start > 2) html += '<span class="page-ellipsis">...</span>';
     }
     for (var i = start; i <= end; i++) {
-        html += '<button class="btn-page'+(i===currentPage?' active':'')+'" onclick="'+onPageChange+'('+i+')">'+i+'</button>';
+        html += '<button class="btn-page'+(i===currentPage?' active':'')+'" onclick="goToPage('+i+',\''+funcName+'\')">'+i+'</button>';
     }
     if (end < totalPages) {
         if (end < totalPages - 1) html += '<span class="page-ellipsis">...</span>';
-        html += '<button class="btn-page" onclick="'+onPageChange+'('+totalPages+')">'+totalPages+'</button>';
+        html += '<button class="btn-page" onclick="goToPage('+totalPages+',\''+funcName+'\')">'+totalPages+'</button>';
     }
-    html += '<button class="btn-page" '+ (currentPage>=totalPages?'disabled':'') +' onclick="'+onPageChange+'('+(currentPage+1)+')">›</button>';
+    html += '<button class="btn-page" '+ (currentPage>=totalPages?'disabled':'') +' onclick="goToPage('+(currentPage+1)+',\''+funcName+'\')">›</button>';
     html += '</div>';
     html += '<span class="pagination-info">共 '+window._total+' 条</span>';
     html += '</div>';
