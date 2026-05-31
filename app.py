@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import os
 import sys
@@ -1797,6 +1797,10 @@ def api_export(data_type):
         ws.title = '物料清单'
         c.execute("SELECT parent_product_code, parent_product_name, child_product_code, child_product_name, quantity, unit, process_team FROM bom ORDER BY parent_product_code")
         ws.append(['父件编码', '父件名称', '子件编码', '子件名称', '用量', '单位', '生产班组'])
+    elif data_type == 'work_orders':
+        ws.title = '工单数据'
+        c.execute("SELECT order_no, product_code, product_name, quantity, completed_qty, due_date, priority, status, process_progress, source FROM work_orders ORDER BY order_no")
+        ws.append(['工单编号', '产品编码', '产品名称', '计划数量', '完成数量', '交期', '优先级', '状态', '工序进度', '来源'])
     else:
         return jsonify({'error': 'unsupported'}), 400
     for row in c.fetchall():
@@ -1808,6 +1812,25 @@ def api_export(data_type):
     from flask import send_file
     return send_file(buf, as_attachment=True, download_name=data_type + '_export.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+# ========== MES Sync API ==========
+@app.route('/api/sync/work_orders', methods=['POST'])
+@login_required
+@planner_required
+def api_sync_work_orders():
+    import subprocess
+    try:
+        script = os.path.join(os.path.dirname(__file__), 'auto_fetch_orders.py')
+        result = subprocess.run(
+            [sys.executable, script, '--detail'],
+            capture_output=True, text=True, timeout=600,
+            cwd=os.path.dirname(__file__)
+        )
+        return jsonify({'ok': True, 'output': result.stdout[-2000:] if result.stdout else '', 'errors': result.stderr[-500:] if result.stderr else ''})
+    except subprocess.TimeoutExpired:
+        return jsonify({'ok': False, 'error': '同步超时(>600秒)'})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
 
 # ========== User Management API ==========
 @app.route('/api/users')
@@ -1958,3 +1981,5 @@ def api_statistics():
 if __name__ == "__main__":
     init_database()
     app.run(debug=True, host="0.0.0.0", port=5000)
+
+

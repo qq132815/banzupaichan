@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <div class="page-header">
 <h1>📦 订单管理</h1>
@@ -14,6 +14,7 @@
 </select>
 <div style="margin-left:auto;display:flex;gap:8px">
 <button class="btn btn-outline readonly-hide" onclick="exportOrders()">📤 导出</button>
+<button class="btn btn-outline readonly-hide" onclick="syncWorkOrders()">🔄 同步MES工单</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/work_orders', function(){setTimeout(function(){loadOrders();}, 500);})">📥 导入</button>
 <button class="btn btn-primary readonly-hide" onclick="showAddOrder()">＋ 新增</button>
 </div>
@@ -146,19 +147,14 @@ function importOrders(input){
 }
 
 function exportOrders(){
-    fetch("/api/orders").then(function(r){return r.json()}).then(function(d){
-        if(!d.length){toast("无数据可导出","warning");return;}
-        var headers=["工单号","产品编号","数量","完成数","交期","优先级","状态","工序进度"];
-        var csv=headers.join(",")+"\n";
-        d.forEach(function(o){
-            var row=[o.order_no,o.product_code,'"'+(o.product_name||'')+'"',o.quantity,o.completed_qty||0,o.due_date||'',o.priority||'',o.status||'"'+(o.process_progress||'').replace(/,/g,';')+'"'];
-            csv+=row.join(",")+"\n";
-        });
-        var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
-        var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="订单导出.csv";a.click();
-    });
+    window.location.href="/api/export/work_orders";
 }
-
+function syncWorkOrders(){
+    toast("正在同步MES工单...","info");
+    fetch("/api/sync/work_orders",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+        if(d.ok){toast("同步完成","success");loadOrders();}else{toast("同步失败: "+(d.error||""),"error");}
+    }).catch(function(){toast("同步失败","error");});
+}
 function showAddOrder(){
     editOrderId=null;
     document.getElementById("om-title").textContent="新增订单";
@@ -198,3 +194,6 @@ loadOrders();
 .ring-label{font-size:10px;color:#6b7280;line-height:1;white-space:nowrap}
 </style>
 {% endblock %}
+
+
+
