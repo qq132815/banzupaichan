@@ -1,14 +1,19 @@
-﻿__pycache__/
+﻿# Temp files
+_tmp_*.py
 *.pyc
-*.pyo
-data/production.db
-tmp_*.py
-tmp_*.ps1
-test_*.py
-*_backup.*
-*.tmp
-imports/
-scripts/tmp_*
+__pycache__/
 
-# Excel temp files
-~$*.xlsx
+# Downloads (debug files, exported data)
+downloads/*.xlsx
+downloads/*.png
+downloads/*.html
+downloads/*.json
+downloads/*.txt
+downloads/*.xlsx
+
+# Database
+data/production.db
+
+# IDE
+.vscode/
+.idea/
