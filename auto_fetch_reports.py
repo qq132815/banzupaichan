@@ -194,12 +194,11 @@ def run_fetch():
 
 
 
-# Also run work order import
-try:
-    from auto_fetch_orders import run_fetch_orders
-    run_fetch_orders()
-except Exception as e:
-    print("Work order fetch error: %s" % e)
-
 if __name__ == "__main__":
     run_fetch()
+    # Also run work order import
+    try:
+        from auto_fetch_orders import run_fetch_orders
+        run_fetch_orders()
+    except Exception as e:
+        print("Work order fetch error: %s" % e)

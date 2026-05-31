@@ -17,3 +17,11 @@ data/production.db
 # IDE
 .vscode/
 .idea/
+
+# Temp/helper scripts
+scripts/_*.py
+scripts/debug_*.py
+scripts/tmp_*.py
+test_*.py
+tmp_*.ps1
+schedule_backup.html
