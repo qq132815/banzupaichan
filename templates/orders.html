@@ -100,7 +100,7 @@ function renderProcessProgress(progressStr){
     var steps = progressStr.split("->");
     var html = '<div class="progress-rings">';
     steps.forEach(function(step){
-        var m = step.match(/(.+?)\u3010(\d+)\/(\d+)\u3011\uff08(\d+)%?\uff09/);
+        var m = step.match(/(.+?)[\u3010\[](\d+)\/(\d+)[\u3011\]][\uff08\(](\d+)%?[\uff09\)]/);
         if(m){
             var name = m[1].trim();
             var done = parseInt(m[2]);
