@@ -43,8 +43,9 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", function(){
-    if(USER_ROLE === "team"){
-        if(USER_ROLE!=="planner"){document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});}
+    if(USER_ROLE === "team" || USER_ROLE === "admin"){
+        // team role: hide edit buttons; admin: show all
+        if(USER_ROLE === "team"){document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});}
     }
 });
 </script>
@@ -73,7 +74,7 @@ function loadData(){
     var q=document.getElementById("search").value;
     var team=document.getElementById("team-filter").value;
     var url="/api/processes?q="+encodeURIComponent(q);
-    url+=(url.indexOf('?')>=0?'&':'?')+'page='+window._page+'&page_size='+window._pageSize;
+    url+='&page='+window._page+'&page_size='+window._pageSize;
     if(team)url+="&team="+encodeURIComponent(team);
     fetch(url).then(function(r){return r.json()}).then(function(resp){
         var d=resp.data||resp;window._total=resp.total||d.length;renderPagination("proc-pagination",resp.page||1,resp.total_pages||1,"loadData");
@@ -101,8 +102,10 @@ function showAdd(){
     document.getElementById("edit-modal").classList.add("show");
 }
 function showEdit(id){
-    fetch("/api/processes").then(function(r){return r.json()}).then(function(d){
-        var item=d.find(function(x){return x.id===id});
+    fetch("/api/processes?page_size=200").then(function(r){return r.json()}).then(function(resp){
+        var d=resp.data||resp;
+        var item=null;
+        for(var i=0;i<d.length;i++){if(d[i].id===id){item=d[i];break;}}
         if(!item)return;
         editId=id;
         document.getElementById("modal-title").textContent="编辑工序";
@@ -153,8 +156,9 @@ function exportProcesses(){
 
 <script>
 document.addEventListener("DOMContentLoaded", function(){
-    if(USER_ROLE === "team"){
-        if(USER_ROLE!=="planner"){document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});}
+    if(USER_ROLE === "team" || USER_ROLE === "admin"){
+        // team role: hide edit buttons; admin: show all
+        if(USER_ROLE === "team"){document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});}
     }
 });
 function downloadProcTpl(){var headers=["工序编号","工序名称","报工权限"];var rows=["1A,下料,前段","2DW-1,一端外角,前段"];var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="工序导入模板.csv";a.click();}
