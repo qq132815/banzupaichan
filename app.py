@@ -2005,10 +2005,10 @@ def api_report_daily():
     report_data = {r[0]: {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'efficiency': round(r[4] or 0, 1)} for r in c.fetchall()}
     
     # Get attendance for the date (join by user_id via personnel)
-    c.execute("""SELECT p.name, a.work_hours, a.is_overtime, a.leave_type 
+    c.execute("""SELECT p.name, a.work_hours, a.is_overtime, a.leave_type, a.normal_hours, a.overtime_hours 
         FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id 
         WHERE a.work_date=?""", (date,))
-    attend_data = {r[0]: {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or ''} for r in c.fetchall()}
+    attend_data = {r[0]: {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or '', 'normal': r[4] or 0, 'ot': r[5] or 0} for r in c.fetchall()}
     
     conn.close()
     
@@ -2017,7 +2017,7 @@ def api_report_daily():
         if team_id and info['team_id'] != team_id:
             continue
         rd = report_data.get(name, {'qty': 0, 'hours': 0, 'good_qty': 0, 'efficiency': 0})
-        ad = attend_data.get(name, {'hours': 0, 'overtime': 0, 'leave': ''})
+        ad = attend_data.get(name, {'hours': 0, 'overtime': 0, 'leave': '', 'normal': 0, 'ot': 0})
         # Include if has any data: work report OR attendance record
         has_attendance = name in attend_data
         has_report = name in report_data
@@ -2031,6 +2031,8 @@ def api_report_daily():
             'name': name,
             'department': info['department'],
             'attendance_hours': ad['hours'],
+            'normal_hours': ad['normal'],
+            'overtime_hours': ad['ot'],
             'production_hours': rd['hours'],
             'qty': rd['qty'],
             'good_rate': good_rate,
@@ -2065,13 +2067,13 @@ def api_report_personal():
         report_data[dt] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0}
     
     # Get attendance (match by user_id via personnel)
-    c.execute("""SELECT a.work_date, a.work_hours, a.is_overtime, a.leave_type 
+    c.execute("""SELECT a.work_date, a.work_hours, a.is_overtime, a.leave_type, a.normal_hours, a.overtime_hours 
         FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id 
-        WHERE p.name=? AND a.work_date BETWEEN ? AND ?""",
+        WHERE p.name=? AND a.work_date BETWEEN ? AND ?""", 
               (name, date_from, date_to))
     attend_data = {}
     for r in c.fetchall():
-        attend_data[r[0]] = {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or ''}
+        attend_data[r[0]] = {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or '', 'normal': r[4] or 0, 'ot': r[5] or 0}
     
     conn.close()
     
@@ -2129,11 +2131,11 @@ def api_report_weekly():
         report_data[r[0]] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'days': r[4] or 0, 'efficiency': round(r[5] or 0, 1)}
     
     # Attendance for the week
-    c.execute("""SELECT p.name, SUM(a.work_hours), SUM(a.is_overtime), COUNT(*) FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id WHERE a.work_date BETWEEN ? AND ? GROUP BY p.name""",
+    c.execute("""SELECT p.name, SUM(a.work_hours), SUM(a.is_overtime), COUNT(*), SUM(a.normal_hours), SUM(a.overtime_hours) FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id WHERE a.work_date BETWEEN ? AND ? GROUP BY p.name""",
               (week_start, week_end))
     attend_data = {}
     for r in c.fetchall():
-        attend_data[r[0]] = {'total_hours': r[1] or 0, 'overtime_days': r[2] or 0, 'work_days': r[3] or 0}
+        attend_data[r[0]] = {'total_hours': r[1] or 0, 'overtime_days': r[2] or 0, 'work_days': r[3] or 0, 'normal': r[4] or 0, 'ot': r[5] or 0}
     
     conn.close()
     
@@ -2192,11 +2194,11 @@ def api_report_monthly():
         report_data[r[0]] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'days': r[4] or 0, 'efficiency': round(r[5] or 0, 1)}
     
     # Attendance
-    c.execute("""SELECT p.name, SUM(a.work_hours), SUM(a.is_overtime), COUNT(*), SUM(CASE WHEN a.leave_type != '' AND a.leave_type IS NOT NULL THEN 1 ELSE 0 END) FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id WHERE a.work_date BETWEEN ? AND ? GROUP BY p.name""",
+    c.execute("""SELECT p.name, SUM(a.work_hours), SUM(a.is_overtime), COUNT(*), SUM(CASE WHEN a.leave_type != '' AND a.leave_type IS NOT NULL THEN 1 ELSE 0 END), SUM(a.normal_hours), SUM(a.overtime_hours) FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id WHERE a.work_date BETWEEN ? AND ? GROUP BY p.name""",
               (date_from, date_to))
     attend_data = {}
     for r in c.fetchall():
-        attend_data[r[0]] = {'total_hours': r[1] or 0, 'overtime_days': r[2] or 0, 'work_days': r[3] or 0, 'leave_days': r[4] or 0}
+        attend_data[r[0]] = {'total_hours': r[1] or 0, 'overtime_days': r[2] or 0, 'work_days': r[3] or 0, 'leave_days': r[4] or 0, 'normal': r[5] or 0, 'ot': r[6] or 0}
     
     # Planned qty from schedules
     c.execute("SELECT team_id, SUM(quantity) FROM schedules WHERE schedule_date BETWEEN ? AND ? GROUP BY team_id",

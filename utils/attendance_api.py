@@ -108,9 +108,13 @@ def sync_attendance(date_from, date_to):
                 persons[key]['check_out'] = check_time
                 persons[key]['time_result_out'] = time_result
         
-        # Calculate work hours and insert
+        # Calculate work hours with shift rules:
+        # Morning: 08:00-11:45 (3.75h), Afternoon: 12:45-17:00 (4.25h)
+        # Normal total: 8h. Overtime: after 17:30, 30min units, <30min ignored
         for key, p in persons.items():
-            work_hours = 0
+            normal_hours = 0.0
+            overtime_hours = 0.0
+            work_hours = 0.0
             is_overtime = 0
             leave_type = ''
             
@@ -118,32 +122,46 @@ def sync_attendance(date_from, date_to):
                 try:
                     t_in = datetime.strptime(p['check_in'], '%Y-%m-%d %H:%M:%S')
                     t_out = datetime.strptime(p['check_out'], '%Y-%m-%d %H:%M:%S')
-                    delta = (t_out - t_in).total_seconds() / 3600
-                    # Subtract lunch break (1 hour) if work span covers noon
-                    if t_in.hour < 12 and t_out.hour >= 13:
-                        delta -= 1.0
-                    work_hours = round(max(0, delta), 2)
-                    # Overtime: if work > 8 hours
-                    if work_hours > 8:
-                        is_overtime = 1
+                    
+                    # Morning: 08:00 ~ 11:45
+                    m_s = max(t_in, t_in.replace(hour=8, minute=0, second=0))
+                    m_e = min(t_out, t_in.replace(hour=11, minute=45, second=0))
+                    if m_e > m_s and t_in < t_in.replace(hour=11, minute=45, second=0) and t_out > t_in.replace(hour=8, minute=0, second=0):
+                        normal_hours += (m_e - m_s).total_seconds() / 3600
+                    
+                    # Afternoon: 12:45 ~ 17:00
+                    a_s = max(t_in, t_in.replace(hour=12, minute=45, second=0))
+                    a_e = min(t_out, t_in.replace(hour=17, minute=0, second=0))
+                    if a_e > a_s and t_in < t_in.replace(hour=17, minute=0, second=0) and t_out > t_in.replace(hour=12, minute=45, second=0):
+                        normal_hours += (a_e - a_s).total_seconds() / 3600
+                    
+                    normal_hours = round(min(normal_hours, 8.0), 2)
+                    
+                    # Overtime: after 17:30
+                    ot_start = t_in.replace(hour=17, minute=30, second=0)
+                    if t_out > ot_start:
+                        ot_begin = max(t_in, ot_start)
+                        ot_raw = (t_out - ot_begin).total_seconds() / 3600
+                        overtime_hours = int(ot_raw * 2) / 2.0  # floor to 0.5h
+                        is_overtime = 1 if overtime_hours > 0 else 0
+                    
+                    work_hours = round(normal_hours + overtime_hours, 2)
                 except:
                     pass
             
-            # Handle leave: if timeResult contains leave info
             if 'Leave' in (p['time_result_in'] + p['time_result_out']):
                 leave_type = '请假'
             
-            # Calculate plan_hours (standard 8h for full day)
             plan_hours = 8.0
             
             # Only insert if user_id matches a production worker in personnel
             c.execute("""INSERT OR REPLACE INTO attendance 
-                (user_id, name, work_date, check_in, check_out, work_hours, plan_hours, is_overtime, leave_type)
-                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (
+                (user_id, name, work_date, check_in, check_out, work_hours, plan_hours, is_overtime, leave_type, normal_hours, overtime_hours)
+                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (
                     SELECT 1 FROM personnel WHERE user_id = ?
                 )""",
                 (p['user_id'], p['name'], p['work_date'], p['check_in'],
-                 p['check_out'], work_hours, plan_hours, is_overtime, leave_type, p['user_id']))
+                 p['check_out'], work_hours, plan_hours, is_overtime, leave_type, normal_hours, overtime_hours, p['user_id']))
             total_count += c.rowcount
         
         current += timedelta(days=1)
