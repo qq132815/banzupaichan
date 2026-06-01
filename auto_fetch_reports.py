@@ -5,8 +5,8 @@ from datetime import datetime
 
 MES_URL = "https://web.ycmes.cn/"
 FACTORY_CODE = "606999"
-USERNAME = "GS-001"
-PASSWORD = "675726"
+USERNAME = "gs8888"
+PASSWORD = "256448"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
 DB_PATH = os.path.join(BASE_DIR, "data", "production.db")
@@ -92,12 +92,12 @@ def import_work_reports(filepath):
             if not rpt or rpt == "None":
                 skipped += 1
                 continue
-            c.execute("SELECT 1 FROM work_reports WHERE work_order_no=? AND process_name=? AND reporter=? AND report_time=?", (won, pn, rep, rpt))
+            c.execute("SELECT 1 FROM work_reports WHERE order_no=? AND process_name=? AND operator=? AND create_time=?", (won, pn, rep, rpt))
             if c.fetchone():
                 skipped += 1
                 continue
             dur = fget(row, "duration")
-            c.execute("INSERT INTO work_reports (work_order_no,product_code,product_name,process_name,quantity,good_quantity,bad_quantity,unit,good_rate,reporter,report_start_time,report_end_time,approval_status,approver,approval_time,creator,report_time,related_doc_no,equipment,duration,weld_count,attendance_note,is_overtime,import_time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO work_reports (order_no,product_code,product_name,process_name,report_qty,good_qty,bad_qty,report_unit,good_rate,operator,start_time,end_time,approve_status,approver,approve_time,creator,create_time,related_no,equipment,report_hours,weld_count,attendance_note,is_overtime,import_time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (won, sget(row,"product_code"), sget(row,"product_name"), pn,
                  fget(row,"quantity"), fget(row,"good_quantity"), fget(row,"bad_quantity"),
                  sget(row,"unit"), fget(row,"good_rate"), rep,
@@ -180,6 +180,9 @@ def run_fetch():
                     os.remove(os.path.join(DOWNLOAD_DIR, old))
             except:
                 pass
+
+            # Print import count for wrapper script
+            print("IMPORTED:%d" % inserted)
 
         except Exception as e:
             print("Error: %s" % e)

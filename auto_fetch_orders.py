@@ -346,6 +346,9 @@ def run_fetch_orders():
             except:
                 pass
 
+            # Print import count for wrapper script
+            print("IMPORTED:%d" % (inserted + updated))
+
         except Exception as e:
             print("Error: %s" % e)
             import traceback

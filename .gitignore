@@ -25,3 +25,15 @@ scripts/tmp_*.py
 test_*.py
 tmp_*.ps1
 schedule_backup.html
+
+# Imported Excel files
+imports/*.xlsx
+
+# Screenshots
+screenshots/
+
+# Backup databases
+data/production_backup*.db
+
+# Temp scripts
+tmp_*.py

@@ -13,6 +13,16 @@
 <button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>
 </div>
 </div>
+<div style="display:flex;align-items:center;gap:12px;margin:12px 0;padding:0 4px">
+    <label style="font-size:13px;color:#374151;font-weight:600;white-space:nowrap">全局标准产能基准</label>
+    <select id="capacity-baseline" onchange="saveBaseline()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;background:white">
+        <option value="1">排班产能</option>
+        <option value="2">报工平均产能</option>
+        <option value="3">报工最高产能</option>
+        <option value="4">报工最低产能</option>
+    </select>
+    <button class="btn btn-outline btn-sm" onclick="recalculateEfficiency()" style="font-size:12px">重新计算效率</button>
+</div>
 <div id="progress-bar-container" style="margin:12px 0;padding:0 4px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <span style="font-size:13px;color:#6b7280">产能数据录入进度</span>
@@ -288,6 +298,34 @@ function doExport(){
 }
 
 loadData();
+// 加载全局配置
+function loadConfig(){
+    fetch("/api/system-config").then(function(r){return r.json()}).then(function(config){
+        var baseline=config.capacity_baseline||"1";
+        document.getElementById("capacity-baseline").value=baseline;
+    });
+}
+
+// 保存全局配置
+function saveBaseline(){
+    var baseline=document.getElementById("capacity-baseline").value;
+    api("/api/system-config",{method:"POST",body:{capacity_baseline:baseline}}).then(function(){
+        toast("配置已保存","success");
+    }).catch(function(){toast("保存失败","error");});
+}
+
+// 重新计算效率
+function recalculateEfficiency(){
+    if(!confirm("将重新计算所有报工数据的生产效率，是否继续？"))return;
+    toast("正在计算...","info");
+    api("/api/recalculate-efficiency",{method:"POST"}).then(function(d){
+        toast("计算完成，更新 "+d.updated+" 条记录","success");
+    }).catch(function(){toast("计算失败","error");});
+}
+
+// 页面加载时获取配置
+loadConfig();
+
 function downloadShTpl(){var headers=["产品编号","产品名称","工序","班组","标准工时(分)","换线时间(分)","备注"];var rows=["F01-ABC,成品F01,焊接压板1（自动）,焊接,2.5,15,"];var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="标准工时导入模板.csv";a.click();}
 
 function showCapDetail(id, productCode, processName){

@@ -1769,6 +1769,83 @@ def api_standard_hours_capacity():
         }
     })
 
+# ========== System Config API ==========
+@app.route('/api/system-config')
+@login_required
+def api_get_config():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT key, value FROM system_config")
+    config = {row[0]: row[1] for row in c.fetchall()}
+    conn.close()
+    return jsonify(config)
+
+@app.route('/api/system-config', methods=['POST'])
+@login_required
+@planner_required
+def api_save_config():
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    for key, value in data.items():
+        c.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)", (key, str(value)))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/recalculate-efficiency', methods=['POST'])
+@login_required
+@planner_required
+def api_recalculate_efficiency():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT value FROM system_config WHERE key='capacity_baseline'")
+    row = c.fetchone()
+    baseline = int(row[0]) if row else 1
+    capacity_map = {}
+    c.execute("SELECT DISTINCT product_code, process_name FROM standard_hours WHERE process_name != '半成品入库' AND process_name NOT LIKE '%清洗%'")
+    all_combos = c.fetchall()
+    for pc, pn in all_combos:
+        cap = 0
+        if baseline == 1:
+            c.execute("SELECT DISTINCT capacity_per_hour FROM schedules WHERE product_code=? AND process_name=? AND capacity_per_hour > 0", (pc, pn))
+            caps = [r[0] for r in c.fetchall()]
+            cap = sum(caps) / len(caps) if caps else 0
+        elif baseline == 2:
+            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0", (pc, pn))
+            reports = c.fetchall()
+            if reports:
+                caps = [r[0]/r[1] for r in reports if r[1] > 0]
+                cap = sum(caps) / len(caps) if caps else 0
+        elif baseline == 3:
+            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0", (pc, pn))
+            reports = c.fetchall()
+            if reports:
+                caps = [r[0]/r[1] for r in reports if r[1] > 0]
+                cap = max(caps) if caps else 0
+        elif baseline == 4:
+            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0", (pc, pn))
+            reports = c.fetchall()
+            if reports:
+                caps = [r[0]/r[1] for r in reports if r[1] > 0]
+                cap = min(caps) if caps else 0
+        if cap > 0:
+            capacity_map[(pc, pn)] = cap
+    c.execute("SELECT id, product_code, process_name, report_qty, report_hours FROM work_reports WHERE report_hours > 0 AND report_qty > 0")
+    reports = c.fetchall()
+    updated = 0
+    for rid, pc, pn, qty, hrs in reports:
+        key = (pc, pn)
+        if key in capacity_map and capacity_map[key] > 0:
+            efficiency = round((qty / hrs) / capacity_map[key] * 100, 1)
+            c.execute("UPDATE work_reports SET efficiency=? WHERE id=?", (efficiency, rid))
+            updated += 1
+        else:
+            c.execute("UPDATE work_reports SET efficiency=0 WHERE id=?", (rid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'updated': updated, 'baseline': baseline})
+
 # ========== Personnel Reports API ==========
 
 def _get_personnel_map():
@@ -1804,23 +1881,17 @@ def api_report_daily():
     conn = get_connection()
     c = conn.cursor()
     personnel_map = _get_personnel_map()
-    std_cap = _get_standard_capacity_map()
     
-    # Get work reports for the date
-    c.execute("""SELECT operator, SUM(report_qty), SUM(report_hours), SUM(good_qty)
+    # Get work reports for the date - 使用效率字段的平均值(排除0)
+    c.execute("""SELECT operator, SUM(report_qty), SUM(report_hours), SUM(good_qty),
+        AVG(CASE WHEN efficiency > 0 THEN efficiency END) as avg_efficiency
         FROM work_reports WHERE create_time LIKE ? AND report_hours > 0
         GROUP BY operator""", (date + '%',))
-    report_data = {r[0]: {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0} for r in c.fetchall()}
+    report_data = {r[0]: {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'efficiency': round(r[4] or 0, 1)} for r in c.fetchall()}
     
     # Get attendance for the date
     c.execute("SELECT name, work_hours, is_overtime, leave_type FROM attendance WHERE work_date=?", (date,))
     attend_data = {r[0]: {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or ''} for r in c.fetchall()}
-    
-    # Get schedule capacity for efficiency calc
-    c.execute("SELECT product_code, process_name, capacity_per_hour FROM schedules WHERE schedule_date=? AND capacity_per_hour > 0", (date,))
-    sched_cap = {}
-    for r in c.fetchall():
-        sched_cap[(r[0], r[1])] = r[2]
     
     conn.close()
     
@@ -1828,24 +1899,13 @@ def api_report_daily():
     for name, info in personnel_map.items():
         if team_id and info['team_id'] != team_id:
             continue
-        rd = report_data.get(name, {'qty': 0, 'hours': 0, 'good_qty': 0})
+        rd = report_data.get(name, {'qty': 0, 'hours': 0, 'good_qty': 0, 'efficiency': 0})
         ad = attend_data.get(name, {'hours': 0, 'overtime': 0, 'leave': ''})
         if rd['qty'] == 0 and rd['hours'] == 0 and ad['hours'] == 0:
             continue
         
         good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0
-        # Efficiency: actual rate vs standard capacity average
-        eff = 0
-        if rd['hours'] > 0:
-            actual_rate = rd['qty'] / rd['hours']
-            # Use average of all matching standard capacities
-            caps = []
-            for (pc, pn), sc in std_cap.items():
-                if name in [r for r in report_data]:  # Simplified - use first match
-                    caps.append(sc)
-            avg_cap = sum(caps) / len(caps) if caps else 0
-            if avg_cap > 0:
-                eff = round(actual_rate / avg_cap * 100, 1)
+        eff = rd['efficiency']
         
         rows.append({
             'name': name,
@@ -1937,13 +1997,14 @@ def api_report_weekly():
     personnel_map = _get_personnel_map()
     std_cap = _get_standard_capacity_map()
     
-    # Work reports for the week
-    c.execute("""SELECT operator, SUM(report_qty), SUM(report_hours), SUM(good_qty), COUNT(DISTINCT SUBSTR(create_time,1,10))
+    # Work reports for the week - 使用效率字段
+    c.execute("""SELECT operator, SUM(report_qty), SUM(report_hours), SUM(good_qty), COUNT(DISTINCT SUBSTR(create_time,1,10)),
+        AVG(CASE WHEN efficiency > 0 THEN efficiency END) as avg_efficiency
         FROM work_reports WHERE create_time BETWEEN ? AND ? AND report_hours > 0
         GROUP BY operator""", (week_start + ' 00:00:00', week_end + ' 23:59:59'))
     report_data = {}
     for r in c.fetchall():
-        report_data[r[0]] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'days': r[4] or 0}
+        report_data[r[0]] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'days': r[4] or 0, 'efficiency': round(r[5] or 0, 1)}
     
     # Attendance for the week
     c.execute("SELECT name, SUM(work_hours), SUM(is_overtime), COUNT(*) FROM attendance WHERE work_date BETWEEN ? AND ? GROUP BY name",
@@ -1964,9 +2025,7 @@ def api_report_weekly():
             continue
         
         good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0
-        caps = list(std_cap.values())
-        avg_cap = sum(caps) / len(caps) if caps else 0
-        eff = round((rd['qty'] / rd['hours']) / avg_cap * 100, 1) if rd['hours'] > 0 and avg_cap > 0 else 0
+        eff = rd.get('efficiency', 0)
         util_rate = round(rd['hours'] / ad['total_hours'] * 100, 1) if ad['total_hours'] > 0 else 0
         daily_avg = round(rd['qty'] / rd['days'], 1) if rd['days'] > 0 else 0
         
@@ -2001,13 +2060,14 @@ def api_report_monthly():
     personnel_map = _get_personnel_map()
     std_cap = _get_standard_capacity_map()
     
-    # Work reports
-    c.execute("""SELECT operator, SUM(report_qty), SUM(report_hours), SUM(good_qty), COUNT(DISTINCT SUBSTR(create_time,1,10))
+    # Work reports - 使用效率字段
+    c.execute("""SELECT operator, SUM(report_qty), SUM(report_hours), SUM(good_qty), COUNT(DISTINCT SUBSTR(create_time,1,10)),
+        AVG(CASE WHEN efficiency > 0 THEN efficiency END) as avg_efficiency
         FROM work_reports WHERE create_time BETWEEN ? AND ? AND report_hours > 0
         GROUP BY operator""", (date_from + ' 00:00:00', date_to + ' 23:59:59'))
     report_data = {}
     for r in c.fetchall():
-        report_data[r[0]] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'days': r[4] or 0}
+        report_data[r[0]] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'days': r[4] or 0, 'efficiency': round(r[5] or 0, 1)}
     
     # Attendance
     c.execute("SELECT name, SUM(work_hours), SUM(is_overtime), COUNT(*), SUM(CASE WHEN leave_type != '' AND leave_type IS NOT NULL THEN 1 ELSE 0 END) FROM attendance WHERE work_date BETWEEN ? AND ? GROUP BY name",
@@ -2033,9 +2093,7 @@ def api_report_monthly():
             continue
         
         good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0
-        caps = list(std_cap.values())
-        avg_cap = sum(caps) / len(caps) if caps else 0
-        eff = round((rd['qty'] / rd['hours']) / avg_cap * 100, 1) if rd['hours'] > 0 and avg_cap > 0 else 0
+        eff = rd.get('efficiency', 0)
         util_rate = round(rd['hours'] / ad['total_hours'] * 100, 1) if ad['total_hours'] > 0 else 0
         daily_avg = round(rd['qty'] / rd['days'], 1) if rd['days'] > 0 else 0
         planned = planned_by_team.get(info['team_id'], 0)
