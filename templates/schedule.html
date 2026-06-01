@@ -95,8 +95,7 @@
 </div>
 <div class="ref-tab-content" id="tab-urgent-orders">
 <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-<select id="urgent-team-filter" onchange="filterUrgentOrders()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px"><option value="">全部班组</option></select>
-<input type="text" id="urgent-search" placeholder="搜索产品..." oninput="filterUrgentOrders()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;width:120px">
+<input type="text" id="urgent-search" placeholder="搜索产品/工单号..." oninput="filterUrgentOrders()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;width:160px">
 </div>
 <div id="urgent-orders-content"></div>
 </div>
@@ -438,7 +437,7 @@ function loadWarnings(){
             var p=products[name];
             var remain=woRemain[name]||woRemain[p.code]||0;
             html+="<tr>";
-            html+="<td style='text-align:left;padding:4px 6px;border-bottom:1px solid #f3f4f6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;position:sticky;left:0;background:#fff;z-index:1' title='"+name+"'><span>"+name+"</span> <button onclick=\\\"showOrderListForProduct('"+name.replace(/'/g,"\\'")+"')\\\" style=\\\"font-size:10px;padding:1px 5px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;color:#2563eb\\\" title='View'>➤</button></td>";
+            html+="<td style='text-align:left;padding:4px 6px;border-bottom:1px solid #f3f4f6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;position:sticky;left:0;background:#fff;z-index:1' title='"+name+"'><span>"+name+"</span> <button onclick='showOrderListForProduct(this.dataset.pn)' data-pn='"+name+"' style='font-size:10px;padding:1px 5px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;color:#2563eb' title='查看工单'>➤</button></td>";
             html+="<td style='text-align:center;padding:4px 6px;border-bottom:1px solid #f3f4f6;color:"+(remain>0?"#dc2626":"#059669")+";font-weight:600'>"+(remain>0?remain:"-")+"</td>";
             dates.forEach(function(d){
                 var val=p.dates[d]||0;
@@ -1347,7 +1346,6 @@ function loadSemiFinished() {
 function loadUrgentOrders() {
     var container = document.getElementById('urgent-orders-content');
     container.innerHTML = '<div class="ref-empty">加载中...</div>';
-    populateTeamFilter('urgent-team-filter');
     fetch('/api/orders?page=1&page_size=200').then(function(r){return r.json()}).then(function(resp) {
         var data = resp.data || resp;
         var today = new Date().toISOString().substring(0,10);
@@ -1416,15 +1414,13 @@ function filterSemiFinished() {
 }
 
 function filterUrgentOrders() {
-    var team = document.getElementById('urgent-team-filter').value;
     var q = (document.getElementById('urgent-search').value || '').toLowerCase();
     var container = document.getElementById('urgent-orders-content');
     var data = _rawUrgentData;
     if (!data || !data.length) { container.innerHTML = '<div class="ref-empty">\u65e0\u7d27\u6025\u5de5\u5355</div>'; return; }
     var today = new Date().toISOString().substring(0,10);
     var filtered = data.filter(function(o) {
-        if (team && (o.team_name||'') !== team) return false;
-        if (q && (o.product_name||'').toLowerCase().indexOf(q) < 0 && (o.product_code||'').toLowerCase().indexOf(q) < 0) return false;
+        if (q && (o.product_name||'').toLowerCase().indexOf(q) < 0 && (o.product_code||'').toLowerCase().indexOf(q) < 0 && (o.order_no||'').toLowerCase().indexOf(q) < 0) return false;
         return true;
     });
     if (filtered.length === 0) { container.innerHTML = '<div class="ref-empty">\u65e0\u5339\u914d\u6570\u636e</div>'; return; }

@@ -1458,17 +1458,24 @@ def api_work_reports():
     q = request.args.get('q', '').strip()
     page = request.args.get('page', 1, type=int)
     page_size = request.args.get('page_size', 50, type=int)
-    sql = "SELECT * FROM work_reports WHERE 1=1"
+    sql = """SELECT r.*, t.name as team_name FROM work_reports r
+              LEFT JOIN personnel p ON r.operator = p.name
+              LEFT JOIN teams t ON p.team_id = t.id
+              WHERE 1=1"""
     params = []
     date = request.args.get('date', '').strip()
     if date:
-        sql += " AND create_time LIKE ?"
+        sql += " AND r.create_time LIKE ?"
         params.append(date + '%')
+    team_filter = request.args.get('team', '').strip()
+    if team_filter:
+        sql += " AND t.name = ?"
+        params.append(team_filter)
     if q:
         like = "%" + q + "%"
-        sql += " AND (order_no LIKE ? OR product_code LIKE ? OR product_name LIKE ? OR process_name LIKE ? OR operator LIKE ?)"
+        sql += " AND (r.order_no LIKE ? OR r.product_code LIKE ? OR r.product_name LIKE ? OR r.process_name LIKE ? OR r.operator LIKE ?)"
         params.extend([like, like, like, like, like])
-    sql += " ORDER BY create_time DESC"
+    sql += " ORDER BY r.create_time DESC"
     return jsonify(paginate_query(sql, params, page, page_size))
 
 @app.route('/api/work-reports', methods=['DELETE'])
