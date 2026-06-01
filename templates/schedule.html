@@ -86,22 +86,25 @@
 <div id="other-schedules-content"></div>
 </div>
 <div class="ref-tab-content" id="tab-semi-finished">
-<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-<span style="font-size:12px;color:#6b7280">近2天半成品产出</span>
+<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+<select id="semi-team-filter" onchange="filterSemiFinished()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px"><option value="">全部班组</option></select>
+<input type="text" id="semi-search" placeholder="搜索产品..." oninput="filterSemiFinished()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;width:120px">
 <button class="btn btn-outline btn-sm" onclick="loadSemiFinished()" style="font-size:11px;padding:4px 8px">刷新</button>
 </div>
 <div id="semi-finished-content"></div>
 </div>
 <div class="ref-tab-content" id="tab-urgent-orders">
-<div style="margin-bottom:8px">
-<span style="font-size:12px;color:#6b7280">未完成工单（按交期排序）</span>
+<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+<select id="urgent-team-filter" onchange="filterUrgentOrders()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px"><option value="">全部班组</option></select>
+<input type="text" id="urgent-search" placeholder="搜索产品..." oninput="filterUrgentOrders()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;width:120px">
 </div>
 <div id="urgent-orders-content"></div>
 </div>
 <div class="ref-tab-content" id="tab-today-reports">
-<div style="margin-bottom:8px">
-<span style="font-size:12px;color:#6b7280">今日已报工数据</span>
-<button class="btn btn-outline btn-sm" onclick="loadTodayReports()" style="font-size:11px;padding:4px 8px;margin-left:8px">刷新</button>
+<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+<select id="today-team-filter" onchange="filterTodayReports()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px"><option value="">全部班组</option></select>
+<input type="text" id="today-search" placeholder="搜索产品..." oninput="filterTodayReports()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;width:120px">
+<button class="btn btn-outline btn-sm" onclick="loadTodayReports()" style="font-size:11px;padding:4px 8px">刷新</button>
 </div>
 <div id="today-reports-content"></div>
 </div>
@@ -162,6 +165,17 @@
 <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="saveTask()">保存</button></div>
 </div>
 </div>
+
+<!-- Order List Modal (for quick schedule from warning) -->
+<div class="modal-overlay" id="order-list-modal">
+<div class="modal" style="max-width:800px;max-height:80vh;overflow-y:auto">
+<div class="modal-header"><h3 id="order-list-title">工单列表</h3><button class="modal-close" onclick="closeOrderListModal()">&times;</button></div>
+<div class="modal-body">
+<div id="order-list-content"></div>
+</div>
+</div>
+</div>
+
 {% endblock %}
 {% block scripts %}
 <script>
@@ -424,7 +438,7 @@ function loadWarnings(){
             var p=products[name];
             var remain=woRemain[name]||woRemain[p.code]||0;
             html+="<tr>";
-            html+="<td style='text-align:left;padding:4px 6px;border-bottom:1px solid #f3f4f6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;position:sticky;left:0;background:#fff;z-index:1' title='"+name+"'>"+name+"</td>";
+            html+="<td style='text-align:left;padding:4px 6px;border-bottom:1px solid #f3f4f6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;position:sticky;left:0;background:#fff;z-index:1' title='"+name+"'><span>"+name+"</span> <button onclick=\\\"showOrderListForProduct('"+name.replace(/'/g,"\\'")+"')\\\" style=\\\"font-size:10px;padding:1px 5px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;color:#2563eb\\\" title='View'>➤</button></td>";
             html+="<td style='text-align:center;padding:4px 6px;border-bottom:1px solid #f3f4f6;color:"+(remain>0?"#dc2626":"#059669")+";font-weight:600'>"+(remain>0?remain:"-")+"</td>";
             dates.forEach(function(d){
                 var val=p.dates[d]||0;
@@ -1323,68 +1337,194 @@ function loadOtherSchedules() {
 function loadSemiFinished() {
     var container = document.getElementById('semi-finished-content');
     container.innerHTML = '<div class="ref-empty">加载中...</div>';
+    populateTeamFilter('semi-team-filter');
     fetch('/api/reference/semi-finished-output').then(function(r){return r.json()}).then(function(data) {
-        if (!data || data.length === 0) { container.innerHTML = '<div class="ref-empty">近2天无半成品产出数据</div>'; return; }
-        var html = '';
-        data.forEach(function(group) {
-            html += '<div class="ref-team-group"><h4>' + group.team + ' (' + group.records.length + '条)</h4>';
-            group.records.forEach(function(r) {
-                html += '<div class="ref-item">';
-                html += '<div><strong>' + (r.product_name||'') + '</strong> ' + (r.process_name||'') + '</div>';
-                html += '<div style="color:#6b7280">报工: ' + r.report_qty + ' | 良品: ' + r.good_qty;
-                html += ' | ' + (r.create_time||'').substring(5,16) + ' | ' + (r.operator||'') + '</div>';
-                html += '</div>';
-            });
-            html += '</div>';
-        });
-        container.innerHTML = html;
+        _rawSemiData = data || [];
+        filterSemiFinished();
     }).catch(function() { container.innerHTML = '<div class="ref-empty">加载失败</div>'; });
 }
 
 function loadUrgentOrders() {
     var container = document.getElementById('urgent-orders-content');
     container.innerHTML = '<div class="ref-empty">加载中...</div>';
+    populateTeamFilter('urgent-team-filter');
     fetch('/api/orders?page=1&page_size=200').then(function(r){return r.json()}).then(function(resp) {
         var data = resp.data || resp;
         var today = new Date().toISOString().substring(0,10);
         var incomplete = data.filter(function(o) { return o.status !== 'completed' && o.due_date; });
         incomplete.sort(function(a,b) { return (a.due_date||'').localeCompare(b.due_date||''); });
-        if (incomplete.length === 0) { container.innerHTML = '<div class="ref-empty">无紧急工单</div>'; return; }
-        var html = '';
-        incomplete.slice(0, 30).forEach(function(o) {
-            var cls = '';
-            if (o.due_date < today) cls = 'ref-urgent-overdue';
-            else if (o.due_date === today) cls = 'ref-urgent-today';
-            var remaining = (o.quantity||0) - (o.completed_qty||0);
-            html += '<div class="ref-item ' + cls + '">';
-            html += '<div>' + (o.priority||'') + ' <strong>' + (o.product_name||o.product_code||'') + '</strong></div>';
-            html += '<div style="color:#6b7280">单号: ' + (o.order_no||'') + '</div>';
-            html += '<div>计划: ' + (o.quantity||0) + ' | 完成: ' + (o.completed_qty||0) + ' | <strong>剩余: ' + remaining + '</strong></div>';
-            html += '<div style="color:#6b7280">交期: ' + (o.due_date||'') + (cls==='ref-urgent-overdue' ? ' ⚠️已超期' : '') + '</div>';
-            html += '</div>';
-        });
-        container.innerHTML = html;
+        _rawUrgentData = incomplete;
+        filterUrgentOrders();
     }).catch(function() { container.innerHTML = '<div class="ref-empty">加载失败</div>'; });
 }
 
 function loadTodayReports() {
     var container = document.getElementById('today-reports-content');
     container.innerHTML = '<div class="ref-empty">加载中...</div>';
+    populateTeamFilter('today-team-filter');
     var today = new Date().toISOString().substring(0,10);
-    fetch('/api/work-reports?page=1&page_size=100&date=' + today).then(function(r){return r.json()}).then(function(resp) {
+    fetch('/api/work-reports?page=1&page_size=200&date=' + today).then(function(r){return r.json()}).then(function(resp) {
         var data = resp.data || resp;
-        if (!data || data.length === 0) { container.innerHTML = '<div class="ref-empty">今日暂无报工数据</div>'; return; }
-        var html = '';
-        data.forEach(function(r) {
+        _rawTodayData = data || [];
+        filterTodayReports();
+    }).catch(function() { container.innerHTML = '<div class="ref-empty">加载失败</div>'; });
+}
+
+// ========== Filter & Order List Functions ==========
+var _rawSemiData = [];
+var _rawUrgentData = [];
+var _rawTodayData = [];
+
+function populateTeamFilter(selectId) {
+    var sel = document.getElementById(selectId);
+    if (!sel || sel.options.length > 1) return;
+    fetch('/api/teams').then(function(r){return r.json()}).then(function(teams) {
+        teams.forEach(function(t) {
+            var opt = document.createElement('option');
+            opt.value = t.name;
+            opt.textContent = t.name;
+            sel.appendChild(opt);
+        });
+    });
+}
+
+function filterSemiFinished() {
+    var team = document.getElementById('semi-team-filter').value;
+    var q = (document.getElementById('semi-search').value || '').toLowerCase();
+    var container = document.getElementById('semi-finished-content');
+    var data = _rawSemiData;
+    if (!data || !data.length) { container.innerHTML = '<div class="ref-empty">\u8fd12\u5929\u65e0\u534a\u6210\u54c1\u4ea7\u51fa\u6570\u636e</div>'; return; }
+    var html = '';
+    data.forEach(function(group) {
+        if (team && group.team !== team) return;
+        var filtered = group.records.filter(function(r) {
+            if (!q) return true;
+            return (r.product_name||'').toLowerCase().indexOf(q) >= 0 || (r.product_code||'').toLowerCase().indexOf(q) >= 0;
+        });
+        if (filtered.length === 0) return;
+        html += '<div class="ref-team-group"><h4>' + group.team + ' (' + filtered.length + '\u6761)</h4>';
+        filtered.forEach(function(r) {
             html += '<div class="ref-item">';
             html += '<div><strong>' + (r.product_name||'') + '</strong> ' + (r.process_name||'') + '</div>';
-            html += '<div style="color:#6b7280">单号: ' + (r.order_no||'') + '</div>';
-            html += '<div>报工: ' + (r.report_qty||0) + ' | 良品: ' + (r.good_qty||0) + ' | ' + (r.operator||'') + '</div>';
-            html += '<div style="color:#9ca3af;font-size:10px">' + (r.create_time||'') + '</div>';
+            html += '<div style="color:#6b7280">\u62a5\u5de5: ' + r.report_qty + ' | \u826f\u54c1: ' + r.good_qty;
+            html += ' | ' + (r.create_time||'').substring(5,16) + ' | ' + (r.operator||'') + '</div>';
             html += '</div>';
         });
+        html += '</div>';
+    });
+    container.innerHTML = html || '<div class="ref-empty">\u65e0\u5339\u914d\u6570\u636e</div>';
+}
+
+function filterUrgentOrders() {
+    var team = document.getElementById('urgent-team-filter').value;
+    var q = (document.getElementById('urgent-search').value || '').toLowerCase();
+    var container = document.getElementById('urgent-orders-content');
+    var data = _rawUrgentData;
+    if (!data || !data.length) { container.innerHTML = '<div class="ref-empty">\u65e0\u7d27\u6025\u5de5\u5355</div>'; return; }
+    var today = new Date().toISOString().substring(0,10);
+    var filtered = data.filter(function(o) {
+        if (team && (o.team_name||'') !== team) return false;
+        if (q && (o.product_name||'').toLowerCase().indexOf(q) < 0 && (o.product_code||'').toLowerCase().indexOf(q) < 0) return false;
+        return true;
+    });
+    if (filtered.length === 0) { container.innerHTML = '<div class="ref-empty">\u65e0\u5339\u914d\u6570\u636e</div>'; return; }
+    var html = '';
+    filtered.slice(0, 30).forEach(function(o) {
+        var cls = '';
+        if (o.due_date < today) cls = 'ref-urgent-overdue';
+        else if (o.due_date === today) cls = 'ref-urgent-today';
+        var remaining = (o.quantity||0) - (o.completed_qty||0);
+        html += '<div class="ref-item ' + cls + '">';
+        html += '<div>' + (o.priority||'') + ' <strong>' + (o.product_name||o.product_code||'') + '</strong></div>';
+        html += '<div style="color:#6b7280">\u5355\u53f7: ' + (o.order_no||'') + '</div>';
+        html += '<div>\u8ba1\u5212: ' + (o.quantity||0) + ' | \u5b8c\u6210: ' + (o.completed_qty||0) + ' | <strong>\u5269\u4f59: ' + remaining + '</strong></div>';
+        html += '<div style="color:#6b7280">\u4ea4\u671f: ' + (o.due_date||'') + (cls==='ref-urgent-overdue' ? ' \u26a0\ufe0f\u5df2\u8d85\u671f' : '') + '</div>';
+        html += '</div>';
+    });
+    container.innerHTML = html;
+}
+
+function filterTodayReports() {
+    var team = document.getElementById('today-team-filter').value;
+    var q = (document.getElementById('today-search').value || '').toLowerCase();
+    var container = document.getElementById('today-reports-content');
+    var data = _rawTodayData;
+    if (!data || !data.length) { container.innerHTML = '<div class="ref-empty">\u4eca\u65e5\u6682\u65e0\u62a5\u5de5\u6570\u636e</div>'; return; }
+    var filtered = data.filter(function(r) {
+        if (team && (r.team_name||'') !== team) return false;
+        if (q && (r.product_name||'').toLowerCase().indexOf(q) < 0 && (r.product_code||'').toLowerCase().indexOf(q) < 0) return false;
+        return true;
+    });
+    if (filtered.length === 0) { container.innerHTML = '<div class="ref-empty">\u65e0\u5339\u914d\u6570\u636e</div>'; return; }
+    var html = '';
+    filtered.forEach(function(r) {
+        html += '<div class="ref-item">';
+        html += '<div><strong>' + (r.product_name||'') + '</strong> ' + (r.process_name||'') + '</div>';
+        html += '<div style="color:#6b7280">\u5355\u53f7: ' + (r.order_no||'') + '</div>';
+        html += '<div>\u62a5\u5de5: ' + (r.report_qty||0) + ' | \u826f\u54c1: ' + (r.good_qty||0) + ' | ' + (r.operator||'') + '</div>';
+        html += '<div style="color:#9ca3af;font-size:10px">' + (r.create_time||'') + '</div>';
+        html += '</div>';
+    });
+    container.innerHTML = html;
+}
+
+// ========== Order List Modal for Quick Schedule ==========
+function showOrderListForProduct(productName) {
+    document.getElementById('order-list-title').textContent = '\u5de5\u5355 - ' + productName;
+    var container = document.getElementById('order-list-content');
+    container.innerHTML = '<div class="ref-empty">\u52a0\u8f7d\u4e2d...</div>';
+    document.getElementById('order-list-modal').classList.add('show');
+    fetch('/api/search-orders?q=' + encodeURIComponent(productName)).then(function(r){return r.json()}).then(function(orders) {
+        if (!orders || orders.length === 0) {
+            container.innerHTML = '<div class="ref-empty">\u672a\u627e\u5230\u76f8\u5173\u5de5\u5355</div>';
+            return;
+        }
+        var html = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+        html += '<thead><tr>';
+        html += '<th style="text-align:left;padding:6px 8px;background:#f9fafb;border-bottom:1px solid #e5e7eb">\u5de5\u5355\u53f7</th>';
+        html += '<th style="text-align:left;padding:6px 8px;background:#f9fafb;border-bottom:1px solid #e5e7eb">\u4ea7\u54c1</th>';
+        html += '<th style="text-align:center;padding:6px 8px;background:#f9fafb;border-bottom:1px solid #e5e7eb">\u6570\u91cf</th>';
+        html += '<th style="text-align:center;padding:6px 8px;background:#f9fafb;border-bottom:1px solid #e5e7eb">\u4ea4\u671f</th>';
+        html += '<th style="text-align:center;padding:6px 8px;background:#f9fafb;border-bottom:1px solid #e5e7eb">\u72b6\u6001</th>';
+        html += '<th style="text-align:center;padding:6px 8px;background:#f9fafb;border-bottom:1px solid #e5e7eb">\u64cd\u4f5c</th>';
+        html += '</tr></thead><tbody>';
+        orders.forEach(function(o) {
+            var remaining = (o.quantity||0) - (o.completed_qty||0);
+            var statusText = o.status === 'completed' ? '\u5df2\u5b8c\u6210' : (remaining <= 0 ? '\u5df2\u5b8c\u6210' : '\u6267\u884c\u4e2d');
+            var statusColor = statusText === '\u5df2\u5b8c\u6210' ? '#059669' : '#2563eb';
+            html += '<tr>';
+            html += '<td style="padding:6px 8px;border-bottom:1px solid #f3f4f6">' + (o.order_no||'') + '</td>';
+            html += '<td style="padding:6px 8px;border-bottom:1px solid #f3f4f6">' + (o.product_name||o.product_code||'') + '</td>';
+            html += '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #f3f4f6">' + (o.completed_qty||0) + '/' + (o.quantity||0) + '</td>';
+            html += '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #f3f4f6">' + (o.due_date||'') + '</td>';
+            html += '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #f3f4f6;color:' + statusColor + '">' + statusText + '</td>';
+            html += '<td style="text-align:center;padding:6px 8px;border-bottom:1px solid #f3f4f6">';
+            if (statusText !== '\u5df2\u5b8c\u6210') {
+                html += '<button class="btn btn-primary btn-sm" onclick="quickSchedule(\'' + o.order_no + '\')" style="font-size:11px;padding:3px 10px">\u4e00\u952e\u6392\u73ed</button>';
+            }
+            html += '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
         container.innerHTML = html;
-    }).catch(function() { container.innerHTML = '<div class="ref-empty">加载失败</div>'; });
+    }).catch(function() { container.innerHTML = '<div class="ref-empty">\u52a0\u8f7d\u5931\u8d25</div>'; });
+}
+
+function closeOrderListModal() {
+    document.getElementById('order-list-modal').classList.remove('show');
+}
+
+function quickSchedule(orderNo) {
+    closeOrderListModal();
+    showAddTask();
+    document.getElementById('order-search').value = orderNo;
+    fetch('/api/search-orders?q=' + encodeURIComponent(orderNo)).then(function(r){return r.json()}).then(function(orders) {
+        if (orders && orders.length > 0) {
+            var match = orders.find(function(o){ return o.order_no === orderNo; });
+            if (match) { selectOrder(match); }
+            else { selectOrder(orders[0]); }
+        }
+    });
 }
 
 function freeCalcQty(){
