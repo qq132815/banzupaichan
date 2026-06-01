@@ -136,22 +136,18 @@ def sync_attendance(date_from, date_to):
             # Calculate plan_hours (standard 8h for full day)
             plan_hours = 8.0
             
+            # Only insert if user_id matches a production worker in personnel
             c.execute("""INSERT OR REPLACE INTO attendance 
                 (user_id, name, work_date, check_in, check_out, work_hours, plan_hours, is_overtime, leave_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (
+                    SELECT 1 FROM personnel WHERE user_id = ?
+                )""",
                 (p['user_id'], p['name'], p['work_date'], p['check_in'],
-                 p['check_out'], work_hours, plan_hours, is_overtime, leave_type))
-            total_count += 1
+                 p['check_out'], work_hours, plan_hours, is_overtime, leave_type, p['user_id']))
+            total_count += c.rowcount
         
         current += timedelta(days=1)
     
-    # Auto-add new attendance names to personnel table
-    c.execute("""INSERT OR IGNORE INTO personnel (name, department, position, is_active)
-        SELECT DISTINCT a.name, '', '', 1 FROM attendance a
-        WHERE a.name != '' AND a.name NOT IN (SELECT name FROM personnel)""")
-    new_count = c.rowcount
     conn.commit()
     conn.close()
-    if new_count > 0:
-        print(f"[attendance] Added {new_count} new names to personnel")
     return total_count

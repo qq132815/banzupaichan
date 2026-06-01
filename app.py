@@ -2004,8 +2004,10 @@ def api_report_daily():
         GROUP BY operator""", (date + '%',))
     report_data = {r[0]: {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'efficiency': round(r[4] or 0, 1)} for r in c.fetchall()}
     
-    # Get attendance for the date
-    c.execute("SELECT name, work_hours, is_overtime, leave_type FROM attendance WHERE work_date=?", (date,))
+    # Get attendance for the date (join by user_id via personnel)
+    c.execute("""SELECT p.name, a.work_hours, a.is_overtime, a.leave_type 
+        FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id 
+        WHERE a.work_date=?""", (date,))
     attend_data = {r[0]: {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or ''} for r in c.fetchall()}
     
     conn.close()
@@ -2018,7 +2020,8 @@ def api_report_daily():
         ad = attend_data.get(name, {'hours': 0, 'overtime': 0, 'leave': ''})
         # Include if has any data: work report OR attendance record
         has_attendance = name in attend_data
-        if rd['qty'] == 0 and rd['hours'] == 0 and ad['hours'] == 0 and not has_attendance:
+        has_report = name in report_data
+        if not has_report and not has_attendance:
             continue
         
         good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0
@@ -2061,8 +2064,10 @@ def api_report_personal():
         dt = r[0][:10]
         report_data[dt] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0}
     
-    # Get attendance
-    c.execute("SELECT work_date, work_hours, is_overtime, leave_type FROM attendance WHERE name=? AND work_date BETWEEN ? AND ?",
+    # Get attendance (match by user_id via personnel)
+    c.execute("""SELECT a.work_date, a.work_hours, a.is_overtime, a.leave_type 
+        FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id 
+        WHERE p.name=? AND a.work_date BETWEEN ? AND ?""",
               (name, date_from, date_to))
     attend_data = {}
     for r in c.fetchall():
@@ -2124,7 +2129,7 @@ def api_report_weekly():
         report_data[r[0]] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'days': r[4] or 0, 'efficiency': round(r[5] or 0, 1)}
     
     # Attendance for the week
-    c.execute("SELECT name, SUM(work_hours), SUM(is_overtime), COUNT(*) FROM attendance WHERE work_date BETWEEN ? AND ? GROUP BY name",
+    c.execute("""SELECT p.name, SUM(a.work_hours), SUM(a.is_overtime), COUNT(*) FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id WHERE a.work_date BETWEEN ? AND ? GROUP BY p.name""",
               (week_start, week_end))
     attend_data = {}
     for r in c.fetchall():
@@ -2187,7 +2192,7 @@ def api_report_monthly():
         report_data[r[0]] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'days': r[4] or 0, 'efficiency': round(r[5] or 0, 1)}
     
     # Attendance
-    c.execute("SELECT name, SUM(work_hours), SUM(is_overtime), COUNT(*), SUM(CASE WHEN leave_type != '' AND leave_type IS NOT NULL THEN 1 ELSE 0 END) FROM attendance WHERE work_date BETWEEN ? AND ? GROUP BY name",
+    c.execute("""SELECT p.name, SUM(a.work_hours), SUM(a.is_overtime), COUNT(*), SUM(CASE WHEN a.leave_type != '' AND a.leave_type IS NOT NULL THEN 1 ELSE 0 END) FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id WHERE a.work_date BETWEEN ? AND ? GROUP BY p.name""",
               (date_from, date_to))
     attend_data = {}
     for r in c.fetchall():
