@@ -2016,7 +2016,9 @@ def api_report_daily():
             continue
         rd = report_data.get(name, {'qty': 0, 'hours': 0, 'good_qty': 0, 'efficiency': 0})
         ad = attend_data.get(name, {'hours': 0, 'overtime': 0, 'leave': ''})
-        if rd['qty'] == 0 and rd['hours'] == 0 and ad['hours'] == 0:
+        # Include if has any data: work report OR attendance record
+        has_attendance = name in attend_data
+        if rd['qty'] == 0 and rd['hours'] == 0 and ad['hours'] == 0 and not has_attendance:
             continue
         
         good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0

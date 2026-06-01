@@ -145,6 +145,13 @@ def sync_attendance(date_from, date_to):
         
         current += timedelta(days=1)
     
+    # Auto-add new attendance names to personnel table
+    c.execute("""INSERT OR IGNORE INTO personnel (name, department, position, is_active)
+        SELECT DISTINCT a.name, '', '', 1 FROM attendance a
+        WHERE a.name != '' AND a.name NOT IN (SELECT name FROM personnel)""")
+    new_count = c.rowcount
     conn.commit()
     conn.close()
+    if new_count > 0:
+        print(f"[attendance] Added {new_count} new names to personnel")
     return total_count
