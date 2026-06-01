@@ -23,6 +23,15 @@ app = Flask(__name__)
 # ========== MES Sync Scheduler ==========
 _sync_scheduler_running = False
 
+def _run_attendance_sync(date_from, date_to):
+    """Run attendance sync in background thread."""
+    try:
+        from utils.attendance_api import sync_attendance
+        count = sync_attendance(date_from, date_to)
+        print(f"[attendance] Auto-sync completed: {count} records for {date_from}~{date_to}")
+    except Exception as e:
+        print(f"[attendance] Auto-sync error: {e}")
+
 def _run_sync_job(sync_type):
     """Run sync job in background thread."""
     try:
@@ -41,7 +50,7 @@ def _sync_scheduler():
     global _sync_scheduler_running
     _sync_scheduler_running = True
     import time
-    last_run = {'work_orders': 0, 'reports': 0}
+    last_run = {'work_orders': 0, 'reports': 0, 'attendance': 0}
     
     while _sync_scheduler_running:
         try:
@@ -66,6 +75,31 @@ def _sync_scheduler():
                 t = threading.Thread(target=_run_sync_job, args=('reports',))
                 t.daemon = True
                 t.start()
+            
+            # Attendance auto-sync at 8:30 AM daily
+            try:
+                conn2 = get_connection()
+                c2 = conn2.cursor()
+                c2.execute("SELECT value FROM system_settings WHERE key='attendance_auto_sync'")
+                auto_row = c2.fetchone()
+                auto_sync = int(auto_row[0]) if auto_row and auto_row[0].isdigit() else 0
+                conn2.close()
+                
+                if auto_sync:
+                    now_dt = datetime.now()
+                    today_830 = now_dt.replace(hour=8, minute=30, second=0, microsecond=0)
+                    # Run if it's between 8:30 and 8:35 and hasn't run today at 8:30
+                    last_att = last_run.get('attendance', 0)
+                    if now_dt >= today_830 and now_dt < today_830.replace(minute=35):
+                        if time.time() - last_att > 3600:  # at least 1 hour since last run
+                            last_run['attendance'] = time.time()
+                            yesterday = (now_dt - timedelta(days=1)).strftime('%Y-%m-%d')
+                            t = threading.Thread(target=_run_attendance_sync, args=(yesterday, yesterday))
+                            t.daemon = True
+                            t.start()
+                            print(f"[attendance] Auto-sync triggered for {yesterday}")
+            except Exception as e:
+                print(f"Attendance auto-sync error: {e}")
             
             time.sleep(60)
         except Exception as e:
@@ -2207,7 +2241,7 @@ def api_attendance_sync():
     if not date_from or not date_to:
         return jsonify({'error': '请选择日期范围'}), 400
     try:
-        from utils.dingtalk import sync_attendance
+        from utils.attendance_api import sync_attendance
         count = sync_attendance(date_from, date_to)
         return jsonify({'ok': True, 'count': count})
     except Exception as e:
@@ -2218,12 +2252,14 @@ def api_attendance_sync():
 @planner_required
 def api_attendance_test():
     try:
-        from utils.dingtalk import get_access_token
-        token = get_access_token()
-        if token:
-            return jsonify({'ok': True})
+        from utils.attendance_api import fetch_attendance
+        from datetime import datetime, timedelta
+        test_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        records = fetch_attendance(test_date)
+        if records is not None:
+            return jsonify({'ok': True, 'count': len(records), 'date': test_date})
         else:
-            return jsonify({'ok': False, 'error': '无法获取access_token，请检查AppKey和AppSecret'})
+            return jsonify({'ok': False, 'error': '无法获取考勤数据，请检查API地址和Key'})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
 
@@ -2251,6 +2287,36 @@ def api_attendance():
     r = [dict(row) for row in c.fetchall()]
     conn.close()
     return jsonify(r)
+
+
+# ========== Attendance Settings API ==========
+@app.route('/api/attendance/settings', methods=['GET'])
+@login_required
+def api_attendance_settings_get():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT key, value FROM system_settings WHERE key LIKE 'attendance_%'")
+    config = {row[0]: row[1] for row in c.fetchall()}
+    conn.close()
+    return jsonify({
+        'api_url': config.get('attendance_api_url', 'http://10.6.201.10:7777/ddkq/api/third-party/attendance'),
+        'api_key': config.get('attendance_api_key', 'tk_cs_20260601'),
+        'auto_sync': config.get('attendance_auto_sync', '0'),
+    })
+
+@app.route('/api/attendance/settings', methods=['POST'])
+@login_required
+@planner_required
+def api_attendance_settings_save():
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('attendance_api_url', ?, datetime('now'))", (data.get('api_url', ''),))
+    c.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('attendance_api_key', ?, datetime('now'))", (data.get('api_key', ''),))
+    c.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('attendance_auto_sync', ?, datetime('now'))", (str(data.get('auto_sync', '0')),))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
 
 # ========== Export API ==========
 @app.route('/api/export/<data_type>')

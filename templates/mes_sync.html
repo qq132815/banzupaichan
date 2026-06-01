@@ -44,6 +44,47 @@
 </div>
 </div>
 
+<!-- Attendance Section -->
+<div class="card" style="margin-bottom:16px">
+<div class="card-header"><h2>⏰ 考勤数据同步</h2></div>
+<div class="card-body" style="padding:24px">
+<div style="display:flex;gap:24px;flex-wrap:wrap">
+<div style="flex:1;min-width:320px">
+<h3 style="margin:0 0 12px;font-size:15px">⚙️ 考勤API配置</h3>
+<div class="form-group" style="margin-bottom:12px">
+<label style="font-weight:600;font-size:13px">API地址</label>
+<input type="text" class="form-control" id="att-api-url" placeholder="http://10.6.201.10:7777/ddkq/api/third-party/attendance" style="width:100%">
+</div>
+<div class="form-group" style="margin-bottom:12px">
+<label style="font-weight:600;font-size:13px">API Key</label>
+<input type="text" class="form-control" id="att-api-key" placeholder="tk_cs_20260601" style="width:100%">
+</div>
+<div class="form-group" style="margin-bottom:12px">
+<label style="font-weight:600;font-size:13px">自动同步</label>
+<div style="display:flex;align-items:center;gap:8px">
+<label style="font-size:13px;cursor:pointer"><input type="checkbox" id="att-auto-sync"> 每天 8:30 自动同步前一日考勤数据</label>
+</div>
+</div>
+<button class="btn btn-primary" onclick="saveAttendanceSettings()" style="margin-top:4px">保存考勤设置</button>
+<span id="att-save-status" style="margin-left:12px;font-size:13px"></span>
+</div>
+<div style="flex:1;min-width:320px">
+<h3 style="margin:0 0 12px;font-size:15px">🔄 手动同步考勤</h3>
+<p style="color:#6b7280;font-size:13px;margin:0 0 12px">从考勤系统拉取指定日期范围的打卡数据</p>
+<div style="display:flex;gap:8px;align-items:end;margin-bottom:12px">
+<div class="form-group" style="margin:0"><label style="font-size:12px">开始日期</label><input type="date" class="form-control" id="att-date-from" style="width:150px"></div>
+<div class="form-group" style="margin:0"><label style="font-size:12px">结束日期</label><input type="date" class="form-control" id="att-date-to" style="width:150px"></div>
+<button class="btn btn-primary" id="btn-sync-attendance" onclick="syncAttendance()" style="height:38px">同步考勤</button>
+</div>
+<span id="att-sync-status" style="font-size:13px"></span>
+<div id="att-sync-detail" style="margin-top:8px;font-size:12px;color:#6b7280;display:none"></div>
+<button class="btn btn-outline btn-sm" onclick="testAttendanceApi()" style="margin-top:12px;font-size:12px">🧪 测试API连接</button>
+<span id="att-test-status" style="margin-left:8px;font-size:12px"></span>
+</div>
+</div>
+</div>
+</div>
+
 <div class="card">
 <div class="card-header"><h2>📊 同步日志</h2></div>
 <div class="card-body" style="padding:16px">
@@ -56,103 +97,73 @@
 </div>
 </div>
 </div>
-{% endblock %}
-{% block scripts %}
+</script>
 <script>
-// Load sync settings
-fetch("/api/mes-sync/settings").then(function(r){return r.json()}).then(function(d){
-    document.getElementById("work-order-interval").value = d.work_order_interval || 0;
-    document.getElementById("report-interval").value = d.report_interval || 0;
-});
-
-// Load sync logs
-loadSyncLogs();
-
-function saveSyncSettings(){
-    var woInterval = parseInt(document.getElementById("work-order-interval").value) || 0;
-    var rptInterval = parseInt(document.getElementById("report-interval").value) || 0;
-    api("/api/mes-sync/settings", {method:"POST", body:{work_order_interval:woInterval, report_interval:rptInterval}}).then(function(){
-        toast("同步设置已保存","success");
-    }).catch(function(){toast("保存失败","error");});
-}
-
-function syncWorkOrders(){
-    var btn = document.getElementById("btn-sync-orders");
-    var status = document.getElementById("orders-sync-status");
-    var detail = document.getElementById("orders-sync-detail");
-    btn.disabled = true;
-    btn.textContent = "同步中...";
-    status.innerHTML = '<span style="color:#d97706">⏳ 正在同步...</span>';
-    detail.style.display = "block";
-    detail.textContent = "正在登录MES系统并导出工单数据...";
-
-    fetch("/api/mes-sync/work-orders", {method:"POST"}).then(function(r){return r.json()}).then(function(d){
-        btn.disabled = false;
-        btn.textContent = "开始同步工单";
-        if(d.ok){
-            status.innerHTML = '<span style="color:#059669">✓ 同步完成</span>';
-            detail.textContent = "成功导入 "+d.count+" 条工单数据";
-        } else {
-            status.innerHTML = '<span style="color:#dc2626">✗ 同步失败</span>';
-            detail.textContent = d.error || "未知错误";
-        }
-        loadSyncLogs();
-    }).catch(function(e){
-        btn.disabled = false;
-        btn.textContent = "开始同步工单";
-        status.innerHTML = '<span style="color:#dc2626">✗ 同步失败</span>';
-        detail.textContent = e.message || "网络错误";
+function loadAttendanceSettings(){
+    fetch("/api/attendance/settings").then(function(r){return r.json()}).then(function(d){
+        document.getElementById("att-api-url").value=d.api_url||"";
+        document.getElementById("att-api-key").value=d.api_key||"";
+        document.getElementById("att-auto-sync").checked=d.auto_sync==="1";
+        var today=new Date();
+        var yesterday=new Date(today);yesterday.setDate(yesterday.getDate()-1);
+        document.getElementById("att-date-from").value=yesterday.toISOString().substring(0,10);
+        document.getElementById("att-date-to").value=yesterday.toISOString().substring(0,10);
     });
 }
 
-function syncReports(){
-    var btn = document.getElementById("btn-sync-reports");
-    var status = document.getElementById("reports-sync-status");
-    var detail = document.getElementById("reports-sync-detail");
-    btn.disabled = true;
-    btn.textContent = "同步中...";
-    status.innerHTML = '<span style="color:#d97706">⏳ 正在同步...</span>';
-    detail.style.display = "block";
-    detail.textContent = "正在登录MES系统并导出报工数据...";
-
-    fetch("/api/mes-sync/reports", {method:"POST"}).then(function(r){return r.json()}).then(function(d){
-        btn.disabled = false;
-        btn.textContent = "开始同步报工";
-        if(d.ok){
-            status.innerHTML = '<span style="color:#059669">✓ 同步完成</span>';
-            detail.textContent = "成功导入 "+d.count+" 条报工数据";
-        } else {
-            status.innerHTML = '<span style="color:#dc2626">✗ 同步失败</span>';
-            detail.textContent = d.error || "未知错误";
-        }
-        loadSyncLogs();
-    }).catch(function(e){
-        btn.disabled = false;
-        btn.textContent = "开始同步报工";
-        status.innerHTML = '<span style="color:#dc2626">✗ 同步失败</span>';
-        detail.textContent = e.message || "网络错误";
+function saveAttendanceSettings(){
+    var data={
+        api_url:document.getElementById("att-api-url").value.trim(),
+        api_key:document.getElementById("att-api-key").value.trim(),
+        auto_sync:document.getElementById("att-auto-sync").checked?"1":"0"
+    };
+    fetch("/api/attendance/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)})
+    .then(function(r){return r.json()}).then(function(d){
+        if(d.ok){document.getElementById("att-save-status").innerHTML='<span style="color:#059669">\u2713 \u5df2\u4fdd\u5b58</span>';}
+        else{document.getElementById("att-save-status").innerHTML='<span style="color:#dc2626">\u2717 \u4fdd\u5b58\u5931\u8d25</span>';}
+        setTimeout(function(){document.getElementById("att-save-status").innerHTML="";},3000);
     });
 }
 
-function loadSyncLogs(){
-    fetch("/api/mes-sync/logs").then(function(r){return r.json()}).then(function(d){
-        var tb = document.getElementById("sync-log-tbody");
-        var empty = document.getElementById("sync-log-empty");
-        tb.innerHTML = "";
-        if(!d.length){empty.style.display="block";return;}
-        empty.style.display="none";
-        d.forEach(function(row){
-            var tr = document.createElement("tr");
-            var statusColor = row.status==="success"?"green":row.status==="error"?"red":"blue";
-            var statusText = row.status==="success"?"成功":row.status==="error"?"失败":"进行中";
-            var typeText = row.sync_type==="work_orders"?"工单同步":"报工同步";
-            tr.innerHTML="<td>"+row.created_at+"</td>"
-                +"<td>"+typeText+"</td>"
-                +"<td><span class='badge badge-"+statusColor+"'>"+statusText+"</span></td>"
-                +"<td>"+(row.record_count||0)+"</td>"
-                +"<td>"+(row.detail||"")+"</td>";
-            tb.appendChild(tr);
-        });
+function syncAttendance(){
+    var btn=document.getElementById("btn-sync-attendance");
+    var status=document.getElementById("att-sync-status");
+    var detail=document.getElementById("att-sync-detail");
+    var dateFrom=document.getElementById("att-date-from").value;
+    var dateTo=document.getElementById("att-date-to").value;
+    if(!dateFrom||!dateTo){toast("\u8bf7\u9009\u62e9\u65e5\u671f\u8303\u56f4","warning");return;}
+    btn.disabled=true;btn.textContent="\u540c\u6b65\u4e2d...";
+    status.innerHTML='<span style="color:#d97706">\u23f3 \u6b63\u5728\u540c\u6b65...</span>';
+    detail.style.display="block";detail.textContent="\u6b63\u5728\u4ece\u8003\u52e4\u7cfb\u7edf\u62c9\u53d6\u6570\u636e...";
+    fetch("/api/attendance/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({date_from:dateFrom,date_to:dateTo})})
+    .then(function(r){return r.json()}).then(function(d){
+        btn.disabled=false;btn.textContent="\u540c\u6b65\u8003\u52e4";
+        if(d.ok){
+            status.innerHTML='<span style="color:#059669">\u2713 \u540c\u6b65\u5b8c\u6210</span>';
+            detail.textContent="\u6210\u529f\u5bfc\u5165 "+d.count+" \u6761\u8003\u52e4\u8bb0\u5f55";
+        }else{
+            status.innerHTML='<span style="color:#dc2626">\u2717 \u540c\u6b65\u5931\u8d25</span>';
+            detail.textContent=d.error||"\u672a\u77e5\u9519\u8bef";
+        }
+    }).catch(function(e){
+        btn.disabled=false;btn.textContent="\u540c\u6b65\u8003\u52e4";
+        status.innerHTML='<span style="color:#dc2626">\u2717 \u540c\u6b65\u5931\u8d25</span>';
+        detail.textContent=e.message||"\u7f51\u7edc\u9519\u8bef";
+    });
+}
+
+function testAttendanceApi(){
+    var status=document.getElementById("att-test-status");
+    status.innerHTML='<span style="color:#d97706">\u6d4b\u8bd5\u4e2d...</span>';
+    saveAttendanceSettings();
+    fetch("/api/attendance/test",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+        if(d.ok){
+            status.innerHTML='<span style="color:#059669">\u2713 \u8fde\u63a5\u6210\u529f\uff0c'+d.date+'\u83b7\u53d6'+d.count+'\u6761\u8bb0\u5f55</span>';
+        }else{
+            status.innerHTML='<span style="color:#dc2626">\u2717 '+(d.error||"\u8fde\u63a5\u5931\u8d25")+'</span>';
+        }
+    }).catch(function(e){
+        status.innerHTML='<span style="color:#dc2626">\u2717 \u7f51\u7edc\u9519\u8bef</span>';
     });
 }
 </script>
