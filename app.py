@@ -2144,7 +2144,7 @@ def api_report_weekly():
         if team_id and info['team_id'] != team_id:
             continue
         rd = report_data.get(name, {'qty': 0, 'hours': 0, 'good_qty': 0, 'days': 0})
-        ad = attend_data.get(name, {'total_hours': 0, 'overtime_days': 0, 'work_days': 0})
+        ad = attend_data.get(name, {'total_hours': 0, 'overtime_days': 0, 'work_days': 0, 'normal': 0, 'ot': 0})
         if rd['qty'] == 0 and rd['hours'] == 0 and ad['total_hours'] == 0:
             continue
         
@@ -2161,6 +2161,10 @@ def api_report_weekly():
             'total_qty': rd['qty'],
             'good_rate': good_rate,
             'avg_efficiency': eff,
+            'normal_hours': round(ad['normal'], 1),
+            'overtime_hours': round(ad['ot'], 1),
+            'normal_hours': round(ad['normal'], 1),
+            'overtime_hours': round(ad['ot'], 1),
             'overtime_days': ad['overtime_days'],
             'utilization_rate': util_rate,
             'daily_avg_qty': daily_avg,
@@ -2212,7 +2216,7 @@ def api_report_monthly():
         if team_id and info['team_id'] != team_id:
             continue
         rd = report_data.get(name, {'qty': 0, 'hours': 0, 'good_qty': 0, 'days': 0})
-        ad = attend_data.get(name, {'total_hours': 0, 'overtime_days': 0, 'work_days': 0, 'leave_days': 0})
+        ad = attend_data.get(name, {'total_hours': 0, 'overtime_days': 0, 'work_days': 0, 'leave_days': 0, 'normal': 0, 'ot': 0})
         if rd['qty'] == 0 and rd['hours'] == 0 and ad['total_hours'] == 0:
             continue
         
@@ -2231,6 +2235,10 @@ def api_report_monthly():
             'total_qty': rd['qty'],
             'good_rate': good_rate,
             'avg_efficiency': eff,
+            'normal_hours': round(ad['normal'], 1),
+            'overtime_hours': round(ad['ot'], 1),
+            'normal_hours': round(ad['normal'], 1),
+            'overtime_hours': round(ad['ot'], 1),
             'overtime_days': ad['overtime_days'],
             'utilization_rate': util_rate,
             'daily_avg_qty': daily_avg,

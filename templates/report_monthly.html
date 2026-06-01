@@ -16,6 +16,8 @@
 <th style="min-width:70px">班组</th>
 <th style="min-width:50px">出勤</th>
 <th style="min-width:70px">打卡工时</th>
+<th style="min-width:70px">正常工时</th>
+<th style="min-width:70px">加班工时</th>
 <th style="min-width:70px">生产工时</th>
 <th style="min-width:60px">总产量</th>
 <th style="min-width:60px">良品率</th>
@@ -53,7 +55,7 @@ function loadData(){
     if(tid)url+="&team_id="+tid;
     fetch(url).then(function(r){return r.json()}).then(function(d){
         var tb=document.getElementById("tbody");tb.innerHTML="";
-        if(!d.data||d.data.length===0){tb.innerHTML='<tr><td colspan="13" style="text-align:center;color:#9ca3af;padding:40px">暂无数据</td></tr>';return;}
+        if(!d.data||d.data.length===0){tb.innerHTML='<tr><td colspan="15" style="text-align:center;color:#9ca3af;padding:40px">暂无数据</td></tr>';return;}
         d.data.forEach(function(r){
             var tr=document.createElement("tr");
             var gr=r.good_rate>0?r.good_rate+'%':'<span style="color:#9ca3af">-</span>';
