@@ -13,8 +13,7 @@
 <option value="completed">已完成</option>
 </select>
 <div style="margin-left:auto;display:flex;gap:8px">
-<button class="btn btn-outline readonly-hide" onclick="exportOrders()">📤 导出</button>
-<button class="btn btn-outline readonly-hide" onclick="syncWorkOrders()">🔄 同步MES工单</button>
+<button class="btn btn-outline readonly-hide" onclick="exportOrders()">📤 导出</button><button class="btn btn-danger readonly-hide" onclick="clearAllOrders()">🗑️ 清空</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/work_orders', function(){setTimeout(function(){loadOrders();}, 500);})">📥 导入</button>
 <button class="btn btn-primary readonly-hide" onclick="showAddOrder()">＋ 新增</button>
 </div>
@@ -23,7 +22,7 @@
 <div class="card-body">
 <div class="table-wrap">
 <table>
-<thead><tr><th>工单号</th><th>产品编号</th><th>数量</th><th>完成数</th><th>交期</th><th>优先级</th><th>状态</th><th>工序进度</th><th>操作</th></tr></thead>
+<thead><tr><th>工单号</th><th>产品编号</th><th>数量</th><th>完成数</th><th>创建时间</th><th>交期</th><th>优先级</th><th>状态</th><th>工序进度</th><th>操作</th></tr></thead>
 <tbody id="orders-tbody"></tbody>
 </table>
 <div id="orders-empty" class="table-empty" style="display:none">暂无订单数据，请导入工单</div>
@@ -85,7 +84,7 @@ function loadOrders(){
                 +'<td>'+(o.product_code||'')+'</td>'
                 +'<td>'+o.quantity+'</td>'
                 +'<td>'+(o.completed_qty||0)+'</td>'
-                +'<td>'+(o.due_date||'')+'</td>'
+                +'<td>'+(o.create_time||'')+'</td>'+'<td>'+(o.due_date||'')+'</td>'
                 +'<td>'+priorityLabel(o.priority)+'</td>'
                 +'<td><span class="badge badge-'+statusColor+'">'+statusText+'</span></td>'
                 +'<td>'+renderProcessProgress(o.process_progress)+'</td>'
@@ -146,14 +145,18 @@ function importOrders(input){
     input.value = "";
 }
 
+
+function clearAllOrders(){
+    if(!confirm("确定要清空所有工单数据吗？此操作不可恢复！")) return;
+    if(!confirm("再次确认：清空后所有工单将被删除，确定继续？")) return;
+    fetch("/api/orders/clear", {method:"POST",credentials:"same-origin"}).then(function(r){return r.json()}).then(function(d){
+        if(d.ok){toast("已清空所有工单，共删除 "+d.deleted+" 条","success");loadOrders();}
+        else{toast("清空失败: "+(d.error||""),"error");}
+    }).catch(function(e){toast("清空失败: "+e,"error");});
+}
+
 function exportOrders(){
     window.location.href="/api/export/work_orders";
-}
-function syncWorkOrders(){
-    toast("正在同步MES工单...","info");
-    fetch("/api/sync/work_orders",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
-        if(d.ok){toast("同步完成","success");loadOrders();}else{toast("同步失败: "+(d.error||""),"error");}
-    }).catch(function(){toast("同步失败","error");});
 }
 function showAddOrder(){
     editOrderId=null;
@@ -184,7 +187,13 @@ function saveOrder(){
     var url=editOrderId?"/api/orders/"+editOrderId:"/api/orders";
     api(url,{method:editOrderId?"PUT":"POST",body:data}).then(function(){toast("保存成功","success");closeOrderModal();loadOrders();}).catch(function(){toast("保存失败","error");});
 }
-function deleteOrder(id){if(!confirm("确定删除？"))return;api("/api/orders/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadOrders();});}
+function deleteOrder(id){
+    if(!confirm("确定删除？"))return;
+    fetch("/api/orders/"+id,{method:"DELETE",credentials:"same-origin"}).then(function(r){return r.json()}).then(function(d){
+        if(d.ok){toast("已删除","success");loadOrders();}
+        else{toast("删除失败: "+(d.error||""),"error");}
+    }).catch(function(e){toast("删除失败: "+e,"error");});
+}
 loadOrders();
 </script>
 <style>
@@ -194,6 +203,7 @@ loadOrders();
 .ring-label{font-size:10px;color:#6b7280;line-height:1;white-space:nowrap}
 </style>
 {% endblock %}
+
 
 
 

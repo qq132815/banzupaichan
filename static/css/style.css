@@ -249,3 +249,13 @@ select.form-control{appearance:auto}
 .btn-page:disabled{opacity:0.4;cursor:not-allowed}
 .page-ellipsis{padding:0 4px;color:#9ca3af}
 .pagination-info{font-size:13px;color:#6b7280}
+
+
+/* ========== Readonly Hide ========== */
+.readonly-hide {
+    display: inline-flex;
+}
+
+body.readonly .readonly-hide {
+    display: none !important;
+}

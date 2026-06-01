@@ -2,6 +2,8 @@
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import os
 import sys
+import threading
+import subprocess
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -17,6 +19,64 @@ from utils.calc import (calculate_alerts, back_calculate_semi, calculate_quantit
                        calculate_production_requirements, publish_requirements, get_published_requirements)
 
 app = Flask(__name__)
+
+# ========== MES Sync Scheduler ==========
+_sync_scheduler_running = False
+
+def _run_sync_job(sync_type):
+    """Run sync job in background thread."""
+    try:
+        script = os.path.join(os.path.dirname(__file__), 'scripts', f'sync_{sync_type}.py')
+        result = subprocess.run(
+            [sys.executable, script],
+            capture_output=True, text=True, timeout=300,
+            cwd=os.path.dirname(__file__)
+        )
+        print(f"[{sync_type}] Sync completed: {result.stdout[-200:]}")
+    except Exception as e:
+        print(f"[{sync_type}] Sync error: {e}")
+
+def _sync_scheduler():
+    """Background scheduler that checks and runs sync jobs."""
+    global _sync_scheduler_running
+    _sync_scheduler_running = True
+    import time
+    last_run = {'work_orders': 0, 'reports': 0}
+    
+    while _sync_scheduler_running:
+        try:
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute("SELECT key, value FROM system_settings WHERE key IN ('mes_work_order_interval','mes_report_interval')")
+            settings = {r[0]: int(r[1]) for r in c.fetchall() if r[1].isdigit()}
+            conn.close()
+            
+            wo_interval = settings.get('mes_work_order_interval', 0) * 60
+            rpt_interval = settings.get('mes_report_interval', 0) * 60
+            now = time.time()
+            
+            if wo_interval > 0 and now - last_run['work_orders'] >= wo_interval:
+                last_run['work_orders'] = now
+                t = threading.Thread(target=_run_sync_job, args=('work_orders',))
+                t.daemon = True
+                t.start()
+            
+            if rpt_interval > 0 and now - last_run['reports'] >= rpt_interval:
+                last_run['reports'] = now
+                t = threading.Thread(target=_run_sync_job, args=('reports',))
+                t.daemon = True
+                t.start()
+            
+            time.sleep(60)
+        except Exception as e:
+            print(f"Scheduler error: {e}")
+            time.sleep(60)
+
+# Start scheduler in background
+_scheduler_thread = threading.Thread(target=_sync_scheduler)
+_scheduler_thread.daemon = True
+_scheduler_thread.start()
+
 
 def paginate_query(sql, params, page=1, page_size=50):
     """Execute a paginated query. Returns dict with data, total, page info."""
@@ -53,10 +113,18 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if session.get('role') != 'admin':
+            return jsonify({'error': 'forbidden'}), 403
+        return f(*args, **kwargs)
+    return decorated
+
 def planner_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if session.get('role') != 'planner':
+        if session.get('role') not in ('planner', 'admin'):
             return jsonify({'error': 'forbidden'}), 403
         return f(*args, **kwargs)
     return decorated
@@ -108,6 +176,7 @@ def index():
 
 @app.route('/alerts-page')
 @login_required
+@planner_required
 def alerts_page():
     return render_template('alerts.html')
 
@@ -118,6 +187,7 @@ def schedule_page():
 
 @app.route('/orders-page')
 @login_required
+@planner_required
 def orders_page():
     return render_template('orders.html')
 
@@ -163,6 +233,7 @@ def standard_hours_page():
 
 @app.route('/statistics-page')
 @login_required
+@admin_required
 def statistics_page():
     return render_template('statistics.html')
 
@@ -173,37 +244,55 @@ def import_page():
 
 @app.route('/admin/users')
 @login_required
+@admin_required
 def admin_users_page():
     return render_template('admin_users.html')
 
 @app.route('/admin/settings')
 @login_required
-@planner_required
+@admin_required
 def admin_settings_page():
     return render_template('admin_settings.html')
 
+@app.route('/admin/mes-sync')
+@login_required
+@admin_required
+def mes_sync_page():
+    return render_template('mes_sync.html')
+
+@app.route('/admin/permissions')
+@login_required
+@admin_required
+def permissions_page():
+    return render_template('admin_permissions.html')
+
 @app.route('/work-reports-page')
 @login_required
+@admin_required
 def work_reports_page():
     return render_template('work_reports.html')
 
 @app.route('/reports/efficiency-daily')
 @login_required
+@admin_required
 def report_efficiency_daily_page():
     return render_template('report_efficiency_daily.html')
 
 @app.route('/reports/personal-efficiency')
 @login_required
+@admin_required
 def report_personal_efficiency_page():
     return render_template('report_personal_efficiency.html')
 
 @app.route('/reports/weekly')
 @login_required
+@admin_required
 def report_weekly_page():
     return render_template('report_weekly.html')
 
 @app.route('/reports/monthly')
 @login_required
+@admin_required
 def report_monthly_page():
     return render_template('report_monthly.html')
 
@@ -590,7 +679,7 @@ def api_orders():
         like = "%" + keyword + "%"
         sql += " AND (order_no LIKE ? OR product_code LIKE ? OR product_name LIKE ?)"
         params.extend([like, like, like])
-    sql += " ORDER BY due_date"
+    sql += " ORDER BY create_time DESC"
     return jsonify(paginate_query(sql, params, page, page_size))
 
 @app.route('/api/orders', methods=['POST'])
@@ -633,6 +722,18 @@ def api_order_delete(oid):
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
+
+@app.route('/api/orders/clear', methods=['POST'])
+@login_required
+@planner_required
+def api_orders_clear():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM work_orders")
+    deleted = c.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'deleted': deleted})
 
 @app.route('/api/search-orders')
 @login_required
@@ -1293,7 +1394,7 @@ def api_work_reports():
         like = "%" + q + "%"
         sql += " AND (order_no LIKE ? OR product_code LIKE ? OR product_name LIKE ? OR process_name LIKE ? OR operator LIKE ?)"
         params.extend([like, like, like, like, like])
-    sql += " ORDER BY id DESC"
+    sql += " ORDER BY create_time DESC"
     return jsonify(paginate_query(sql, params, page, page_size))
 
 @app.route('/api/work-reports', methods=['DELETE'])
@@ -1348,6 +1449,207 @@ def api_save_settings():
     conn.close()
     return jsonify({'ok': True})
 
+# ========== Permissions API ==========
+@app.route('/api/permissions', methods=['GET'])
+@login_required
+@admin_required
+def api_get_permissions():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT key, value FROM system_settings WHERE key LIKE 'perm_%'")
+    rows = c.fetchall()
+    conn.close()
+    
+    permissions = {}
+    for row in rows:
+        key = row[0].replace('perm_', '')
+        try:
+            permissions[key] = eval(row[1])
+        except:
+            permissions[key] = {'admin': True, 'planner': True, 'team': False}
+    
+    # Default permissions if not set
+    defaults = {
+        'workbench': {'admin': True, 'planner': True, 'team': True},
+        'schedule': {'admin': False, 'planner': False, 'team': True},
+        'shipping_plan': {'admin': True, 'planner': True, 'team': False},
+        'plan_approval': {'admin': True, 'planner': True, 'team': False},
+        'alerts': {'admin': True, 'planner': True, 'team': False},
+        'orders': {'admin': True, 'planner': True, 'team': False},
+        'basic_data': {'admin': True, 'planner': True, 'team': True},
+        'basic_data_edit': {'admin': True, 'planner': True, 'team': False},
+        'production_reports': {'admin': True, 'planner': False, 'team': False},
+        'system_management': {'admin': True, 'planner': False, 'team': False}
+    }
+    
+    for key, default in defaults.items():
+        if key not in permissions:
+            permissions[key] = default
+    
+    return jsonify(permissions)
+
+@app.route('/api/permissions', methods=['POST'])
+@login_required
+@admin_required
+def api_save_permissions():
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    for key, value in data.items():
+        c.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now','localtime'))", ('perm_' + key, str(value)))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+# ========== MES Sync API ==========
+@app.route('/api/mes-sync/settings', methods=['GET'])
+@login_required
+@planner_required
+def api_get_sync_settings():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT key, value FROM system_settings WHERE key IN ('mes_work_order_interval','mes_report_interval')")
+    r = {row[0]: row[1] for row in c.fetchall()}
+    conn.close()
+    return jsonify({
+        'work_order_interval': int(r.get('mes_work_order_interval', 0)),
+        'report_interval': int(r.get('mes_report_interval', 0))
+    })
+
+@app.route('/api/mes-sync/settings', methods=['POST'])
+@login_required
+@planner_required
+def api_save_sync_settings():
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    wo_interval = data.get('work_order_interval', 0)
+    rpt_interval = data.get('report_interval', 0)
+    c.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('mes_work_order_interval', ?, datetime('now','localtime'))", (str(wo_interval),))
+    c.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('mes_report_interval', ?, datetime('now','localtime'))", (str(rpt_interval),))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/mes-sync/work-orders', methods=['POST'])
+@login_required
+@planner_required
+def api_sync_work_orders():
+    import subprocess
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("INSERT INTO sync_logs (sync_type, status) VALUES ('work_orders', 'running')")
+    log_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    try:
+        script = os.path.join(os.path.dirname(__file__), 'scripts', 'sync_work_orders.py')
+        result = subprocess.run(
+            [sys.executable, script],
+            capture_output=True, text=True, timeout=300,
+            cwd=os.path.dirname(__file__)
+        )
+        output = result.stdout.strip() if result.stdout else ''
+        errors = result.stderr.strip() if result.stderr else ''
+        if result.returncode == 0:
+            count = 0
+            for line in output.split('\n'):
+                if line.startswith('IMPORTED:'):
+                    count = int(line.split(':')[1])
+                    break
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute("UPDATE sync_logs SET status='success', record_count=?, detail=? WHERE id=?", (count, output[-500:], log_id))
+            conn.commit()
+            conn.close()
+            return jsonify({'ok': True, 'count': count, 'output': output[-1000:]})
+        else:
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute("UPDATE sync_logs SET status='error', detail=? WHERE id=?", (errors[-500:], log_id))
+            conn.commit()
+            conn.close()
+            return jsonify({'ok': False, 'error': errors[-500:]})
+    except subprocess.TimeoutExpired:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("UPDATE sync_logs SET status='error', detail='同步超时(>300秒)' WHERE id=?", (log_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'ok': False, 'error': '同步超时(>300秒)'})
+    except Exception as e:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("UPDATE sync_logs SET status='error', detail=? WHERE id=?", (str(e)[:500], log_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'ok': False, 'error': str(e)})
+
+@app.route('/api/mes-sync/reports', methods=['POST'])
+@login_required
+@planner_required
+def api_sync_reports():
+    import subprocess
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("INSERT INTO sync_logs (sync_type, status) VALUES ('reports', 'running')")
+    log_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    try:
+        script = os.path.join(os.path.dirname(__file__), 'scripts', 'sync_reports.py')
+        result = subprocess.run(
+            [sys.executable, script],
+            capture_output=True, text=True, timeout=300,
+            cwd=os.path.dirname(__file__)
+        )
+        output = result.stdout.strip() if result.stdout else ''
+        errors = result.stderr.strip() if result.stderr else ''
+        if result.returncode == 0:
+            count = 0
+            for line in output.split('\n'):
+                if line.startswith('IMPORTED:'):
+                    count = int(line.split(':')[1])
+                    break
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute("UPDATE sync_logs SET status='success', record_count=?, detail=? WHERE id=?", (count, output[-500:], log_id))
+            conn.commit()
+            conn.close()
+            return jsonify({'ok': True, 'count': count, 'output': output[-1000:]})
+        else:
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute("UPDATE sync_logs SET status='error', detail=? WHERE id=?", (errors[-500:], log_id))
+            conn.commit()
+            conn.close()
+            return jsonify({'ok': False, 'error': errors[-500:]})
+    except subprocess.TimeoutExpired:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("UPDATE sync_logs SET status='error', detail='同步超时(>300秒)' WHERE id=?", (log_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'ok': False, 'error': '同步超时(>300秒)'})
+    except Exception as e:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("UPDATE sync_logs SET status='error', detail=? WHERE id=?", (str(e)[:500], log_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'ok': False, 'error': str(e)})
+
+@app.route('/api/mes-sync/logs', methods=['GET'])
+@login_required
+@planner_required
+def api_get_sync_logs():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, sync_type, status, record_count, detail, created_at FROM sync_logs ORDER BY id DESC LIMIT 50")
+    rows = c.fetchall()
+    conn.close()
+    return jsonify([{'id':r[0],'sync_type':r[1],'status':r[2],'record_count':r[3],'detail':r[4],'created_at':r[5]} for r in rows])
+
 # ========== Schedules Lookup API ==========
 @app.route('/api/schedules')
 @login_required
@@ -1374,14 +1676,17 @@ def api_standard_hours_capacity():
     conn = get_connection()
     c = conn.cursor()
     
+    # 过滤条件: 排除半成品入库和含清洗的工序
+    exclude_filter = " AND sh.process_name != '\u534a\u6210\u54c1\u5165\u5e93' AND sh.process_name NOT LIKE '%\u6e05\u6d17%'"
+    
     # Base query
-    sql = "SELECT * FROM standard_hours WHERE 1=1"
+    sql = "SELECT sh.* FROM standard_hours sh WHERE 1=1" + exclude_filter
     params = []
     if q:
         like = "%" + q + "%"
-        sql += " AND (product_code LIKE ? OR product_name LIKE ? OR process_name LIKE ?)"
+        sql += " AND (sh.product_code LIKE ? OR sh.product_name LIKE ? OR sh.process_name LIKE ?)"
         params.extend([like, like, like])
-    sql += " ORDER BY product_code, process_name"
+    sql += " ORDER BY sh.product_code, sh.process_name"
     
     # Count
     count_sql = "SELECT COUNT(*) FROM (" + sql + ")"
@@ -1407,11 +1712,11 @@ def api_standard_hours_capacity():
         if len(sched_caps) == 1:
             row['schedule_capacity'] = sched_caps[0]
         elif len(sched_caps) > 1:
-            row['schedule_capacity'] = -1  # Indicates multiple values
+            row['schedule_capacity'] = -1
         else:
             row['schedule_capacity'] = 0
         
-        # 报工产能: from work_reports, qty/hours
+        # 报工产能: from work_reports
         c.execute("SELECT report_qty, report_hours, order_no, operator, equipment, start_time, end_time FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0", (pc, pn))
         reports = c.fetchall()
         caps = []
@@ -1427,9 +1732,42 @@ def api_standard_hours_capacity():
         row['report_min'] = min(caps) if caps else 0
         row['report_count'] = len(caps)
     
+    # 优化的进度计算: 用单条SQL统计
+    progress_sql = """
+        SELECT 
+            COUNT(DISTINCT sh.product_code || '|' || sh.process_name) as total,
+            COUNT(DISTINCT CASE WHEN s.product_code IS NOT NULL OR wr.product_code IS NOT NULL THEN sh.product_code || '|' || sh.process_name END) as completed
+        FROM standard_hours sh
+        LEFT JOIN (
+            SELECT DISTINCT product_code, process_name 
+            FROM schedules 
+            WHERE capacity_per_hour > 0
+        ) s ON sh.product_code = s.product_code AND sh.process_name = s.process_name
+        LEFT JOIN (
+            SELECT DISTINCT product_code, process_name 
+            FROM work_reports 
+            WHERE report_hours > 0 AND report_qty > 0
+        ) wr ON sh.product_code = wr.product_code AND sh.process_name = wr.process_name
+        WHERE 1=1""" + exclude_filter.replace("sh.", "sh.")
+    c.execute(progress_sql)
+    prog = c.fetchone()
+    total_combos = prog[0] or 0
+    has_cap_count = prog[1] or 0
+    
     conn.close()
     total_pages = max(1, (total + page_size - 1) // page_size)
-    return jsonify({'data': rows, 'total': total, 'page': page, 'page_size': page_size, 'total_pages': total_pages})
+    return jsonify({
+        'data': rows, 
+        'total': total, 
+        'page': page, 
+        'page_size': page_size, 
+        'total_pages': total_pages,
+        'progress': {
+            'total': total_combos,
+            'completed': has_cap_count,
+            'percent': round(has_cap_count / total_combos * 100, 1) if total_combos > 0 else 0
+        }
+    })
 
 # ========== Personnel Reports API ==========
 
@@ -1812,25 +2150,6 @@ def api_export(data_type):
     from flask import send_file
     return send_file(buf, as_attachment=True, download_name=data_type + '_export.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-
-# ========== MES Sync API ==========
-@app.route('/api/sync/work_orders', methods=['POST'])
-@login_required
-@planner_required
-def api_sync_work_orders():
-    import subprocess
-    try:
-        script = os.path.join(os.path.dirname(__file__), 'auto_fetch_orders.py')
-        result = subprocess.run(
-            [sys.executable, script, '--detail'],
-            capture_output=True, text=True, timeout=600,
-            cwd=os.path.dirname(__file__)
-        )
-        return jsonify({'ok': True, 'output': result.stdout[-2000:] if result.stdout else '', 'errors': result.stderr[-500:] if result.stderr else ''})
-    except subprocess.TimeoutExpired:
-        return jsonify({'ok': False, 'error': '同步超时(>600秒)'})
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)})
 
 # ========== User Management API ==========
 @app.route('/api/users')

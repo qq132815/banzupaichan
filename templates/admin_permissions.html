@@ -1,0 +1,123 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>🔐 权限设置</h1>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+<div class="card-header"><h2>角色权限配置</h2></div>
+<div class="card-body" style="padding:16px">
+<p style="color:#6b7280;font-size:13px;margin:0 0 16px">配置各角色的功能访问权限，勾选表示允许访问</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>功能模块</th>
+<th>管理员 (admin)</th>
+<th>计划员 (planner)</th>
+<th>班组 (team)</th>
+</tr>
+</thead>
+<tbody id="perm-tbody">
+</tbody>
+</table>
+</div>
+<button class="btn btn-primary" onclick="savePermissions()" style="margin-top:16px">保存权限配置</button>
+</div>
+</div>
+
+<div class="card">
+<div class="card-header"><h2>权限说明</h2></div>
+<div class="card-body" style="padding:16px">
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+<div style="padding:12px;background:#fef2f2;border-radius:8px;border:1px solid #fecaca">
+<h3 style="margin:0 0 8px;color:#dc2626">🔴 管理员</h3>
+<ul style="margin:0;padding-left:20px;color:#6b7280;font-size:13px">
+<li>所有功能的完整访问权限</li>
+<li>系统管理和配置</li>
+<li>生产报表查看</li>
+<li>用户和权限管理</li>
+</ul>
+</div>
+<div style="padding:12px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe">
+<h3 style="margin:0 0 8px;color:#2563eb">🔵 计划员</h3>
+<ul style="margin:0;padding-left:20px;color:#6b7280;font-size:13px">
+<li>发货计划管理</li>
+<li>计划审批</li>
+<li>预警中心</li>
+<li>订单管理</li>
+<li>基础数据查看和编辑</li>
+</ul>
+</div>
+<div style="padding:12px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0">
+<h3 style="margin:0 0 8px;color:#16a34a">🟢 班组</h3>
+<ul style="margin:0;padding-left:20px;color:#6b7280;font-size:13px">
+<li>排班和甘特图</li>
+<li>基础数据只读查看</li>
+<li>无编辑和删除权限</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+var permissions = {};
+
+// Define all permission modules
+var modules = [
+    {key: "workbench", name: "🏠 工作台", admin: true, planner: true, team: true},
+    {key: "schedule", name: "📊 排班 & 甘特图", admin: false, planner: false, team: true},
+    {key: "shipping_plan", name: "📦 发货计划", admin: true, planner: true, team: false},
+    {key: "plan_approval", name: "📋 计划审批", admin: true, planner: true, team: false},
+    {key: "alerts", name: "🔔 预警中心", admin: true, planner: true, team: false},
+    {key: "orders", name: "📦 订单管理", admin: true, planner: true, team: false},
+    {key: "basic_data", name: "📂 基础数据查看", admin: true, planner: true, team: true},
+    {key: "basic_data_edit", name: "📂 基础数据编辑", admin: true, planner: true, team: false},
+    {key: "production_reports", name: "📊 生产报表", admin: true, planner: false, team: false},
+    {key: "system_management", name: "⚙️ 系统管理", admin: true, planner: false, team: false}
+];
+
+// Load permissions from server
+fetch("/api/permissions").then(function(r){return r.json()}).then(function(d){
+    permissions = d;
+    renderPermissions();
+});
+
+function renderPermissions(){
+    var tb = document.getElementById("perm-tbody");
+    tb.innerHTML = "";
+    
+    modules.forEach(function(mod){
+        var tr = document.createElement("tr");
+        var adminChecked = permissions[mod.key] ? permissions[mod.key].admin : mod.admin;
+        var plannerChecked = permissions[mod.key] ? permissions[mod.key].planner : mod.planner;
+        var teamChecked = permissions[mod.key] ? permissions[mod.key].team : mod.team;
+        
+        tr.innerHTML = '<td><strong>' + mod.name + '</strong></td>'
+            + '<td style="text-align:center"><input type="checkbox" data-module="' + mod.key + '" data-role="admin" ' + (adminChecked ? 'checked' : '') + '></td>'
+            + '<td style="text-align:center"><input type="checkbox" data-module="' + mod.key + '" data-role="planner" ' + (plannerChecked ? 'checked' : '') + '></td>'
+            + '<td style="text-align:center"><input type="checkbox" data-module="' + mod.key + '" data-role="team" ' + (teamChecked ? 'checked' : '') + '></td>';
+        tb.appendChild(tr);
+    });
+}
+
+function savePermissions(){
+    var data = {};
+    modules.forEach(function(mod){
+        data[mod.key] = {
+            admin: document.querySelector('input[data-module="' + mod.key + '"][data-role="admin"]').checked,
+            planner: document.querySelector('input[data-module="' + mod.key + '"][data-role="planner"]').checked,
+            team: document.querySelector('input[data-module="' + mod.key + '"][data-role="team"]').checked
+        };
+    });
+    
+    api("/api/permissions", {method: "POST", body: data}).then(function(){
+        toast("权限配置已保存", "success");
+    }).catch(function(){
+        toast("保存失败", "error");
+    });
+}
+</script>
+{% endblock %}

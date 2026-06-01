@@ -1,0 +1,159 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>🔄 MES数据同步</h1>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+<div class="card-header"><h2>⏱️ 同步时间间隔设置</h2></div>
+<div class="card-body" style="padding:24px;max-width:480px">
+<p style="color:#6b7280;font-size:13px;margin:0 0 16px">设置自动从MES系统同步数据的时间间隔（分钟），设为0表示关闭自动同步</p>
+<div class="form-group" style="margin-bottom:16px">
+<label style="font-weight:600;font-size:14px">工单同步间隔（分钟）</label>
+<input type="number" class="form-control" id="work-order-interval" min="0" max="1440" style="width:160px">
+<p style="color:#9ca3af;font-size:12px;margin:4px 0 0">同步执行中的工单数据</p>
+</div>
+<div class="form-group" style="margin-bottom:16px">
+<label style="font-weight:600;font-size:14px">报工同步间隔（分钟）</label>
+<input type="number" class="form-control" id="report-interval" min="0" max="1440" style="width:160px">
+<p style="color:#9ca3af;font-size:12px;margin:4px 0 0">同步生产报工记录</p>
+</div>
+<button class="btn btn-primary" onclick="saveSyncSettings()" style="margin-top:8px">保存设置</button>
+</div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+<div class="card-header"><h2>🔧 手动同步</h2></div>
+<div class="card-body" style="padding:24px">
+<div style="display:flex;gap:24px;flex-wrap:wrap">
+<div style="flex:1;min-width:280px;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb">
+<h3 style="margin:0 0 8px;font-size:15px">📦 工单同步</h3>
+<p style="color:#6b7280;font-size:13px;margin:0 0 12px">从MES系统导出执行中的工单并导入</p>
+<button class="btn btn-primary" id="btn-sync-orders" onclick="syncWorkOrders()">开始同步工单</button>
+<span id="orders-sync-status" style="margin-left:12px;font-size:13px"></span>
+<div id="orders-sync-detail" style="margin-top:8px;font-size:12px;color:#6b7280;display:none"></div>
+</div>
+<div style="flex:1;min-width:280px;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb">
+<h3 style="margin:0 0 8px;font-size:15px">📋 报工同步</h3>
+<p style="color:#6b7280;font-size:13px;margin:0 0 12px">从MES系统导出报工记录并导入</p>
+<button class="btn btn-primary" id="btn-sync-reports" onclick="syncReports()">开始同步报工</button>
+<span id="reports-sync-status" style="margin-left:12px;font-size:13px"></span>
+<div id="reports-sync-detail" style="margin-top:8px;font-size:12px;color:#6b7280;display:none"></div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="card">
+<div class="card-header"><h2>📊 同步日志</h2></div>
+<div class="card-body" style="padding:16px">
+<div class="table-wrap">
+<table>
+<thead><tr><th>时间</th><th>类型</th><th>状态</th><th>数量</th><th>详情</th></tr></thead>
+<tbody id="sync-log-tbody"></tbody>
+</table>
+<div id="sync-log-empty" class="table-empty" style="display:none">暂无同步记录</div>
+</div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+// Load sync settings
+fetch("/api/mes-sync/settings").then(function(r){return r.json()}).then(function(d){
+    document.getElementById("work-order-interval").value = d.work_order_interval || 0;
+    document.getElementById("report-interval").value = d.report_interval || 0;
+});
+
+// Load sync logs
+loadSyncLogs();
+
+function saveSyncSettings(){
+    var woInterval = parseInt(document.getElementById("work-order-interval").value) || 0;
+    var rptInterval = parseInt(document.getElementById("report-interval").value) || 0;
+    api("/api/mes-sync/settings", {method:"POST", body:{work_order_interval:woInterval, report_interval:rptInterval}}).then(function(){
+        toast("同步设置已保存","success");
+    }).catch(function(){toast("保存失败","error");});
+}
+
+function syncWorkOrders(){
+    var btn = document.getElementById("btn-sync-orders");
+    var status = document.getElementById("orders-sync-status");
+    var detail = document.getElementById("orders-sync-detail");
+    btn.disabled = true;
+    btn.textContent = "同步中...";
+    status.innerHTML = '<span style="color:#d97706">⏳ 正在同步...</span>';
+    detail.style.display = "block";
+    detail.textContent = "正在登录MES系统并导出工单数据...";
+
+    fetch("/api/mes-sync/work-orders", {method:"POST"}).then(function(r){return r.json()}).then(function(d){
+        btn.disabled = false;
+        btn.textContent = "开始同步工单";
+        if(d.ok){
+            status.innerHTML = '<span style="color:#059669">✓ 同步完成</span>';
+            detail.textContent = "成功导入 "+d.count+" 条工单数据";
+        } else {
+            status.innerHTML = '<span style="color:#dc2626">✗ 同步失败</span>';
+            detail.textContent = d.error || "未知错误";
+        }
+        loadSyncLogs();
+    }).catch(function(e){
+        btn.disabled = false;
+        btn.textContent = "开始同步工单";
+        status.innerHTML = '<span style="color:#dc2626">✗ 同步失败</span>';
+        detail.textContent = e.message || "网络错误";
+    });
+}
+
+function syncReports(){
+    var btn = document.getElementById("btn-sync-reports");
+    var status = document.getElementById("reports-sync-status");
+    var detail = document.getElementById("reports-sync-detail");
+    btn.disabled = true;
+    btn.textContent = "同步中...";
+    status.innerHTML = '<span style="color:#d97706">⏳ 正在同步...</span>';
+    detail.style.display = "block";
+    detail.textContent = "正在登录MES系统并导出报工数据...";
+
+    fetch("/api/mes-sync/reports", {method:"POST"}).then(function(r){return r.json()}).then(function(d){
+        btn.disabled = false;
+        btn.textContent = "开始同步报工";
+        if(d.ok){
+            status.innerHTML = '<span style="color:#059669">✓ 同步完成</span>';
+            detail.textContent = "成功导入 "+d.count+" 条报工数据";
+        } else {
+            status.innerHTML = '<span style="color:#dc2626">✗ 同步失败</span>';
+            detail.textContent = d.error || "未知错误";
+        }
+        loadSyncLogs();
+    }).catch(function(e){
+        btn.disabled = false;
+        btn.textContent = "开始同步报工";
+        status.innerHTML = '<span style="color:#dc2626">✗ 同步失败</span>';
+        detail.textContent = e.message || "网络错误";
+    });
+}
+
+function loadSyncLogs(){
+    fetch("/api/mes-sync/logs").then(function(r){return r.json()}).then(function(d){
+        var tb = document.getElementById("sync-log-tbody");
+        var empty = document.getElementById("sync-log-empty");
+        tb.innerHTML = "";
+        if(!d.length){empty.style.display="block";return;}
+        empty.style.display="none";
+        d.forEach(function(row){
+            var tr = document.createElement("tr");
+            var statusColor = row.status==="success"?"green":row.status==="error"?"red":"blue";
+            var statusText = row.status==="success"?"成功":row.status==="error"?"失败":"进行中";
+            var typeText = row.sync_type==="work_orders"?"工单同步":"报工同步";
+            tr.innerHTML="<td>"+row.created_at+"</td>"
+                +"<td>"+typeText+"</td>"
+                +"<td><span class='badge badge-"+statusColor+"'>"+statusText+"</span></td>"
+                +"<td>"+(row.record_count||0)+"</td>"
+                +"<td>"+(row.detail||"")+"</td>";
+            tb.appendChild(tr);
+        });
+    });
+}
+</script>
+{% endblock %}

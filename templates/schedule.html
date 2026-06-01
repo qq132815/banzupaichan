@@ -114,7 +114,7 @@ var orderProcessProgress=[];window._preselectEquipment=null;
 var CELL_W=80;
 var allEquips=[], allTasks=[];
 var USER_ROLE="{{ session.get('role','') }}";
-var USER_TEAM={{ session.get('team_id','null') }};
+var USER_TEAM={{ session.get('team_id')|default('null', true) }};
 var TEAM_NAME="{{ session.get('team_name','') }}";
 
 // Work time slots (regular hours)
@@ -283,9 +283,9 @@ function submitPlan(){
 // ========== Load Requirements ==========
 function loadRequirements(){
     if(!currentTeamId) return;
-    var teamName = "";
+    var teamName = TEAM_NAME || "";
     var sel = document.getElementById("team-select");
-    if(sel.options[sel.selectedIndex]) teamName = sel.options[sel.selectedIndex].text;
+    if(sel && sel.options && sel.options[sel.selectedIndex]) teamName = sel.options[sel.selectedIndex].text;
     
     // Show all published requirements for this team (not limited by date)
     fetch("/api/production-requirements/for-team?team=" + encodeURIComponent(teamName))
@@ -294,6 +294,7 @@ function loadRequirements(){
             var panel = document.getElementById("requirements-panel");
             var tb = document.getElementById("requirements-tbody");
             var empty = document.getElementById("requirements-empty");
+            if(!panel || !tb) return;
             tb.innerHTML = "";
             
             if(!d.length){
@@ -394,7 +395,7 @@ function loadData(){
         fetch("/api/equipments?team_id="+currentTeamId).then(function(r){return r.json()}),
         fetch("/api/schedule?team_id="+currentTeamId+"&date="+dt).then(function(r){return r.json()})
     ]).then(function(res){
-        allEquips=res[0];allTasks=res[1];
+        allEquips=res[0].data||res[0];allTasks=res[1].data||res[1];
         renderGantt();renderTable();
     });
 }

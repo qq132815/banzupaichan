@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -6,16 +6,16 @@
 <title>班组排产系统</title>
 <link rel="stylesheet" href="/static/css/style.css">
 </head>
-<body>
+<body class="{{ 'readonly' if session.get('role') == 'team' else '' }}">
 <nav class="sidebar">
 <div class="logo">📋 班组排产系统</div>
 <ul>
 <li><a href="/" class="nav-link"><span class="icon">🏠</span><span>工作台</span></a></li>
-{% if session.get("role") != "planner" %}
+{% if session.get("role") == "team" %}
 <li><a href="/schedule-page" class="nav-link"><span class="icon">📊</span><span>排班 &amp; 甘特图</span></a></li>
 <li><a href="/schedule-records" class="nav-link"><span class="icon">📋</span><span>排班提交记录</span></a></li>
 {% endif %}
-{% if session.get('role') == 'planner' %}
+{% if session.get('role') in ('planner', 'admin') %}
 <li class="nav-section"><span>计划员</span></li>
 <li class="nav-item has-sub">
 <a href="javascript:void(0)" class="nav-link has-sub-link" onclick="toggleSub(this)"><span class="icon">📦</span><span>发货计划</span><span class="arrow">▸</span></a>
@@ -41,7 +41,7 @@
 <li><a href="/molds-page" class="nav-link sub"><span class="icon">🔧</span><span>模具管理</span></a></li>
 </ul>
 </li>
-{% if session.get('role') == 'planner' %}
+{% if session.get('role') == 'admin' %}
 <li class="nav-item has-sub">
 <a href="javascript:void(0)" class="nav-link has-sub-link" onclick="toggleSub(this)"><span class="icon">📊</span><span>生产报表</span><span class="arrow">▸</span></a>
 <ul class="sub-menu">
@@ -59,13 +59,15 @@
 <li><a href="/admin/users" class="nav-link sub"><span class="icon">👤</span><span>账户管理</span></a></li>
 <li><a href="/standard-hours-page" class="nav-link sub"><span class="icon">⏱️</span><span>标准工时</span></a></li>
 <li><a href="/admin/settings" class="nav-link sub"><span class="icon">⚙️</span><span>计划发布时间设置</span></a></li>
-</ul>
+<li><a href="/admin/mes-sync" class="nav-link sub"><span class="icon">🔄</span><span>MES数据同步</span></a></li>
+  <li><a href="/admin/permissions" class="nav-link sub"><span class="icon">🔐</span><span>权限设置</span></a></li>
+  </ul>
 </li>
 {% endif %}
 </ul>
 <div class="sidebar-footer">
 <div class="user-info">
-<span class="user-role badge badge-{{ 'blue' if session.get('role')=='planner' else 'green' }}">{{ '计划员' if session.get('role')=='planner' else '班组' }}</span>
+<span class="user-role badge badge-{{ 'red' if session.get('role')=='admin' else 'blue' if session.get('role')=='planner' else 'green' }}">{{ '管理员' if session.get('role')=='admin' else '计划员' if session.get('role')=='planner' else '班组' }}</span>
 <span class="user-name">{{ session.get('display_name','') }}</span>
 </div>
 <button class="btn-logout" onclick="doLogout()">退出</button>
