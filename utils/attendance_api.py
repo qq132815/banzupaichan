@@ -13,8 +13,8 @@ def get_attendance_config():
     config = {row[0].replace('attendance_', ''): row[1] for row in c.fetchall()}
     conn.close()
     return {
-        'api_url': config.get('api_url', 'http://10.6.201.10:7777/ddkq/api/third-party/attendance'),
-        'api_key': config.get('api_key', 'tk_cs_20260601'),
+        'api_url': config.get('api_url') or 'http://10.6.201.10:7777/ddkq/api/third-party/attendance',
+        'api_key': config.get('api_key') or 'tk_cs_20260601',
     }
 
 
