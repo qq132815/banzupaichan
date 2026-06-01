@@ -1006,6 +1006,76 @@ def api_delete_requirement(rid):
     conn.close()
     return jsonify({'ok': True})
 
+# ========== Reference Panel APIs ==========
+@app.route('/api/reference/semi-finished-output')
+@login_required
+def api_semi_finished_output():
+    """Return work reports from last 2 days for semi-finished product processes.
+    Semi-finished = second-to-last process in route (or the only process if just one).
+    """
+    from datetime import datetime, timedelta
+    conn = get_connection()
+    c = conn.cursor()
+
+    # 1. Build product_code -> semi-finished process name mapping
+    c.execute("SELECT product_code, process_list FROM process_routes WHERE process_list IS NOT NULL AND process_list != ''")
+    routes = c.fetchall()
+    semi_process_map = {}  # product_code -> set of semi-finished process names
+    for pc, pl in routes:
+        procs = [p.strip() for p in pl.split(',') if p.strip()]
+        if not procs:
+            continue
+        if len(procs) == 1:
+            target = procs[0]
+        else:
+            target = procs[-2]
+        if pc not in semi_process_map:
+            semi_process_map[pc] = set()
+        semi_process_map[pc].add(target)
+
+    if not semi_process_map:
+        conn.close()
+        return jsonify([])
+
+    # 2. Get reports from last 2 days (join personnel for team name)
+    cutoff = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
+    c.execute("""SELECT r.product_code, r.product_name, r.process_name, r.report_qty, r.good_qty,
+                 r.create_time, r.operator, t.name as team_name
+                 FROM work_reports r
+                 LEFT JOIN personnel p ON r.operator = p.name
+                 LEFT JOIN teams t ON p.team_id = t.id
+                 WHERE r.create_time >= ?
+                 ORDER BY r.create_time DESC""", (cutoff,))
+    all_reports = c.fetchall()
+
+    # 3. Filter: keep only reports where process matches semi-finished process for that product
+    team_data = {}
+    for r in all_reports:
+        pc, pn, proc, qty, gqty, ctime, op, team = r
+        allowed = semi_process_map.get(pc)
+        if allowed and proc in allowed:
+            tn = team or '未知班组'
+            if tn not in team_data:
+                team_data[tn] = []
+            team_data[tn].append({
+                'product_code': pc or '',
+                'product_name': pn or '',
+                'process_name': proc or '',
+                'report_qty': qty or 0,
+                'good_qty': gqty or 0,
+                'create_time': ctime or '',
+                'operator': op or ''
+            })
+
+    conn.close()
+
+    # 4. Format response
+    result = []
+    for tn in sorted(team_data.keys()):
+        result.append({'team': tn, 'records': team_data[tn]})
+
+    return jsonify(result)
+
 # ========== Process Routes CRUD ==========
 @app.route('/api/process-routes')
 @login_required
@@ -1390,6 +1460,10 @@ def api_work_reports():
     page_size = request.args.get('page_size', 50, type=int)
     sql = "SELECT * FROM work_reports WHERE 1=1"
     params = []
+    date = request.args.get('date', '').strip()
+    if date:
+        sql += " AND create_time LIKE ?"
+        params.append(date + '%')
     if q:
         like = "%" + q + "%"
         sql += " AND (order_no LIKE ? OR product_code LIKE ? OR product_name LIKE ? OR process_name LIKE ? OR operator LIKE ?)"
