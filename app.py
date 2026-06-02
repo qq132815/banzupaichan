@@ -133,6 +133,13 @@ def paginate_query(sql, params, page=1, page_size=50):
     return {"data": data, "total": total, "page": page, "page_size": page_size, "total_pages": total_pages}
 
 
+
+def _natural_sort_key(code):
+    """Generate a sort key for natural sorting (e.g. WG7-2 before WG7-10)."""
+    import re
+    parts = re.split(r'(\d+)', code or '')
+    return [int(p) if p.isdigit() else p.lower() for p in parts]
+
 app.secret_key = 'mes-scheduling-secret-2026'
 app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(__file__), "imports")
 
@@ -407,8 +414,10 @@ def api_equipments():
         like = "%" + q + "%"
         sql += " AND (equipment_code LIKE ? OR equipment_name LIKE ? OR location LIKE ?)"
         params.extend([like, like, like])
-    sql += " ORDER BY team_id, equipment_code"
-    return jsonify(paginate_query(sql, params, page, page_size))
+    sql += " ORDER BY team_id"
+    result = paginate_query(sql, params, page, page_size)
+    result['data'].sort(key=lambda x: _natural_sort_key(x.get('equipment_code', '')))
+    return jsonify(result)
 
 @app.route('/api/equipments', methods=['POST'])
 @login_required

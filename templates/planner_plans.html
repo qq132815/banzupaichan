@@ -189,9 +189,9 @@ function renderApproval(){
     });
     tb.innerHTML=html;
 }
-function approve(id){if(!confirm('通过此计划？'))return;api('/api/daily-plan/'+id+'/approve',{method:'POST'}).then(function(){toast('已通过','success');loadApproval();});}
-function reject(id){var r=prompt('拒绝原因（可选）：');if(r===null)return;api('/api/daily-plan/'+id+'/reject',{method:'POST',body:{reason:r}}).then(function(){toast('已拒绝','success');loadApproval();});}
-function ret(id){var r=prompt('退回原因（可选）：');if(r===null)return;api('/api/daily-plan/'+id+'/return',{method:'POST',body:{reason:r}}).then(function(){toast('已退回','success');loadApproval();});}
+function approve(id){if(!confirm('通过此计划？'))return;api('/api/daily-plan/'+id+'/approve',{method:'POST'}).then(function(){toast('已通过','success');loadApproval();}).catch(function(e){toast(e.error||'操作失败','error');});}
+function reject(id){var r=prompt('拒绝原因（可选）：');if(r===null)return;api('/api/daily-plan/'+id+'/reject',{method:'POST',body:{reason:r}}).then(function(){toast('已拒绝','success');loadApproval();}).catch(function(e){toast(e.error||'操作失败','error');});}
+function ret(id){var r=prompt('退回原因（可选）：');if(r===null)return;api('/api/daily-plan/'+id+'/return',{method:'POST',body:{reason:r}}).then(function(){toast('已退回','success');loadApproval();}).catch(function(e){toast(e.error||'操作失败','error');});}
 
 // ====== COMPLETION ======
 function loadCompletion(){
