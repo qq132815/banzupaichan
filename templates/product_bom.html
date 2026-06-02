@@ -8,10 +8,10 @@
 <div style="margin-left:auto;display:flex;gap:8px"><button class="btn btn-danger readonly-hide" onclick="downloadBomTpl()">📄 模板</button>
 <button class="btn btn-outline readonly-hide" onclick="doExport()">📥 导出</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/bom', function(){setTimeout(function(){load();}, 500);})">📤 导入</button>
-{% if session.get('role') == 'planner' %}<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>{% endif %}</div>
+{% if session.get('role') in ('planner', 'admin') %}<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>{% endif %}</div>
 </div>
 <div class="card"><div class="card-body"><div class="table-wrap"><table>
-<thead><tr><th>父件编码</th><th>父件名称</th><th>子件编码</th><th>子件名称</th><th>用量</th><th>单位</th><th>生产班组</th>{% if session.get('role') == 'planner' %}<th>操作</th>{% endif %}</tr></thead>
+<thead><tr><th>父件编码</th><th>父件名称</th><th>子件编码</th><th>子件名称</th><th>用量</th><th>单位</th><th>生产班组</th>{% if session.get('role') in ('planner', 'admin') %}<th>操作</th>{% endif %}</tr></thead>
 <tbody id="tbody"></tbody>
 </table></div></div></div>
 <div id="bom-pagination"></div>

@@ -8,10 +8,10 @@
 <div style="margin-left:auto;display:flex;gap:8px"><button class="btn btn-danger readonly-hide" onclick="downloadCycleTpl()">📄 模板</button>
 <button class="btn btn-outline readonly-hide" onclick="doExport()">📥 导出</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/cycles', function(){setTimeout(function(){load();}, 500);})">📤 导入</button>
-{% if session.get('role') == 'planner' %}<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>{% endif %}</div>
+{% if session.get('role') in ('planner', 'admin') %}<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>{% endif %}</div>
 </div>
 <div class="card"><div class="card-body"><div class="table-wrap"><table>
-<thead><tr><th>产品编码</th><th>生产周期(天)</th><th>提前时间(天)</th>{% if session.get('role') == 'planner' %}<th>操作</th>{% endif %}</tr></thead>
+<thead><tr><th>产品编码</th><th>生产周期(天)</th><th>提前时间(天)</th>{% if session.get('role') in ('planner', 'admin') %}<th>操作</th>{% endif %}</tr></thead>
 <tbody id="tbody"></tbody>
 </table></div></div></div>
 <div id="cycle-pagination"></div>

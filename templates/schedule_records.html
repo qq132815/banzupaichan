@@ -3,7 +3,7 @@
 <div class="page-header">
 <h1>📋 排班提交记录</h1>
 <div class="page-actions">
-{% if session.get('role') == 'planner' %}
+{% if session.get('role') in ('planner', 'admin') %}
 <select id="rec-team-filter" class="form-control" onchange="loadRecords()" style="width:120px">
 <option value="">全部班组</option>
 </select>

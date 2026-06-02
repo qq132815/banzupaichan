@@ -2,20 +2,20 @@
 {% block content %}
 <div class="page-header"><h1>工作台</h1>
 <div class="page-actions">
-{% if session.get('role') == 'planner' %}
+{% if session.get('role') in ('planner', 'admin') %}
 <button class="btn btn-primary" onclick="calcAlerts()">🔄 刷新预警</button>
 {% endif %}
 </div>
 </div>
 <div class="stats-row">
-{% if session.get('role') == 'planner' %}
+{% if session.get('role') in ('planner', 'admin') %}
 <div class="stat-card"><div class="stat-icon red">🔴</div><div class="stat-info"><div class="stat-num" id="red-alerts">-</div><div class="stat-label">紧急预警</div></div></div>
 <div class="stat-card"><div class="stat-icon orange">📋</div><div class="stat-info"><div class="stat-num" id="pending-approvals">-</div><div class="stat-label">待审批计划</div></div></div>
 {% endif %}
 <div class="stat-card"><div class="stat-icon blue">📊</div><div class="stat-info"><div class="stat-num" id="today-schedules">-</div><div class="stat-label">今日排班</div></div></div>
 <div class="stat-card"><div class="stat-icon green">🏭</div><div class="stat-info"><div class="stat-num" id="in-progress">-</div><div class="stat-label">在产订单</div></div></div>
 </div>
-{% if session.get('role') == 'planner' %}
+{% if session.get('role') in ('planner', 'admin') %}
 <div class="card"><div class="card-header"><h2>🔔 最新预警</h2><a href="/alerts-page" class="btn btn-outline btn-sm">查看全部</a></div>
 <div class="card-body"><div class="table-wrap"><table>
 <thead><tr><th>产品</th><th>等级</th><th>交期</th><th>需求数</th><th>缺口</th><th>剩余天</th></tr></thead>
