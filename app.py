@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import os
 import sys
@@ -3112,8 +3112,38 @@ def api_stats_monthly():
         })
     return jsonify({'mode': 'monthly', 'month': month, 'teams': result_teams})
 
+@app.route('/api/workshop/3d-status')
+@login_required
+def api_workshop_3d_status():
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, equipment_code, equipment_name, team_id, status, 
+                   pos_x, pos_y, pos_z, rotation_z, model_type
+            FROM equipments
+        """)
+        equipments = []
+        for row in cursor.fetchall():
+            eq = {
+                'id': row[0],
+                'code': row[1],
+                'name': row[2],
+                'team_id': row[3],
+                'status': row[4],
+                'position': {'x': row[5], 'y': row[6], 'z': row[7]},
+                'rotation': row[8],
+                'model': row[9]
+            }
+            equipments.append(eq)
+        conn.close()
+        return jsonify({'success': True, 'data': equipments})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 if __name__ == "__main__":
     init_database()
     app.run(debug=True, host="0.0.0.0", port=5000)
+
 
 
