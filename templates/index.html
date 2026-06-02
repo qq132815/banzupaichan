@@ -1,88 +1,199 @@
 ﻿{% extends "base.html" %}
-
 {% block content %}
 <style>
-    #workbench-container {
-        position: relative;
-        width: 100%;
-        height: calc(100vh - 60px);
-        overflow: hidden;
-        background: #000;
-    }
-    
-    /* HUD Overlay Styles */
-    .hud-panel {
-        position: absolute;
-        background: rgba(0, 20, 40, 0.8);
-        border: 1px solid rgba(0, 255, 255, 0.3);
-        box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
-        color: #0ff;
-        padding: 15px;
-        font-family: 'Courier New', monospace;
-        pointer-events: none;
-        z-index: 10;
-    }
-    
-    #top-bar {
-        top: 0; left: 0; right: 0; height: 50px;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 24px; text-transform: uppercase;
-        letter-spacing: 4px;
-        text-shadow: 0 0 10px #0ff;
-    }
-    
-    #stats-panel {
-        top: 60px; right: 20px; width: 300px;
-    }
-    
-    .stat-row {
-        display: flex; justify-content: space-between;
-        margin-bottom: 8px; border-bottom: 1px solid rgba(0, 255, 255, 0.1);
-        padding-bottom: 5px;
-    }
-    
-    /* Tooltip */
-    #tooltip {
-        position: absolute;
-        background: rgba(0, 0, 0, 0.9);
-        border: 1px solid #0ff;
-        color: #fff;
-        padding: 15px;
-        border-radius: 2px;
-        display: none;
-        pointer-events: none;
-        font-family: 'Courier New', monospace;
-        font-size: 14px;
-        min-width: 250px;
-        z-index: 100;
-        box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
-    }
-    
-    #tooltip::before {
-        content: 'DEVICE INFO';
-        display: block;
-        color: #0ff;
-        border-bottom: 1px solid #0ff;
-        margin-bottom: 10px;
-        font-weight: bold;
-    }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+#workbench-container {
+    position: relative;
+    width: 100%;
+    height: calc(100vh - 60px);
+    overflow: hidden;
+    background: #020a18;
+    font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif;
+}
+
+/* ========== HUD Overlay ========== */
+.hud-title {
+    position: absolute; top: 0; left: 0; right: 0; height: 48px;
+    background: linear-gradient(180deg, rgba(0,80,160,0.6) 0%, transparent 100%);
+    display: flex; align-items: center; justify-content: center;
+    color: #4fc3f7; font-size: 20px; letter-spacing: 6px;
+    text-shadow: 0 0 15px rgba(79,195,247,0.8), 0 0 30px rgba(79,195,247,0.3);
+    z-index: 20; pointer-events: none;
+    border-bottom: 1px solid rgba(79,195,247,0.2);
+}
+.hud-title::before, .hud-title::after {
+    content: ''; position: absolute; bottom: 0; width: 120px; height: 2px;
+    background: linear-gradient(90deg, transparent, #4fc3f7, transparent);
+}
+.hud-title::before { left: calc(50% - 160px); }
+.hud-title::after { right: calc(50% - 160px); }
+
+/* Stats Panel */
+.hud-stats {
+    position: absolute; top: 60px; right: 15px; width: 260px;
+    background: rgba(0,20,50,0.85); border: 1px solid rgba(79,195,247,0.3);
+    border-radius: 4px; z-index: 20; pointer-events: none;
+    backdrop-filter: blur(8px);
+}
+.hud-stats-header {
+    padding: 10px 15px; font-size: 13px; color: #4fc3f7;
+    border-bottom: 1px solid rgba(79,195,247,0.2);
+    letter-spacing: 2px; text-transform: uppercase;
+}
+.hud-stat-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 15px; border-bottom: 1px solid rgba(79,195,247,0.08);
+}
+.hud-stat-row .label { color: #8eafc4; font-size: 12px; }
+.hud-stat-row .value { font-size: 18px; font-weight: bold; }
+.val-green { color: #00e676; text-shadow: 0 0 8px rgba(0,230,118,0.5); }
+.val-red { color: #ff5252; text-shadow: 0 0 8px rgba(255,82,82,0.5); }
+.val-yellow { color: #ffd740; text-shadow: 0 0 8px rgba(255,215,64,0.5); }
+.val-blue { color: #4fc3f7; text-shadow: 0 0 8px rgba(79,195,247,0.5); }
+
+/* Legend */
+.hud-legend {
+    position: absolute; bottom: 15px; left: 15px;
+    background: rgba(0,20,50,0.85); border: 1px solid rgba(79,195,247,0.3);
+    border-radius: 4px; padding: 12px 15px; z-index: 20;
+    pointer-events: none; backdrop-filter: blur(8px);
+}
+.legend-item { display: flex; align-items: center; margin-bottom: 6px; }
+.legend-item:last-child { margin-bottom: 0; }
+.legend-dot {
+    width: 10px; height: 10px; border-radius: 50%; margin-right: 10px;
+    box-shadow: 0 0 6px currentColor;
+}
+.legend-text { color: #8eafc4; font-size: 12px; }
+
+/* Info Panel (bottom-right) */
+.hud-info {
+    position: absolute; bottom: 15px; right: 15px; width: 300px;
+    background: rgba(0,20,50,0.9); border: 1px solid rgba(79,195,247,0.4);
+    border-radius: 4px; z-index: 30; display: none;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 0 30px rgba(79,195,247,0.15);
+}
+.hud-info-header {
+    padding: 12px 15px; font-size: 14px; color: #4fc3f7; font-weight: bold;
+    border-bottom: 1px solid rgba(79,195,247,0.3);
+    display: flex; justify-content: space-between; align-items: center;
+}
+.hud-info-close {
+    cursor: pointer; color: #8eafc4; font-size: 18px; line-height: 1;
+    pointer-events: auto;
+}
+.hud-info-close:hover { color: #ff5252; }
+.hud-info-body { padding: 12px 15px; }
+.info-row {
+    display: flex; justify-content: space-between;
+    padding: 5px 0; border-bottom: 1px solid rgba(79,195,247,0.08);
+}
+.info-label { color: #8eafc4; font-size: 12px; }
+.info-value { color: #e0f0ff; font-size: 13px; font-weight: 500; }
+
+/* Progress Bar */
+.progress-bar {
+    width: 100%; height: 6px; background: rgba(79,195,247,0.1);
+    border-radius: 3px; margin-top: 8px; overflow: hidden;
+}
+.progress-fill {
+    height: 100%; border-radius: 3px;
+    background: linear-gradient(90deg, #0288d1, #4fc3f7);
+    box-shadow: 0 0 8px rgba(79,195,247,0.6);
+    transition: width 0.5s ease;
+}
+
+/* Tooltip */
+.hud-tooltip {
+    position: absolute; background: rgba(0,20,50,0.95);
+    border: 1px solid #4fc3f7; color: #e0f0ff;
+    padding: 10px 14px; border-radius: 3px;
+    display: none; pointer-events: none; z-index: 100;
+    font-size: 13px; min-width: 200px;
+    box-shadow: 0 0 20px rgba(79,195,247,0.3);
+}
+.hud-tooltip .tt-code { color: #4fc3f7; font-weight: bold; font-size: 14px; }
+.hud-tooltip .tt-name { color: #8eafc4; font-size: 12px; margin-top: 2px; }
+.hud-tooltip .tt-status { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(79,195,247,0.2); }
+
+/* Camera Controls Hint */
+.hud-controls {
+    position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%);
+    color: rgba(79,195,247,0.4); font-size: 11px; z-index: 20;
+    pointer-events: none; text-align: center;
+}
+
+/* Three container */
+#three-container { width: 100%; height: 100%; }
 </style>
 
 <div id="workbench-container">
-    <!-- HUD Overlay -->
-    <div id="top-bar" class="hud-panel">DIGITAL TWIN MONITORING SYSTEM</div>
-    
-    <div id="stats-panel" class="hud-panel">
-        <div style="border-bottom: 1px solid #0ff; margin-bottom: 10px; padding-bottom: 5px;">SYSTEM STATUS</div>
-        <div class="stat-row"><span>ACTIVE DEVICES</span><span id="stat-active" style="color: #0f0">0</span></div>
-        <div class="stat-row"><span>ALERTS</span><span id="stat-alerts" style="color: #f00">0</span></div>
-        <div class="stat-row"><span>EFFICIENCY</span><span style="color: #ff0">98.5%</span></div>
-    </div>
-    
-    <div id="tooltip"></div>
+    <!-- HUD Title -->
+    <div class="hud-title">智能制造车间数字孪生监控平台</div>
 
-    <!-- Three.js Canvas -->
-    <div id="three-container" style="width: 100%; height: 100%;"></div>
+    <!-- Stats Panel -->
+    <div class="hud-stats">
+        <div class="hud-stats-header">| 生产概览</div>
+        <div class="hud-stat-row">
+            <span class="label">设备总数</span>
+            <span class="value val-blue" id="stat-total">--</span>
+        </div>
+        <div class="hud-stat-row">
+            <span class="label">运行中</span>
+            <span class="value val-green" id="stat-running">--</span>
+        </div>
+        <div class="hud-stat-row">
+            <span class="label">待机</span>
+            <span class="value val-yellow" id="stat-idle">--</span>
+        </div>
+        <div class="hud-stat-row">
+            <span class="label">故障</span>
+            <span class="value val-red" id="stat-down">--</span>
+        </div>
+        <div class="hud-stat-row">
+            <span class="label">综合效率</span>
+            <span class="value val-green" id="stat-eff">--</span>
+        </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="hud-legend">
+        <div class="legend-item">
+            <div class="legend-dot" style="color:#00e676;background:#00e676;"></div>
+            <span class="legend-text">运行中</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot" style="color:#ffd740;background:#ffd740;"></div>
+            <span class="legend-text">待机/调试</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot" style="color:#ff5252;background:#ff5252;"></div>
+            <span class="legend-text">故障/停机</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot" style="color:#546e7a;background:#546e7a;"></div>
+            <span class="legend-text">未排班</span>
+        </div>
+    </div>
+
+    <!-- Detail Panel -->
+    <div class="hud-info" id="detail-panel">
+        <div class="hud-info-header">
+            <span id="detail-title">设备详情</span>
+            <span class="hud-info-close" onclick="document.getElementById('detail-panel').style.display='none'">&times;</span>
+        </div>
+        <div class="hud-info-body" id="detail-body"></div>
+    </div>
+
+    <!-- Tooltip -->
+    <div class="hud-tooltip" id="tooltip"></div>
+
+    <!-- Controls Hint -->
+    <div class="hud-controls">左键旋转 | 右键平移 | 滚轮缩放 | 点击设备查看详情</div>
+
+    <!-- 3D Container -->
+    <div id="three-container"></div>
 </div>
 
 <script type="importmap">
@@ -93,235 +204,484 @@
     }
 }
 </script>
-
 <script type="module">
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-    // Scene Setup
-    const container = document.getElementById('three-container');
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x020205);
-    scene.fog = new THREE.FogExp2(0x020205, 0.008);
+/* ============ SCENE SETUP ============ */
+const container = document.getElementById('three-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x020a18);
+scene.fog = new THREE.FogExp2(0x020a18, 0.006);
 
-    // Camera
-    const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
-    camera.position.set(40, 40, 40);
-    camera.lookAt(0, 0, 0);
+const camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.1, 500);
+camera.position.set(60, 45, 60);
 
-    // Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.toneMapping = THREE.ReinhardToneMapping;
-    container.appendChild(renderer.domElement);
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+container.appendChild(renderer.domElement);
 
-    // Post Processing (Bloom)
-    const composer = new EffectComposer(renderer);
-    const renderPass = new RenderPass(scene, camera);
-    composer.addPass(renderPass);
+/* ============ POST-PROCESSING ============ */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
 
-    const bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        1.5, // Strength
-        0.4, // Radius
-        0.85 // Threshold
+const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(container.clientWidth, container.clientHeight),
+    0.8, 0.4, 0.85
+);
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());
+
+/* ============ CONTROLS ============ */
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 15;
+controls.maxDistance = 150;
+controls.maxPolarAngle = Math.PI / 2.15;
+controls.target.set(0, 2, 0);
+controls.update();
+
+/* ============ LIGHTING ============ */
+scene.add(new THREE.AmbientLight(0x1a2a4a, 0.6));
+
+const mainLight = new THREE.DirectionalLight(0x4fc3f7, 1.2);
+mainLight.position.set(40, 60, 30);
+mainLight.castShadow = true;
+mainLight.shadow.mapSize.set(2048, 2048);
+mainLight.shadow.camera.near = 1;
+mainLight.shadow.camera.far = 200;
+mainLight.shadow.camera.left = -80;
+mainLight.shadow.camera.right = 80;
+mainLight.shadow.camera.top = 80;
+mainLight.shadow.camera.bottom = -80;
+scene.add(mainLight);
+
+const fillLight = new THREE.DirectionalLight(0x0288d1, 0.4);
+fillLight.position.set(-30, 20, -20);
+scene.add(fillLight);
+
+const rimLight = new THREE.PointLight(0x4fc3f7, 2, 100);
+rimLight.position.set(0, 30, -40);
+scene.add(rimLight);
+
+/* ============ GROUND ============ */
+const floorGeo = new THREE.PlaneGeometry(200, 200);
+const floorMat = new THREE.MeshStandardMaterial({
+    color: 0x0a1628, metalness: 0.8, roughness: 0.3,
+});
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Grid
+const gridHelper = new THREE.GridHelper(200, 40, 0x0d3b66, 0x0d2640);
+gridHelper.position.y = 0.01;
+scene.add(gridHelper);
+
+/* ============ MATERIALS ============ */
+const matRunning = new THREE.MeshStandardMaterial({
+    color: 0x1565c0, metalness: 0.85, roughness: 0.15,
+    emissive: 0x00e676, emissiveIntensity: 0.15,
+});
+const matIdle = new THREE.MeshStandardMaterial({
+    color: 0x37474f, metalness: 0.8, roughness: 0.25,
+    emissive: 0xffd740, emissiveIntensity: 0.1,
+});
+const matDown = new THREE.MeshStandardMaterial({
+    color: 0x4a1a1a, metalness: 0.8, roughness: 0.2,
+    emissive: 0xff5252, emissiveIntensity: 0.2,
+});
+const matNormal = new THREE.MeshStandardMaterial({
+    color: 0x263238, metalness: 0.7, roughness: 0.4,
+    emissive: 0x37474f, emissiveIntensity: 0.05,
+});
+const matAccent = new THREE.MeshStandardMaterial({
+    color: 0x0288d1, metalness: 0.9, roughness: 0.1,
+    emissive: 0x4fc3f7, emissiveIntensity: 0.3,
+});
+
+const statusMats = { running: matRunning, idle: matIdle, down: matDown, normal: matNormal };
+
+function getMat(status) { return statusMats[status] || matNormal; }
+
+/* ============ EQUIPMENT BUILDER ============ */
+function buildCNCMachine() {
+    const group = new THREE.Group();
+    // Base
+    const base = new THREE.Mesh(new THREE.BoxGeometry(5, 2.5, 4), null);
+    base.castShadow = true;
+    group.add(base);
+    // Top housing
+    const top = new THREE.Mesh(new THREE.BoxGeometry(5.2, 1.5, 4.2), null);
+    top.position.y = 2;
+    top.castShadow = true;
+    group.add(top);
+    // Screen panel
+    const screen = new THREE.Mesh(
+        new THREE.BoxGeometry(2, 1.2, 0.1),
+        new THREE.MeshStandardMaterial({ color: 0x0d47a1, emissive: 0x4fc3f7, emissiveIntensity: 0.5 })
     );
-    composer.addPass(bloomPass);
+    screen.position.set(0.8, 2.5, 2.15);
+    group.add(screen);
+    // Spindle
+    const spindle = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.3, 0.3, 1, 16),
+        matAccent
+    );
+    spindle.position.set(0, 3.5, 0);
+    group.add(spindle);
+    // Status light
+    const light = new THREE.Mesh(
+        new THREE.SphereGeometry(0.25, 12, 12),
+        new THREE.MeshBasicMaterial({ color: 0x00e676 })
+    );
+    light.position.set(2.2, 3.2, 0);
+    light.name = 'statusLight';
+    group.add(light);
+    return group;
+}
 
-    // Controls
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.minDistance = 10;
-    controls.maxDistance = 100;
-    controls.maxPolarAngle = Math.PI / 2.2;
+function buildPressMachine() {
+    const group = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.BoxGeometry(4, 3, 3.5), null);
+    base.castShadow = true;
+    group.add(base);
+    const ram = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2, 1.5), matAccent);
+    ram.position.set(0, 2.5, 0);
+    ram.name = 'ram';
+    group.add(ram);
+    const pillar1 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 4, 8), matAccent);
+    pillar1.position.set(-1.2, 2, 0);
+    group.add(pillar1);
+    const pillar2 = pillar1.clone();
+    pillar2.position.set(1.2, 2, 0);
+    group.add(pillar2);
+    const light = new THREE.Mesh(
+        new THREE.SphereGeometry(0.25, 12, 12),
+        new THREE.MeshBasicMaterial({ color: 0x00e676 })
+    );
+    light.position.set(1.8, 3.5, 0);
+    light.name = 'statusLight';
+    group.add(light);
+    return group;
+}
 
-    // Environment - Reflective Floor
-    const gridHelper = new THREE.GridHelper(200, 50, 0x00ffff, 0x004444);
-    gridHelper.material.opacity = 0.3;
-    gridHelper.material.transparent = true;
-    scene.add(gridHelper);
+function buildRoboticArm() {
+    const group = new THREE.Group();
+    const base = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.2, 1.4, 0.8, 16),
+        null
+    );
+    base.castShadow = true;
+    group.add(base);
+    const joint1 = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 3, 12), matAccent);
+    joint1.position.y = 2;
+    group.add(joint1);
+    const joint2 = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 2.5, 12), matAccent);
+    joint2.position.set(0, 4, 0);
+    joint2.rotation.z = 0.3;
+    group.add(joint2);
+    const effector = new THREE.Mesh(
+        new THREE.BoxGeometry(0.8, 0.3, 0.8),
+        new THREE.MeshStandardMaterial({ color: 0xff6f00, emissive: 0xff6f00, emissiveIntensity: 0.3 })
+    );
+    effector.position.set(0.5, 5.2, 0);
+    group.add(effector);
+    const light = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2, 12, 12),
+        new THREE.MeshBasicMaterial({ color: 0x00e676 })
+    );
+    light.position.set(0, 5.6, 0);
+    light.name = 'statusLight';
+    group.add(light);
+    return group;
+}
 
-    const planeGeometry = new THREE.PlaneGeometry(200, 200);
-    const planeMaterial = new THREE.MeshStandardMaterial({
-        color: 0x000000,
-        metalness: 0.9,
-        roughness: 0.1,
-        envMapIntensity: 1.0
-    });
-    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-    plane.rotation.x = -Math.PI / 2;
-    plane.receiveShadow = true;
-    scene.add(plane);
+const machineTypes = [buildCNCMachine, buildPressMachine, buildRoboticArm];
 
-    // Lights
-    const ambientLight = new THREE.AmbientLight(0x111111);
-    scene.add(ambientLight);
+/* ============ CONVEYOR BELTS ============ */
+const conveyorGroup = new THREE.Group();
+scene.add(conveyorGroup);
 
-    const spotLight = new THREE.SpotLight(0xffffff, 100);
-    spotLight.position.set(50, 80, 50);
-    spotLight.angle = Math.PI / 6;
-    spotLight.penumbra = 1;
-    spotLight.castShadow = true;
-    scene.add(spotLight);
-
-    // Data & Objects
-    const equipmentGroup = new THREE.Group();
-    scene.add(equipmentGroup);
-
-    const statusColors = {
-        'running': new THREE.Color(0x00ff88), // Neon Green
-        'idle': new THREE.Color(0xffff00),    // Neon Yellow
-        'down': new THREE.Color(0xff0000),    // Neon Red
-        'normal': new THREE.Color(0x444444)
-    };
-
-    // Status Lights (Volumetric Look)
-    function createStatusLight(color) {
-        const geometry = new THREE.SphereGeometry(0.5, 16, 16);
-        const material = new THREE.MeshBasicMaterial({ color: color }); // Basic material ignores light, glows with bloom
-        return new THREE.Mesh(geometry, material);
+function buildConveyor(length, x, z, direction) {
+    const group = new THREE.Group();
+    const belt = new THREE.Mesh(
+        new THREE.BoxGeometry(length, 0.3, 1.5),
+        new THREE.MeshStandardMaterial({ color: 0x1a237e, metalness: 0.6, roughness: 0.5 })
+    );
+    belt.position.y = 0.4;
+    belt.receiveShadow = true;
+    group.add(belt);
+    // Rails
+    for (let i = 0; i < length; i += 2) {
+        const roller = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.15, 0.15, 1.6, 8),
+            matAccent
+        );
+        roller.rotation.x = Math.PI / 2;
+        roller.position.set(i - length / 2 + 1, 0.3, 0);
+        group.add(roller);
     }
+    // Side rails
+    const railMat = new THREE.MeshStandardMaterial({ color: 0x263238, metalness: 0.9, roughness: 0.2 });
+    const rail1 = new THREE.Mesh(new THREE.BoxGeometry(length, 0.6, 0.15), railMat);
+    rail1.position.set(0, 0.6, 0.8);
+    group.add(rail1);
+    const rail2 = rail1.clone();
+    rail2.position.z = -0.8;
+    group.add(rail2);
+    group.position.set(x, 0, z);
+    group.userData = { type: 'conveyor', direction: direction, length: length };
+    return group;
+}
 
-    // Raycaster
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-    const tooltip = document.getElementById('tooltip');
-    let hoveredObject = null;
+conveyorGroup.add(buildConveyor(30, 0, 12, 1));
+conveyorGroup.add(buildConveyor(30, 0, -12, -1));
 
-    // Fetch Data
-    fetch('/api/workshop/3d-status')
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                renderEquipment(data.data);
-                updateStats(data.data);
+/* ============ FLOOR MARKINGS ============ */
+function addFloorLine(x1, z1, x2, z2, color) {
+    const points = [new THREE.Vector3(x1, 0.02, z1), new THREE.Vector3(x2, 0.02, z2)];
+    const geo = new THREE.BufferGeometry().setFromPoints(points);
+    const mat = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.4 });
+    scene.add(new THREE.Line(geo, mat));
+}
+for (let x = -60; x <= 60; x += 20) {
+    addFloorLine(x, -60, x, 60, 0x0d3b66);
+}
+for (let z = -60; z <= 60; z += 20) {
+    addFloorLine(-60, z, 60, z, 0x0d3b66);
+}
+
+/* ============ LOAD DATA & BUILD SCENE ============ */
+const equipmentGroup = new THREE.Group();
+scene.add(equipmentGroup);
+
+const tooltip = document.getElementById('tooltip');
+const detailPanel = document.getElementById('detail-panel');
+const detailBody = document.getElementById('detail-body');
+const detailTitle = document.getElementById('detail-title');
+
+fetch('/api/workshop/3d-status')
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            renderEquipment(data.data);
+            updateStats(data.data);
+        }
+    });
+
+function updateStats(list) {
+    document.getElementById('stat-total').textContent = list.length;
+    document.getElementById('stat-running').textContent = list.filter(e => e.status === 'running').length;
+    document.getElementById('stat-idle').textContent = list.filter(e => e.status === 'idle').length;
+    document.getElementById('stat-down').textContent = list.filter(e => e.status === 'down').length;
+    const eff = list.length > 0
+        ? Math.round(list.filter(e => e.status === 'running').length / list.length * 100) + '%'
+        : '--';
+    document.getElementById('stat-eff').textContent = eff;
+}
+
+function renderEquipment(list) {
+    while (equipmentGroup.children.length) equipmentGroup.remove(equipmentGroup.children[0]);
+
+    const cols = 15;
+    const spacingX = 8;
+    const spacingZ = 10;
+    const offsetX = -(cols - 1) * spacingX / 2;
+    const offsetZ = -Math.ceil(list.length / cols) * spacingZ / 2;
+
+    list.forEach((eq, i) => {
+        const builder = machineTypes[i % machineTypes.length];
+        const machine = builder();
+
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        machine.position.set(offsetX + col * spacingX, 0, offsetZ + row * spacingZ + 8);
+
+        // Set material on all children
+        const mat = getMat(eq.status);
+        machine.traverse(child => {
+            if (child.isMesh && child.name !== 'statusLight' && child.name !== 'ram') {
+                if (!child.material || child.material === matAccent) return;
+                child.material = mat;
             }
         });
 
-    function updateStats(equipments) {
-        const active = equipments.filter(e => e.status === 'running').length;
-        const alerts = equipments.filter(e => e.status === 'down').length;
-        document.getElementById('stat-active').innerText = active;
-        document.getElementById('stat-alerts').innerText = alerts;
-    }
-
-    function renderEquipment(equipments) {
-        // Clear existing
-        while(equipmentGroup.children.length > 0){ 
-            equipmentGroup.remove(equipmentGroup.children[0]); 
+        // Status light color
+        const sl = machine.getObjectByName('statusLight');
+        if (sl) {
+            const colors = { running: 0x00e676, idle: 0xffd740, down: 0xff5252 };
+            sl.material.color.set(colors[eq.status] || 0x546e7a);
         }
 
-        const cols = 15;
-        equipments.forEach((eq, index) => {
-            // Base Machine Geometry
-            const geometry = new THREE.BoxGeometry(4, 3, 4);
-            const material = new THREE.MeshStandardMaterial({
-                color: 0x111111,
-                metalness: 0.8,
-                roughness: 0.2,
-                emissive: statusColors[eq.status] || new THREE.Color(0x000000),
-                emissiveIntensity: 0.2 // Subtle glow
+        machine.userData = eq;
+        machine.traverse(c => { if (c.isMesh) c.userData = eq; });
+        equipmentGroup.add(machine);
+    });
+}
+
+/* ============ RAYCASTER ============ */
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let hovered = null;
+
+function onMouseMove(e) {
+    const rect = container.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(equipmentGroup.children, true);
+
+    if (hits.length > 0) {
+        let obj = hits[0].object;
+        while (obj.parent && obj.parent !== equipmentGroup) obj = obj.parent;
+
+        container.style.cursor = 'pointer';
+
+        if (hovered !== obj) {
+            if (hovered) resetHighlight(hovered);
+            hovered = obj;
+            highlightMachine(obj);
+        }
+
+        const eq = obj.userData;
+        if (eq && eq.code) {
+            const sColors = { running: '#00e676', idle: '#ffd740', down: '#ff5252' };
+            tooltip.innerHTML =
+                '<div class="tt-code">' + eq.code + '</div>' +
+                '<div class="tt-name">' + (eq.name || '') + '</div>' +
+                '<div class="tt-status">状态: <span style="color:' + (sColors[eq.status] || '#546e7a') + '">' +
+                (eq.status || 'unknown').toUpperCase() + '</span></div>';
+            tooltip.style.display = 'block';
+            tooltip.style.left = (e.clientX + 15) + 'px';
+            tooltip.style.top = (e.clientY + 15) + 'px';
+        }
+    } else {
+        if (hovered) { resetHighlight(hovered); hovered = null; }
+        container.style.cursor = 'default';
+        tooltip.style.display = 'none';
+    }
+}
+
+function highlightMachine(group) {
+    group.traverse(c => {
+        if (c.isMesh && c.material) {
+            c.material = c.material.clone();
+            c.material.emissiveIntensity = 1.0;
+        }
+    });
+}
+
+function resetHighlight(group) {
+    const mat = getMat(group.userData.status);
+    group.traverse(c => {
+        if (c.isMesh && c.name !== 'statusLight' && c.name !== 'ram') {
+            if (!c.material || c.userData._isAccent) return;
+            c.material = mat;
+        }
+    });
+}
+
+function onClick(e) {
+    if (!hovered) return;
+    const eq = hovered.userData;
+    if (!eq || !eq.code) return;
+
+    detailTitle.textContent = eq.code + ' - ' + (eq.name || '');
+    const sColors = { running: '#00e676', idle: '#ffd740', down: '#ff5252' };
+    const statusLabel = { running: '运行中', idle: '待机', down: '故障' };
+    const progress = Math.round(Math.random() * 100);
+
+    detailBody.innerHTML =
+        '<div class="info-row"><span class="info-label">设备编号</span><span class="info-value">' + eq.code + '</span></div>' +
+        '<div class="info-row"><span class="info-label">设备名称</span><span class="info-value">' + (eq.name || '--') + '</span></div>' +
+        '<div class="info-row"><span class="info-label">所属班组</span><span class="info-value">' + (eq.team_id || '--') + '</span></div>' +
+        '<div class="info-row"><span class="info-label">当前状态</span><span class="info-value" style="color:' + (sColors[eq.status] || '#546e7a') + '">' + (statusLabel[eq.status] || eq.status) + '</span></div>' +
+        '<div class="info-row"><span class="info-label">设备类型</span><span class="info-value">' + (eq.model || 'CNC') + '</span></div>' +
+        '<div class="info-row"><span class="info-label">当前工单</span><span class="info-value">--</span></div>' +
+        '<div class="info-row"><span class="info-label">完成进度</span><span class="info-value">' + progress + '%</span></div>' +
+        '<div class="progress-bar"><div class="progress-fill" style="width:' + progress + '%"></div></div>';
+
+    detailPanel.style.display = 'block';
+}
+
+container.addEventListener('mousemove', onMouseMove, false);
+container.addEventListener('click', onClick, false);
+
+/* ============ ANIMATION ============ */
+const clock = new THREE.Clock();
+
+function animate() {
+    requestAnimationFrame(animate);
+    const t = clock.getElapsedTime();
+    controls.update();
+
+    equipmentGroup.children.forEach(child => {
+        if (child.userData.status === 'running') {
+            // Pulse emissive
+            child.traverse(c => {
+                if (c.isMesh && c.name !== 'statusLight') {
+                    if (c.material && c.material.emissive) {
+                        c.material.emissiveIntensity = 0.1 + Math.sin(t * 3) * 0.08;
+                    }
+                }
             });
-
-            const mesh = new THREE.Mesh(geometry, material);
-            
-            // Position
-            const col = index % cols;
-            const row = Math.floor(index / cols);
-            mesh.position.set(col * 8 - 60, 1.5, row * 8 - 60);
-            
-            // Add Status Light on top
-            const statusLight = createStatusLight(statusColors[eq.status] || 0x444444);
-            statusLight.position.set(0, 2, 0);
-            mesh.add(statusLight);
-
-            mesh.userData = eq;
-            equipmentGroup.add(mesh);
-        });
-    }
-
-    // Mouse Interaction
-    function onMouseMove(event) {
-        const rect = container.getBoundingClientRect();
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-        raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObjects(equipmentGroup.children);
-
-        if (intersects.length > 0) {
-            const object = intersects[0].object;
-            container.style.cursor = 'pointer';
-            
-            if (hoveredObject !== object) {
-                hoveredObject = object;
-                // Highlight
-                object.material.emissiveIntensity = 1.0;
-                
-                const eq = object.userData;
-                tooltip.innerHTML = `
-                    <div style="margin-bottom: 5px"><b>CODE:</b> ${eq.code}</div>
-                    <div style="margin-bottom: 5px"><b>NAME:</b> ${eq.name}</div>
-                    <div style="margin-bottom: 5px; color: ${statusColors[eq.status]?.getStyle() || '#fff'}"><b>STATUS:</b> ${eq.status.toUpperCase()}</div>
-                    <div style="margin-bottom: 5px"><b>TEAM:</b> ${eq.team_id || 'N/A'}</div>
-                    <div style="font-size: 12px; color: #888">Click for details</div>
-                `;
-                tooltip.style.display = 'block';
-            }
-            tooltip.style.left = (event.clientX + 20) + 'px';
-            tooltip.style.top = (event.clientY + 20) + 'px';
-        } else {
-            if (hoveredObject) {
-                hoveredObject.material.emissiveIntensity = 0.2;
-                hoveredObject = null;
-            }
-            container.style.cursor = 'default';
-            tooltip.style.display = 'none';
+            // Spin spindle
+            const spindle = child.children[3];
+            if (spindle) spindle.rotation.y += 0.08;
+            // Ram animation
+            const ram = child.getObjectByName('ram');
+            if (ram) ram.position.y = 2.5 + Math.sin(t * 4) * 0.3;
         }
-    }
 
-    window.addEventListener('mousemove', onMouseMove, false);
+        if (child.userData.status === 'down') {
+            const flash = Math.sin(t * 6) > 0.3 ? 0.6 : 0.1;
+            child.traverse(c => {
+                if (c.isMesh && c.material && c.material.emissive) {
+                    c.material.emissiveIntensity = flash;
+                }
+            });
+        }
 
-    // Animation Loop
-    function animate() {
-        requestAnimationFrame(animate);
-        controls.update();
-
-        const time = Date.now() * 0.001;
-
-        equipmentGroup.children.forEach(child => {
-            // Pulse effect for running machines
-            if (child.userData.status === 'running') {
-                const intensity = 0.2 + Math.abs(Math.sin(time * 2)) * 0.3;
-                child.material.emissiveIntensity = intensity;
-                // Spin status light
-                if(child.children[0]) child.children[0].rotation.y += 0.05;
-            }
-            
-            // Flash effect for down machines
-            if (child.userData.status === 'down') {
-                const flash = Math.sin(time * 10) > 0 ? 1 : 0.2;
-                child.material.emissiveIntensity = flash;
-            }
-        });
-
-        composer.render(); // Use composer for bloom
-    }
-
-    animate();
-
-    // Resize Handler
-    window.addEventListener('resize', () => {
-        camera.aspect = container.clientWidth / container.clientHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(container.clientWidth, container.clientHeight);
-        composer.setSize(container.clientWidth, container.clientHeight);
+        // Status light pulse
+        const sl = child.getObjectByName('statusLight');
+        if (sl && sl.material) {
+            sl.material.opacity = 0.7 + Math.sin(t * 4) * 0.3;
+        }
     });
 
+    // Conveyor animation
+    conveyorGroup.children.forEach(conv => {
+        conv.children.forEach(child => {
+            if (child.geometry && child.geometry.type === 'CylinderGeometry') {
+                child.rotation.z += 0.05;
+            }
+        });
+    });
+
+    composer.render();
+}
+
+animate();
+
+/* ============ RESIZE ============ */
+window.addEventListener('resize', () => {
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    composer.setSize(container.clientWidth, container.clientHeight);
+});
 </script>
 {% endblock %}
