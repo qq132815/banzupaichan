@@ -2113,8 +2113,11 @@ def api_report_weekly():
     team_id = request.args.get('team_id', type=int)
     if not week_start:
         today = datetime.now().date()
-        week_start = (today - timedelta(days=today.weekday())).strftime('%Y-%m-%d')
-    week_end = (datetime.strptime(week_start, '%Y-%m-%d').date() + timedelta(days=6)).strftime('%Y-%m-%d')
+    else:
+        today = datetime.strptime(week_start, '%Y-%m-%d').date()
+    monday = today - timedelta(days=today.weekday())
+    week_start = monday.strftime('%Y-%m-%d')
+    week_end = (monday + timedelta(days=6)).strftime('%Y-%m-%d')
     
     conn = get_connection()
     c = conn.cursor()
