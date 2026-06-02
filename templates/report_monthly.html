@@ -5,8 +5,6 @@
 <input type="month" id="month-picker" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
 <select id="team-filter" onchange="loadData()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"><option value="">全部班组</option></select>
 <button class="btn btn-primary" onclick="loadData()">查询</button>
-<button class="btn btn-success" onclick="syncAttendance()" style="margin-left:8px" title="从钉钉同步考勤数据">📥 同步考勤</button>
-<span id="sync-status" style="margin-left:8px;font-size:13px"></span>
 </div>
 <div class="card"><div class="card-body">
 <div class="table-wrap">
@@ -62,23 +60,6 @@ function loadData(){
         });
     });
 }
-function syncAttendance(){
-    var m=document.getElementById("month-picker").value;
-    if(!m){toast("请先选择月份","warning");return;}
-    var parts=m.split("-");
-    var from=m+"-01";
-    var lastDay=new Date(parseInt(parts[0]),parseInt(parts[1]),0).getDate();
-    var to=m+"-"+(lastDay<10?"0":"")+lastDay;
-    var st=document.getElementById("sync-status");
-    st.innerHTML="<span style='color:#6b7280'>同步中...</span>";
-    fetch("/api/attendance/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({date_from:from,date_to:to})}).then(function(r){return r.json()}).then(function(d){
-        if(d.ok){
-            st.innerHTML="<span style='color:#059669'>✓ 同步完成 "+d.count+" 条</span>";
-            loadData();
-        }else{
-            st.innerHTML="<span style='color:#dc2626'>✗ "+(d.error||"同步失败")+"</span>";
-        }
-    }).catch(function(e){st.innerHTML="<span style='color:#dc2626'>✗ 请求失败</span>";});
-}
+
 </script>
 {% endblock %}
