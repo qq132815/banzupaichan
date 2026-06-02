@@ -70,7 +70,7 @@ function loadData(){
         var fields=[
             {key:'attendance_hours',label:'实际上班工时',fmt:function(v){return v>0?v+'h':'-';}},
             {key:'overtime_hours',label:'加班工时',fmt:function(v){return v>0?v+'h':'-';}},
-            {key:'hours',label:'生产工时',fmt:function(v){return v>0?v+'h':'-';}},
+            {key:'hours',label:'生产工时',fmt:function(v,row){return v>0?(row&&row.attendance_hours&&v<row.attendance_hours?'<span style="color:#dc2626">'+v+'h</span>':v+'h'):'-';}},
             {key:'qty',label:'总产量',fmt:function(v){return v||0;}},
             {key:'good_rate',label:'良品率',fmt:function(v){return v>0?v+'%':'-';}},
             {key:'efficiency',label:'生产效率',fmt:function(v){return v>0?(v>=100?'<span style="color:#059669">'+v+'%</span>':'<span style="color:#dc2626">'+v+'%</span>'):'-';}},
@@ -84,7 +84,7 @@ function loadData(){
             var td='<td style="text-align:left;font-weight:600">'+f.label+'</td>';
             d.days.forEach(function(day){
                 var val=day[f.key];
-                td+='<td>'+f.fmt(val)+'</td>';
+                td+='<td>'+f.fmt(val,day)+'</td>';
             });
             tr.innerHTML=td;tbody.appendChild(tr);
         });
