@@ -26,11 +26,14 @@
 </div>
 </div></div>
 <style>
-.report-table th{position:sticky;top:0;z-index:2;background:#f8fafc;border-bottom:2px solid #e5e7eb;font-size:12px;font-weight:600;color:#374151;white-space:nowrap;text-align:center}
-.report-table td{text-align:center;padding:10px 14px;border-bottom:1px solid #f3f4f6;font-size:13px;white-space:nowrap;background:#fff}
-.report-table td:first-child,.report-table th:first-child{text-align:left;position:sticky;left:0;z-index:3}.report-table th:first-child{background:#f8fafc}.report-table td:first-child{background:#fff}
+
+
+
 .overtime{background:#fef2f2;color:#dc2626;font-weight:600}
-</style>
+.report-table th{position:sticky;top:0;z-index:10;background:#f8fafc;border-bottom:2px solid #e5e7eb;font-size:12px;font-weight:600;color:#374151;white-space:nowrap;text-align:center}
+.report-table td{text-align:center;padding:10px 14px;border-bottom:1px solid #f3f4f6;font-size:13px;white-space:nowrap;background:#fff}
+.report-table td:first-child{position:sticky;left:0;z-index:5;background:#fff;text-align:left;font-weight:600}
+.report-table th:first-child{position:sticky;left:0;z-index:15;background:#f8fafc}</style>
 {% endblock %}
 {% block scripts %}
 <script>
