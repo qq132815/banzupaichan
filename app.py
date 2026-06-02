@@ -37,7 +37,7 @@ def _run_sync_job(sync_type):
     try:
         script = os.path.join(os.path.dirname(__file__), 'scripts', f'sync_{sync_type}.py')
         result = subprocess.run(
-            [sys.executable, script],
+            [sys.executable, '-u', script],
             capture_output=True, text=True, timeout=300,
             cwd=os.path.dirname(__file__)
         )
@@ -1651,16 +1651,20 @@ def api_save_sync_settings():
 @planner_required
 def api_sync_work_orders():
     import subprocess
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("INSERT INTO sync_logs (sync_type, status) VALUES ('work_orders', 'running')")
-    log_id = c.lastrowid
-    conn.commit()
-    conn.close()
+    log_id = None
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("INSERT INTO sync_logs (sync_type, status) VALUES ('work_orders', 'running')")
+        log_id = c.lastrowid
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
     try:
         script = os.path.join(os.path.dirname(__file__), 'scripts', 'sync_work_orders.py')
         result = subprocess.run(
-            [sys.executable, script],
+            [sys.executable, '-u', script],
             capture_output=True, text=True, timeout=300,
             cwd=os.path.dirname(__file__)
         )
@@ -1705,16 +1709,20 @@ def api_sync_work_orders():
 @planner_required
 def api_sync_reports():
     import subprocess
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("INSERT INTO sync_logs (sync_type, status) VALUES ('reports', 'running')")
-    log_id = c.lastrowid
-    conn.commit()
-    conn.close()
+    log_id = None
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("INSERT INTO sync_logs (sync_type, status) VALUES ('reports', 'running')")
+        log_id = c.lastrowid
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
     try:
         script = os.path.join(os.path.dirname(__file__), 'scripts', 'sync_reports.py')
         result = subprocess.run(
-            [sys.executable, script],
+            [sys.executable, '-u', script],
             capture_output=True, text=True, timeout=300,
             cwd=os.path.dirname(__file__)
         )
