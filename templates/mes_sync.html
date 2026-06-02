@@ -125,6 +125,52 @@ function saveAttendanceSettings(){
     });
 }
 
+function syncWorkOrders(){
+    var btn=document.getElementById("btn-sync-orders");
+    var status=document.getElementById("orders-sync-status");
+    var detail=document.getElementById("orders-sync-detail");
+    btn.disabled=true;btn.textContent="同步中...";
+    status.innerHTML='<span style="color:#d97706">正在同步工单...</span>';
+    detail.style.display="block";detail.textContent="正在从MES系统拉取工单数据...";
+    fetch("/api/mes-sync/work-orders",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+        btn.disabled=false;btn.textContent="开始同步工单";
+        if(d.ok){
+            status.innerHTML='<span style="color:#059669">同步完成</span>';
+            detail.textContent="成功导入 "+d.count+" 条工单记录";
+        }else{
+            status.innerHTML='<span style="color:#dc2626">同步失败</span>';
+            detail.textContent=d.error||"未知错误";
+        }
+    }).catch(function(e){
+        btn.disabled=false;btn.textContent="开始同步工单";
+        status.innerHTML='<span style="color:#dc2626">同步失败</span>';
+        detail.textContent=e.message||"网络错误";
+    });
+}
+
+function syncReports(){
+    var btn=document.getElementById("btn-sync-reports");
+    var status=document.getElementById("reports-sync-status");
+    var detail=document.getElementById("reports-sync-detail");
+    btn.disabled=true;btn.textContent="同步中...";
+    status.innerHTML='<span style="color:#d97706">正在同步报工...</span>';
+    detail.style.display="block";detail.textContent="正在从MES系统拉取报工数据...";
+    fetch("/api/mes-sync/reports",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+        btn.disabled=false;btn.textContent="开始同步报工";
+        if(d.ok){
+            status.innerHTML='<span style="color:#059669">同步完成</span>';
+            detail.textContent="成功导入 "+d.count+" 条报工记录";
+        }else{
+            status.innerHTML='<span style="color:#dc2626">同步失败</span>';
+            detail.textContent=d.error||"未知错误";
+        }
+    }).catch(function(e){
+        btn.disabled=false;btn.textContent="开始同步报工";
+        status.innerHTML='<span style="color:#dc2626">同步失败</span>';
+        detail.textContent=e.message||"网络错误";
+    });
+}
+
 function syncAttendance(){
     var btn=document.getElementById("btn-sync-attendance");
     var status=document.getElementById("att-sync-status");
