@@ -1,11 +1,11 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <div class="page-header"><h1>📆 月报表</h1></div>
 <div class="toolbar">
 <input type="month" id="month-picker" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
 <select id="team-filter" onchange="loadData()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"><option value="">全部班组</option></select>
 <button class="btn btn-primary" onclick="loadData()">查询</button>
-<button class="btn btn-success" onclick="syncAttendance()" style="margin-left:8px" title="从钉钉同步考勤数据">📥 同步钉钉考勤</button>
+<button class="btn btn-success" onclick="syncAttendance()" style="margin-left:8px" title="从钉钉同步考勤数据">📥 同步考勤</button>
 <span id="sync-status" style="margin-left:8px;font-size:13px"></span>
 </div>
 <div class="card"><div class="card-body">
@@ -41,7 +41,7 @@
 {% block scripts %}
 <script>
 (function(){
-    document.getElementById("month-picker").value=new Date().toISOString().substring(0,7);
+    var now=new Date();var mm=now.getFullYear()+"-"+("0"+(now.getMonth()+1)).slice(-2);document.getElementById("month-picker").value=mm;
     fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
         var sel=document.getElementById("team-filter");
         d.forEach(function(t){var o=document.createElement("option");o.value=t.id;o.textContent=t.name;sel.appendChild(o);});

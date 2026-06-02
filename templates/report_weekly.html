@@ -1,8 +1,9 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <div class="page-header"><h1>📅 周报表</h1></div>
 <div class="toolbar">
 <input type="date" id="week-picker" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<span id="week-range" style="font-size:13px;color:#6b7280;margin-left:8px"></span>
 <select id="team-filter" onchange="loadData()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"><option value="">全部班组</option></select>
 <button class="btn btn-primary" onclick="loadData()">查询</button>
 </div>
@@ -36,15 +37,16 @@
 {% endblock %}
 {% block scripts %}
 <script>
+function fmtDate(d){var y=d.getFullYear();var m=("0"+(d.getMonth()+1)).slice(-2);var dd=("0"+d.getDate()).slice(-2);return y+"-"+m+"-"+dd;}
 (function(){
     var today=new Date();var day=today.getDay();if(day===0)day=7;
     var mon=new Date(today);mon.setDate(today.getDate()-day+1);
-    document.getElementById("week-picker").value=mon.toISOString().split('T')[0];
+    document.getElementById("week-picker").value=fmtDate(mon);
     fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
         var sel=document.getElementById("team-filter");
         d.forEach(function(t){var o=document.createElement("option");o.value=t.id;o.textContent=t.name;sel.appendChild(o);});
         loadData();
-    });
+    }).catch(function(e){console.error("teams fetch error:",e);loadData();});
 })();
 function loadData(){
     var picked=document.getElementById("week-picker").value;
@@ -52,14 +54,15 @@ function loadData(){
     var d=new Date(picked+"T00:00:00");
     var day=d.getDay();if(day===0)day=7;
     var mon=new Date(d);mon.setDate(d.getDate()-day+1);
-    var w=mon.toISOString().split("T")[0];
+    var w=fmtDate(mon);
     var sun=new Date(mon);sun.setDate(mon.getDate()+6);
     var rangeEl=document.getElementById("week-range");
-    if(rangeEl)rangeEl.textContent=w+" ~ "+sun.toISOString().split("T")[0];
+    if(rangeEl)rangeEl.textContent=w+" ~ "+fmtDate(sun);
     var tid=document.getElementById("team-filter").value;
     var url="/api/reports/weekly?week_start="+w;
     if(tid)url+="&team_id="+tid;
-    fetch(url).then(function(r){return r.json()}).then(function(d){
+    document.getElementById("tbody").innerHTML='<tr><td colspan="13" style="text-align:center;color:#9ca3af;padding:40px">加载中...</td></tr>';
+    fetch(url).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json()}).then(function(d){
         var tb=document.getElementById("tbody");tb.innerHTML="";
         if(!d.data||d.data.length===0){tb.innerHTML='<tr><td colspan="13" style="text-align:center;color:#9ca3af;padding:40px">暂无数据</td></tr>';return;}
         d.data.forEach(function(r){
@@ -69,6 +72,9 @@ function loadData(){
             tr.innerHTML='<td><strong>'+r.name+'</strong></td><td>'+(r.department||'')+'</td><td>'+r.work_days+'</td><td>'+(r.total_attendance_hours||0)+'h</td><td>'+(r.normal_hours||0)+'h</td><td>'+(r.overtime_hours||0)+'h</td><td>'+(r.total_production_hours||0)+'h</td><td>'+(r.total_qty||0)+'</td><td>'+gr+'</td><td>'+eff+'</td><td>'+(r.overtime_days||0)+'</td><td>'+(r.utilization_rate||0)+'%</td><td>'+(r.daily_avg_qty||0)+'</td>';
             tb.appendChild(tr);
         });
+    }).catch(function(e){
+        console.error("weekly report error:",e);
+        document.getElementById("tbody").innerHTML='<tr><td colspan="13" style="text-align:center;color:#dc2626;padding:40px">加载失败: '+e.message+'</td></tr>';
     });
 }
 </script>

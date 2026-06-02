@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <div class="page-header"><h1>📊 效率日报</h1></div>
 <div class="toolbar">
@@ -35,7 +35,7 @@
 {% block scripts %}
 <script>
 (function(){
-    document.getElementById("report-date").value=new Date().toISOString().split('T')[0];
+    var now=new Date();var dd=now.getFullYear()+"-"+("0"+(now.getMonth()+1)).slice(-2)+"-"+("0"+now.getDate()).slice(-2);document.getElementById("report-date").value=dd;
     fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
         var sel=document.getElementById("team-filter");
         d.forEach(function(t){var o=document.createElement("option");o.value=t.id;o.textContent=t.name;sel.appendChild(o);});
