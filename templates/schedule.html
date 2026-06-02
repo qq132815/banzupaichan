@@ -397,63 +397,88 @@ function loadRequirements(){
 }
 
 // ========== Load Data ==========
+var _warningSort={key:'name',dir:'asc'};
+var _warningData={reqs:[],woRemain:{}};
+
 function loadWarnings(){
     fetch("/api/schedule-warnings").then(function(r){return r.json()}).then(function(d){
-        var panel=document.getElementById("warning-panel");
-        var container=document.getElementById("warning-content");
-        
-        var reqs=d.requirements||[];
-        var woRemain=d.work_order_remaining||{};
-        if(!reqs.length){container.innerHTML="<div style='padding:20px;text-align:center;color:#9ca3af'>暂无发布需求</div>";return;}
-        // Build date range: today-2 to today+3
-        var today=new Date();
-        var dates=[];
-        for(var i=-2;i<=3;i++){
-            var dt=new Date(today);dt.setDate(dt.getDate()+i);
-            dates.push(dt.toISOString().split("T")[0]);
-        }
-        // Group by product
-        var products={};
-        reqs.forEach(function(r){
-            var name=r.product_name||r.product_code;
-            if(!products[name])products[name]={dates:{},code:r.product_code};
-            var key=r.required_date;
-            if(!products[name].dates[key])products[name].dates[key]=0;
-            products[name].dates[key]+=r.required_quantity;
-        });
-        // Build table
-        var html="<table style='width:100%;border-collapse:collapse;font-size:11px'>";
-        html+="<thead style='position:sticky;top:0;z-index:3'><tr><th style='text-align:left;padding:4px 6px;background:#f9fafb;border-bottom:1px solid #e5e7eb;position:sticky;left:0;z-index:2'>产品名称</th>";
-        html+="<th style='text-align:center;padding:4px 6px;background:#fef3c7;border-bottom:1px solid #e5e7eb;'>未完成</th>";
-        dates.forEach(function(d){
-            var isToday=d===today.toISOString().split("T")[0];
-            var hdr=isToday?"<b>今天</b>":d.substring(5);
-            var bg=isToday?"#dcfce7":"#f9fafb";
-            html+="<th style='text-align:center;padding:4px 6px;background:"+bg+";border-bottom:1px solid #e5e7eb;font-size:10px'>"+hdr+"</th>";
-        });
-        html+="</tr></thead><tbody>";
-        var prodNames=Object.keys(products).sort();
-        prodNames.forEach(function(name){
-            var p=products[name];
-            var remain=woRemain[name]||woRemain[p.code]||0;
-            html+="<tr>";
-            html+="<td style='text-align:left;padding:4px 6px;border-bottom:1px solid #f3f4f6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;position:sticky;left:0;background:#fff;z-index:1' title='"+name+"'><span>"+name+"</span> <button onclick='showOrderListForProduct(this.dataset.pn)' data-pn='"+name+"' style='font-size:10px;padding:1px 5px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;color:#2563eb' title='查看工单'>➤</button></td>";
-            html+="<td style='text-align:center;padding:4px 6px;border-bottom:1px solid #f3f4f6;color:"+(remain>0?"#dc2626":"#059669")+";font-weight:600'>"+(remain>0?remain:"-")+"</td>";
-            dates.forEach(function(d){
-                var val=p.dates[d]||0;
-                var bg="transparent";
-                if(val>0){
-                    var dt=new Date(d);var todayDt=new Date(today.toISOString().split("T")[0]);
-                    var diff=Math.round((dt-todayDt)/86400000);
-                    bg=diff<0?"#fee2e2":diff===0?"#dcfce7":"#dbeafe";
-                }
-                html+="<td style='text-align:center;padding:4px 6px;border-bottom:1px solid #f3f4f6;background:"+bg+";font-weight:"+(val>0?"600":"400")+"'>"+(val>0?val:"-")+"</td>";
-            });
-            html+="</tr>";
-        });
-        html+="</tbody></table>";
-        container.innerHTML=html;
+        _warningData.reqs=d.requirements||[];
+        _warningData.woRemain=d.work_order_remaining||{};
+        _warningSort={key:'name',dir:'asc'};
+        renderWarnings();
     }).catch(function(e){console.error("loadWarnings error:",e);});
+}
+
+function sortWarning(key){
+    if(_warningSort.key===key){_warningSort.dir=_warningSort.dir==='asc'?'desc':'asc';}
+    else{_warningSort={key:key,dir:'asc'};}
+    renderWarnings();
+}
+
+function renderWarnings(){
+    var container=document.getElementById("warning-content");
+    var reqs=_warningData.reqs;
+    var woRemain=_warningData.woRemain;
+    if(!reqs.length){container.innerHTML="<div style='padding:20px;text-align:center;color:#9ca3af'>暂无发布需求</div>";return;}
+    var today=new Date();
+    var dates=[];
+    for(var i=-2;i<=3;i++){
+        var dt=new Date(today);dt.setDate(dt.getDate()+i);
+        dates.push(dt.toISOString().split("T")[0]);
+    }
+    var products={};
+    reqs.forEach(function(r){
+        var name=r.product_name||r.product_code;
+        if(!products[name])products[name]={dates:{},code:r.product_code};
+        var key=r.required_date;
+        if(!products[name].dates[key])products[name].dates[key]=0;
+        products[name].dates[key]+=r.required_quantity;
+    });
+    var html="<table style='width:100%;border-collapse:collapse;font-size:11px'>";
+    html+="<thead style='position:sticky;top:0;z-index:3'><tr>";
+    var nameSortIcon=_warningSort.key==='name'?(_warningSort.dir==='asc'?' \u25b2':' \u25bc'):'';
+    html+="<th style='text-align:left;padding:4px 6px;background:#f9fafb;border-bottom:1px solid #e5e7eb;position:sticky;left:0;z-index:2;cursor:pointer;user-select:none' onclick='sortWarning("name")'>产品名称"+nameSortIcon+"</th>";
+    var remainSortIcon=_warningSort.key==='remain'?(_warningSort.dir==='asc'?' \u25b2':' \u25bc'):'';
+    html+="<th style='text-align:center;padding:4px 6px;background:#fef3c7;border-bottom:1px solid #e5e7eb;cursor:pointer;user-select:none' onclick='sortWarning("remain")'>未完成"+remainSortIcon+"</th>";
+    dates.forEach(function(d){
+        var isToday=d===today.toISOString().split("T")[0];
+        var hdr=isToday?"<b>今天</b>":d.substring(5);
+        var bg=isToday?"#dcfce7":"#f9fafb";
+        html+="<th style='text-align:center;padding:4px 6px;background:"+bg+";border-bottom:1px solid #e5e7eb;font-size:10px'>"+hdr+"</th>";
+    });
+    html+="</tr></thead><tbody>";
+    var prodEntries=Object.keys(products).map(function(name){
+        var p=products[name];
+        var remain=woRemain[name]||woRemain[p.code]||0;
+        return {name:name,remain:remain};
+    });
+    if(_warningSort.key==='name'){
+        prodEntries.sort(function(a,b){return _warningSort.dir==='asc'?a.name.localeCompare(b.name):b.name.localeCompare(a.name);});
+    }else if(_warningSort.key==='remain'){
+        prodEntries.sort(function(a,b){return _warningSort.dir==='asc'?a.remain-b.remain:b.remain-a.remain;});
+    }
+    prodEntries.forEach(function(entry){
+        var name=entry.name;
+        var p=products[name];
+        var remain=entry.remain;
+        html+="<tr>";
+        html+="<td style='text-align:left;padding:4px 6px;border-bottom:1px solid #f3f4f6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;position:sticky;left:0;background:#fff;z-index:1' title='"+name+"'><span>"+name+"</span> <button onclick='showOrderListForProduct(this.dataset.pn)' data-pn='"+name+"' style='font-size:10px;padding:1px 5px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;color:#2563eb' title='查看工单'>\u27a4</button></td>";
+        html+="<td style='text-align:center;padding:4px 6px;border-bottom:1px solid #f3f4f6;color:"+(remain>0?"#dc2626":"#059669")+";font-weight:600'>"+(remain>0?remain:"-")+"</td>";
+        dates.forEach(function(d){
+            var val=p.dates[d]||0;
+            var bg="transparent";
+            if(val>0){
+                var dt=new Date(d);var todayDt=new Date(today.toISOString().split("T")[0]);
+                var diff=Math.round((dt-todayDt)/86400000);
+                bg=diff<0?"#fee2e2":diff===0?"#dcfce7":"#dbeafe";
+            }
+            html+="<td style='text-align:center;padding:4px 6px;border-bottom:1px solid #f3f4f6;background:"+bg+";font-weight:"+(val>0?"600":"400")+"'>"+(val>0?val:"-")+"</td>";
+        });
+        html+="</tr>";
+    });
+    html+="</tbody></table>";
+    container.innerHTML=html;
+}
 }
 
 function loadData(){
