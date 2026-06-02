@@ -1,89 +1,380 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <div class="page-header">
-<h1>📈 完成率统计</h1>
-</div>
-<div class="toolbar">
-<label>日期范围：</label>
-<input type="date" id="date-from" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
-<span style="color:#9ca3af">至</span>
-<input type="date" id="date-to" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
-<button class="btn btn-primary" onclick="loadData()" style="margin-left:8px">查询</button>
-</div>
-<div class="tabs" style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;padding:0 16px">
-<button class="tab-btn active" onclick="switchTab(1,this)">前段</button>
-<button class="tab-btn" onclick="switchTab(2,this)">焊接</button>
-<button class="tab-btn" onclick="switchTab(3,this)">扣压</button>
-<button class="tab-btn" onclick="switchTab(4,this)">装配包装</button>
-</div>
-<div class="card" style="border-top:none;border-radius:0 0 8px 8px">
-<div class="card-body">
-<div class="table-wrap">
-<table>
-<thead><tr><th>日期</th><th>计划量</th><th>完成量</th><th>完成率</th><th>生产效率</th></tr></thead>
-<tbody id="stats-tbody"></tbody>
-</table>
-</div>
-</div>
+<h1>📊 班组统计</h1>
 </div>
 
+<!-- Tabs -->
+<div class="tabs" style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;padding:0 16px;margin-bottom:16px">
+<button class="tab-btn active" onclick="switchTab('daily',this)">日视图</button>
+<button class="tab-btn" onclick="switchTab('weekly',this)">周视图</button>
+<button class="tab-btn" onclick="switchTab('monthly',this)">月视图</button>
+</div>
+
+<!-- Smart Date Picker -->
+<div class="toolbar" id="date-picker-area" style="margin-bottom:16px"></div>
+
+<!-- KPI Cards -->
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px" id="kpi-cards"></div>
+
+<!-- Charts -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+<div class="card"><div class="card-body">
+<h3 style="font-size:14px;color:#374151;margin:0 0 8px 0">班组指标对比</h3>
+<div style="position:relative;height:320px"><canvas id="barChart"></canvas></div>
+</div></div>
+<div class="card"><div class="card-body">
+<h3 style="font-size:14px;color:#374151;margin:0 0 8px 0">时间趋势</h3>
+<div style="position:relative;height:320px"><canvas id="lineChart"></canvas></div>
+</div></div>
+</div>
+
+<!-- Indicator Switcher -->
+<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap" id="indicator-btns"></div>
+
+<!-- Detail Table -->
+<div class="card"><div class="card-body">
+<div class="table-wrap">
+<table id="detail-table">
+<thead id="detail-thead"></thead>
+<tbody id="detail-tbody"></tbody>
+</table>
+</div>
+</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
 .tab-btn{padding:10px 20px;border:none;background:none;font-size:14px;font-weight:500;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s}
 .tab-btn:hover{color:#3b82f6}
 .tab-btn.active{color:#3b82f6;border-bottom-color:#3b82f6}
+.kpi-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px 20px;display:flex;flex-direction:column;gap:4px;cursor:pointer;transition:all .2s}
+.kpi-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.kpi-card.highlighted{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.2)}
+.kpi-icon{font-size:20px;margin-bottom:2px}
+.kpi-label{font-size:12px;color:#6b7280}
+.kpi-value{font-size:22px;font-weight:700}
+.kpi-trend{font-size:11px;display:flex;align-items:center;gap:3px}
+.ind-btn{padding:6px 14px;border:1px solid #d1d5db;border-radius:6px;background:#fff;font-size:13px;color:#374151;cursor:pointer;transition:all .15s}
+.ind-btn:hover{border-color:#3b82f6;color:#3b82f6}
+.ind-btn.active{background:#3b82f6;color:#fff;border-color:#3b82f6}
+.team-color-1{color:#3b82f6}.team-color-2{color:#10b981}.team-color-3{color:#f59e0b}.team-color-4{color:#ef4444}
+.team-bg-1{background:#3b82f6}.team-bg-2{background:#10b981}.team-bg-3{background:#f59e0b}.team-bg-4{background:#ef4444}
 </style>
 {% endblock %}
+
 {% block scripts %}
 <script>
-var currentTeam=1;
-var statsData={};
+var TEAM_COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444'];
+var TEAM_NAMES = ['前段','焊接','扣压','装配包装'];
+var INDICATORS = [
+    {key:'completion_rate', label:'完成率', icon:'🎯', unit:'%'},
+    {key:'production_efficiency', label:'生产效率', icon:'⚡', unit:'%'},
+    {key:'good_rate', label:'良品率', icon:'✅', unit:'%'},
+    {key:'overtime_ratio', label:'加班比例', icon:'🌙', unit:'%'},
+    {key:'utilization_rate', label:'工时利用', icon:'⏱', unit:'%'}
+];
+var currentMode = 'daily';
+var currentIndicator = 'completion_rate';
+var highlightTeam = -1;
+var cachedData = null;
+var barChart = null;
+var lineChart = null;
 
-// Set default dates
-(function(){
-    var today=new Date();
-    var from=new Date(today);from.setDate(from.getDate()-6);
-    document.getElementById("date-to").value=today.toISOString().split('T')[0];
-    document.getElementById("date-from").value=from.toISOString().split('T')[0];
-    loadData();
-})();
-
-function switchTab(teamId, btn){
-    currentTeam=teamId;
+// ===== Tab Switching =====
+function switchTab(mode, btn) {
+    currentMode = mode;
     document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active');});
     btn.classList.add('active');
+    buildDatePicker();
+    loadData();
+}
+
+// ===== Smart Date Picker =====
+function buildDatePicker() {
+    var area = document.getElementById('date-picker-area');
+    var today = new Date();
+    if (currentMode === 'daily') {
+        var from = new Date(today); from.setDate(from.getDate() - 6);
+        area.innerHTML =
+            '<label style="font-size:13px;color:#6b7280">日期范围：</label>' +
+            '<input type="date" id="date-from" value="' + fmtDate(from) + '" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">' +
+            '<span style="color:#9ca3af;margin:0 4px">至</span>' +
+            '<input type="date" id="date-to" value="' + fmtDate(today) + '" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">' +
+            '<button class="btn btn-primary" onclick="loadData()" style="margin-left:8px">查询</button>';
+    } else if (currentMode === 'weekly') {
+        var day = today.getDay(); if (day === 0) day = 7;
+        var mon = new Date(today); mon.setDate(today.getDate() - day + 1);
+        area.innerHTML =
+            '<label style="font-size:13px;color:#6b7280">选择周：</label>' +
+            '<input type="date" id="week-picker" value="' + fmtDate(mon) + '" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">' +
+            '<span id="week-range" style="font-size:13px;color:#6b7280;margin-left:8px"></span>' +
+            '<button class="btn btn-primary" onclick="loadData()" style="margin-left:8px">查询</button>';
+        updateWeekRange();
+    } else {
+        var ym = today.getFullYear() + '-' + ('0'+(today.getMonth()+1)).slice(-2);
+        area.innerHTML =
+            '<label style="font-size:13px;color:#6b7280">选择月份：</label>' +
+            '<input type="month" id="month-picker" value="' + ym + '" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">' +
+            '<button class="btn btn-primary" onclick="loadData()" style="margin-left:8px">查询</button>';
+    }
+    buildIndicatorBtns();
+}
+
+function updateWeekRange() {
+    var el = document.getElementById('week-range');
+    var picker = document.getElementById('week-picker');
+    if (!el || !picker || !picker.value) return;
+    var d = new Date(picker.value + 'T00:00:00');
+    var day = d.getDay(); if (day === 0) day = 7;
+    var mon = new Date(d); mon.setDate(d.getDate() - day + 1);
+    var sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    el.textContent = fmtDate(mon) + ' ~ ' + fmtDate(sun);
+}
+
+// ===== Indicator Buttons =====
+function buildIndicatorBtns() {
+    var container = document.getElementById('indicator-btns');
+    var html = '<span style="font-size:13px;color:#6b7280;line-height:30px;margin-right:4px">对比指标：</span>';
+    INDICATORS.forEach(function(ind) {
+        var cls = ind.key === currentIndicator ? 'ind-btn active' : 'ind-btn';
+        html += '<button class="' + cls + '" onclick="switchIndicator(\'' + ind.key + '\',this)">' + ind.icon + ' ' + ind.label + '</button>';
+    });
+    container.innerHTML = html;
+}
+
+function switchIndicator(key, btn) {
+    currentIndicator = key;
+    document.querySelectorAll('.ind-btn').forEach(function(b){b.classList.remove('active');});
+    btn.classList.add('active');
+    renderCharts();
     renderTable();
 }
 
-function loadData(){
-    var df=document.getElementById("date-from").value;
-    var dt=document.getElementById("date-to").value;
-    var url="/api/statistics?date_from="+df+"&date_to="+dt;
-    fetch(url).then(function(r){return r.json()}).then(function(d){
-        statsData=d;
-        renderTable();
+// ===== Data Loading =====
+function loadData() {
+    var url = '';
+    if (currentMode === 'daily') {
+        var df = document.getElementById('date-from').value;
+        var dt = document.getElementById('date-to').value;
+        url = '/api/stats/daily?date_from=' + df + '&date_to=' + dt;
+    } else if (currentMode === 'weekly') {
+        var ws = document.getElementById('week-picker').value;
+        url = '/api/stats/weekly?week_start=' + ws;
+    } else {
+        var mo = document.getElementById('month-picker').value;
+        url = '/api/stats/monthly?month=' + mo;
+    }
+    document.getElementById('detail-tbody').innerHTML = '<tr><td colspan="10" style="text-align:center;color:#9ca3af;padding:40px">加载中...</td></tr>';
+    fetch(url).then(function(r){return r.json();}).then(function(d){
+        cachedData = d;
+        highlightTeam = -1;
+        renderAll();
+    }).catch(function(e){
+        document.getElementById('detail-tbody').innerHTML = '<tr><td colspan="10" style="text-align:center;color:#dc2626;padding:40px">加载失败</td></tr>';
     });
 }
 
-function renderTable(){
-    var tb=document.getElementById("stats-tbody");tb.innerHTML="";
-    var team=statsData[currentTeam];
-    if(!team||!team.days||!team.days.length){
-        tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:40px">暂无数据</td></tr>';
-        return;
-    }
-    team.days.forEach(function(d){
-        var tr=document.createElement("tr");
-        var crClass=d.completion_rate>=100?'color:#059669':d.completion_rate>=80?'color:#d97706':'color:#dc2626';
-        var effClass=d.efficiency>=100?'color:#059669':d.efficiency>=80?'color:#d97706':'color:#dc2626';
-        var crText=d.planned_qty>0?d.completion_rate+'%':'<span style="color:#9ca3af">-</span>';
-        var effText=d.efficiency>0?'<span style="'+effClass+'">'+d.efficiency+'%</span>':'<span style="color:#9ca3af">-</span>';
-        tr.innerHTML='<td>'+d.date+'</td>'
-            +'<td>'+(d.planned_qty||0)+'</td>'
-            +'<td>'+(d.completed_qty||0)+'</td>'
-            +'<td><span style="'+crClass+';font-weight:600">'+crText+'</span></td>'
-            +'<td>'+effText+'</td>';
-        tb.appendChild(tr);
+function renderAll() {
+    if (!cachedData) return;
+    renderKPI();
+    renderCharts();
+    renderTable();
+}
+
+// ===== KPI Cards =====
+function renderKPI() {
+    var container = document.getElementById('kpi-cards');
+    var teams = cachedData.teams || [];
+    if (!teams.length) { container.innerHTML = ''; return; }
+
+    // Calculate company average for each indicator
+    var avg = {};
+    INDICATORS.forEach(function(ind) {
+        var vals = teams.map(function(t){ return t.summary[ind.key] || 0; }).filter(function(v){return v > 0;});
+        avg[ind.key] = vals.length ? Math.round(vals.reduce(function(a,b){return a+b;}, 0) / vals.length * 10) / 10 : 0;
+    });
+
+    var html = '';
+    INDICATORS.forEach(function(ind) {
+        var val = avg[ind.key];
+        var color = val >= 90 ? '#059669' : val >= 80 ? '#d97706' : '#dc2626';
+        html += '<div class="kpi-card">' +
+            '<div class="kpi-icon">' + ind.icon + '</div>' +
+            '<div class="kpi-label">' + ind.label + '（全公司均值）</div>' +
+            '<div class="kpi-value" style="color:' + color + '">' + (val > 0 ? val + '%' : '—') + '</div>' +
+            '</div>';
+    });
+    container.innerHTML = html;
+}
+
+// ===== Charts =====
+function renderCharts() {
+    if (!cachedData) return;
+    var teams = cachedData.teams || [];
+    var ind = INDICATORS.find(function(i){return i.key === currentIndicator;});
+    var labels = teams.map(function(t){return t.name;});
+    var values = teams.map(function(t){return t.summary[currentIndicator] || 0;});
+
+    // Bar Chart
+    var barCtx = document.getElementById('barChart').getContext('2d');
+    if (barChart) barChart.destroy();
+    barChart = new Chart(barCtx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: ind.label,
+                data: values,
+                backgroundColor: TEAM_COLORS.map(function(c){return c + 'cc';}),
+                borderColor: TEAM_COLORS,
+                borderWidth: 1.5,
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {legend: {display: false}},
+            scales: {
+                y: {beginAtZero: true, max: 100, ticks: {callback: function(v){return v + '%';}}},
+                x: {grid: {display: false}}
+            }
+        }
+    });
+
+    // Line Chart - time trend
+    var timeKey = currentMode === 'daily' ? 'days' : currentMode === 'weekly' ? 'weeks' : 'months';
+    var timeLabelKey = currentMode === 'daily' ? 'date' : currentMode === 'weekly' ? 'week_start' : 'month';
+    var datasets = teams.map(function(t, idx) {
+        var points = (t[timeKey] || []).map(function(p){return p[currentIndicator] || 0;});
+        var timeLabels = (t[timeKey] || []).map(function(p){return p[timeLabelKey] || '';});
+        return {
+            label: t.name,
+            data: points,
+            borderColor: TEAM_COLORS[idx],
+            backgroundColor: TEAM_COLORS[idx] + '20',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: TEAM_COLORS[idx],
+            tension: 0.3,
+            fill: false
+        };
+    });
+    // Use first team's time labels for x-axis
+    var timeLabels = teams.length > 0 ? (teams[0][timeKey] || []).map(function(p){return p[timeLabelKey] || '';}) : [];
+
+    var lineCtx = document.getElementById('lineChart').getContext('2d');
+    if (lineChart) lineChart.destroy();
+    lineChart = new Chart(lineCtx, {
+        type: 'line',
+        data: { labels: timeLabels, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {legend: {position: 'bottom', labels: {usePointStyle: true, pointStyle: 'circle', padding: 12}}},
+            scales: {
+                y: {beginAtZero: true, max: 100, ticks: {callback: function(v){return v + '%';}}},
+                x: {grid: {display: false}, ticks: {maxRotation: 45, font: {size: 10}}}
+            },
+            interaction: {intersect: false, mode: 'index'}
+        }
     });
 }
+
+// ===== Detail Table =====
+function renderTable() {
+    if (!cachedData) return;
+    var teams = cachedData.teams || [];
+    var ind = INDICATORS.find(function(i){return i.key === currentIndicator;});
+
+    // Build extra columns based on mode
+    var extraCols = [];
+    if (currentMode === 'daily') {
+        extraCols = [{key:'planned_qty', label:'计划量'}, {key:'completed_qty', label:'完成量'}];
+    } else if (currentMode === 'weekly') {
+        extraCols = [{key:'planned_qty', label:'计划量'}, {key:'completed_qty', label:'完成量'}];
+    } else {
+        extraCols = [{key:'planned_qty', label:'计划量'}, {key:'completed_qty', label:'完成量'}];
+    }
+
+    // Thead
+    var thead = document.getElementById('detail-thead');
+    var headHtml = '<tr><th style="min-width:90px">班组</th>';
+    INDICATORS.forEach(function(i) {
+        var style = i.key === currentIndicator ? 'background:#eff6ff;color:#3b82f6;font-weight:700' : '';
+        headHtml += '<th style="min-width:80px;' + style + '">' + i.icon + ' ' + i.label + '</th>';
+    });
+    extraCols.forEach(function(c) {
+        headHtml += '<th style="min-width:80px">' + c.label + '</th>';
+    });
+    headHtml += '</tr>';
+    thead.innerHTML = headHtml;
+
+    // Tbody
+    var tbody = document.getElementById('detail-tbody');
+    var bodyHtml = '';
+    teams.forEach(function(t, idx) {
+        var hl = highlightTeam === idx ? ' style="background:#eff6ff"' : '';
+        var nameCls = 'team-color-' + (idx + 1);
+        bodyHtml += '<tr' + hl + ' onclick="toggleHighlight(' + idx + ')" style="cursor:pointer' + (hl ? ';background:#eff6ff' : '') + '">';
+        bodyHtml += '<td style="font-weight:600" class="' + nameCls + '">' + t.name + '</td>';
+        INDICATORS.forEach(function(i) {
+            var val = t.summary[i.key] || 0;
+            var color = val >= 90 ? '#059669' : val >= 80 ? '#d97706' : '#dc2626';
+            var text = val > 0 ? val + '%' : '—';
+            var bold = i.key === currentIndicator ? 'font-weight:700' : '';
+            bodyHtml += '<td style="color:' + color + ';' + bold + '">' + text + '</td>';
+        });
+        extraCols.forEach(function(c) {
+            bodyHtml += '<td>' + (t.summary[c.key] || 0) + '</td>';
+        });
+        bodyHtml += '</tr>';
+    });
+
+    // Summary row
+    if (teams.length > 0) {
+        bodyHtml += '<tr style="background:#f9fafb;font-weight:600">';
+        bodyHtml += '<td>全公司均值</td>';
+        INDICATORS.forEach(function(i) {
+            var vals = teams.map(function(t){return t.summary[i.key] || 0;}).filter(function(v){return v > 0;});
+            var avg = vals.length ? Math.round(vals.reduce(function(a,b){return a+b;},0) / vals.length * 10) / 10 : 0;
+            var color = avg >= 90 ? '#059669' : avg >= 80 ? '#d97706' : '#dc2626';
+            bodyHtml += '<td style="color:' + color + '">' + (avg > 0 ? avg + '%' : '—') + '</td>';
+        });
+        extraCols.forEach(function(c) {
+            var total = teams.reduce(function(s,t){return s + (t.summary[c.key] || 0);}, 0);
+            bodyHtml += '<td>' + total + '</td>';
+        });
+        bodyHtml += '</tr>';
+    }
+    tbody.innerHTML = bodyHtml;
+}
+
+function toggleHighlight(idx) {
+    highlightTeam = highlightTeam === idx ? -1 : idx;
+    renderTable();
+    // Highlight bar chart
+    if (barChart) {
+        var meta = barChart.getDatasetMeta(0);
+        meta.data.forEach(function(bar, i) {
+            bar.options.backgroundColor = highlightTeam === -1 || highlightTeam === i ? TEAM_COLORS[i] + 'cc' : TEAM_COLORS[i] + '30';
+        });
+        barChart.update();
+    }
+}
+
+// ===== Helpers =====
+function fmtDate(d) {
+    var y = d.getFullYear();
+    var m = ('0' + (d.getMonth()+1)).slice(-2);
+    var dd = ('0' + d.getDate()).slice(-2);
+    return y + '-' + m + '-' + dd;
+}
+
+// Init
+(function(){
+    buildDatePicker();
+    loadData();
+})();
 </script>
 {% endblock %}

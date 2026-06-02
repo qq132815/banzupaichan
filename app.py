@@ -2521,6 +2521,354 @@ def api_statistics():
 
     return jsonify(result)
 
+
+
+# ========== Team Statistics APIs ==========
+
+def _get_team_process_ids(team_id):
+    """Get list of process_names that belong to a team via LIKE matching."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT name FROM teams WHERE id=?", (team_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return set()
+    team_name = row[0]
+    c.execute("SELECT process_name FROM processes WHERE team_name LIKE ?", ('%' + team_name + '%',))
+    result = set(r[0] for r in c.fetchall())
+    conn.close()
+    return result
+
+def _get_all_team_process_map():
+    """Return {team_id: set of process_names}."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, name FROM teams ORDER BY id")
+    teams = c.fetchall()
+    result = {}
+    for tid, tname in teams:
+        c.execute("SELECT process_name FROM processes WHERE team_name LIKE ?", ('%' + tname + '%',))
+        result[tid] = set(r[0] for r in c.fetchall())
+    conn.close()
+    return result
+
+def _build_attendance_by_team_date(date_from, date_to):
+    """Return {(team_id, date): attendance info}"""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""SELECT p.team_id, a.work_date,
+        COUNT(DISTINCT a.user_id) as total_users,
+        SUM(CASE WHEN a.is_overtime = 1 THEN 1 ELSE 0 END) as ot_users,
+        SUM(a.work_hours) as total_hours,
+        SUM(a.normal_hours) as normal_hours,
+        SUM(a.overtime_hours) as ot_hours
+        FROM attendance a
+        INNER JOIN personnel p ON a.user_id = p.user_id
+        WHERE a.work_date BETWEEN ? AND ?
+        GROUP BY p.team_id, a.work_date""", (date_from, date_to))
+    result = {}
+    for r in c.fetchall():
+        result[(r[0], r[1])] = {
+            'total_users': r[2],
+            'ot_users': r[3],
+            'total_hours': r[4] or 0,
+            'normal_hours': r[5] or 0,
+            'ot_hours': r[6] or 0,
+        }
+    conn.close()
+    return result
+
+def _build_schedules_by_team_date(date_from, date_to):
+    """Return {(team_id, date): planned_qty} from production_requirements."""
+    conn = get_connection()
+    c = conn.cursor()
+    # Build team name -> id map
+    c.execute("SELECT id, name FROM teams")
+    team_map = {r[1]: r[0] for r in c.fetchall()}
+    # Use production_requirements as planned qty source
+    c.execute("""SELECT team_name, required_date, SUM(required_quantity)
+        FROM production_requirements
+        WHERE required_date BETWEEN ? AND ?
+        GROUP BY team_name, required_date""",
+              (date_from, date_to))
+    result = {}
+    for r in c.fetchall():
+        tn, dt, qty = r[0], r[1], r[2] or 0
+        if not tn or not dt:
+            continue
+        # Match team by exact name or inclusion
+        matched_tid = None
+        for tname, tid in team_map.items():
+            if tn == tname or tname in tn:
+                matched_tid = tid
+                break
+        if matched_tid is not None:
+            key = (matched_tid, dt)
+            result[key] = result.get(key, 0) + qty
+    conn.close()
+    return result
+
+def _build_reports_by_proc_date(date_from, date_to):
+    """Return {(process_name, date): {qty, good_qty, hours, efficiency}}"""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""SELECT process_name, SUBSTR(create_time,1,10) as dt,
+        SUM(report_qty), SUM(good_qty), SUM(report_hours),
+        AVG(CASE WHEN efficiency > 0 THEN efficiency END)
+        FROM work_reports
+        WHERE create_time BETWEEN ? AND ?
+        GROUP BY process_name, dt""",
+              (date_from + ' 00:00:00', date_to + ' 23:59:59'))
+    result = {}
+    for r in c.fetchall():
+        result[(r[0], r[1])] = {
+            'qty': r[2] or 0,
+            'good_qty': r[3] or 0,
+            'hours': r[4] or 0,
+            'efficiency': r[5] or 0,
+        }
+    conn.close()
+    return result
+
+def _compute_team_day_stats(team_proc_set, sched_data, report_data, attend_data, team_id, date_str):
+    """Compute all metrics for one team on one day."""
+    planned = sched_data.get((team_id, date_str), 0)
+    completed = 0
+    good_qty = 0
+    total_hours = 0
+    efficiencies = []
+    for (pn, dt), rd in report_data.items():
+        if dt == date_str and pn in team_proc_set:
+            completed += rd['qty']
+            good_qty += rd['good_qty']
+            total_hours += rd['hours']
+            if rd['efficiency'] > 0:
+                efficiencies.append(rd['efficiency'])
+
+    completion_rate = round(completed / planned * 100, 1) if planned > 0 else 0
+    prod_eff = round(sum(efficiencies) / len(efficiencies), 1) if efficiencies else 0
+    good_rate = round(good_qty / completed * 100, 1) if completed > 0 else 0
+
+    att = attend_data.get((team_id, date_str), {})
+    total_users = att.get('total_users', 0)
+    ot_users = att.get('ot_users', 0)
+    ot_ratio = round(ot_users / total_users * 100, 1) if total_users > 0 else 0
+    att_hours = att.get('total_hours', 0)
+    util_rate = round(total_hours / att_hours * 100, 1) if att_hours > 0 else 0
+
+    return {
+        'planned_qty': planned,
+        'completed_qty': completed,
+        'completion_rate': completion_rate,
+        'production_efficiency': prod_eff,
+        'good_rate': good_rate,
+        'overtime_count': ot_users,
+        'overtime_ratio': ot_ratio,
+        'total_attendance_hours': round(att_hours, 1),
+        'total_production_hours': round(total_hours, 1),
+        'utilization_rate': util_rate,
+    }
+
+def _compute_team_summary(days_data):
+    """Compute weighted summary from a list of day stats."""
+    total_planned = sum(d['planned_qty'] for d in days_data)
+    total_completed = sum(d['completed_qty'] for d in days_data)
+    total_good = 0
+    total_prod_hours = 0
+    total_att_hours = 0
+    eff_vals = []
+    att_day_count = 0
+    ot_day_count = 0
+
+    for d in days_data:
+        total_prod_hours += d['total_production_hours']
+        total_att_hours += d['total_attendance_hours']
+        if d['total_attendance_hours'] > 0:
+            att_day_count += 1
+        if d['overtime_count'] > 0:
+            ot_day_count += 1
+        if d['completed_qty'] > 0 and d['good_rate'] > 0:
+            total_good += int(d['good_rate'] / 100 * d['completed_qty'])
+        if d['production_efficiency'] > 0:
+            eff_vals.append(d['production_efficiency'])
+
+    return {
+        'completion_rate': round(total_completed / total_planned * 100, 1) if total_planned > 0 else 0,
+        'production_efficiency': round(sum(eff_vals) / len(eff_vals), 1) if eff_vals else 0,
+        'good_rate': round(total_good / total_completed * 100, 1) if total_completed > 0 else 0,
+        'overtime_ratio': round(ot_day_count / att_day_count * 100, 1) if att_day_count > 0 else 0,
+        'utilization_rate': round(total_prod_hours / total_att_hours * 100, 1) if total_att_hours > 0 else 0,
+        'planned_qty': total_planned,
+        'completed_qty': total_completed,
+    }
+
+
+@app.route('/api/stats/daily')
+@login_required
+def api_stats_daily():
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+    if not date_from or not date_to:
+        return jsonify({'error': 'date_from and date_to required'}), 400
+
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, name FROM teams ORDER BY id")
+    teams_list = [{'id': r[0], 'name': r[1]} for r in c.fetchall()]
+    member_counts = {}
+    c.execute("SELECT team_id, COUNT(*) FROM personnel WHERE is_active=1 GROUP BY team_id")
+    for r in c.fetchall():
+        member_counts[r[0]] = r[1]
+    conn.close()
+
+    team_proc_map = _get_all_team_process_map()
+    sched_data = _build_schedules_by_team_date(date_from, date_to)
+    report_data = _build_reports_by_proc_date(date_from, date_to)
+    attend_data = _build_attendance_by_team_date(date_from, date_to)
+
+    result_teams = []
+    for team in teams_list:
+        tid = team['id']
+        team_procs = team_proc_map.get(tid, set())
+        days = []
+        current = datetime.strptime(date_from, '%Y-%m-%d').date()
+        end = datetime.strptime(date_to, '%Y-%m-%d').date()
+        while current <= end:
+            ds = current.strftime('%Y-%m-%d')
+            day_stats = _compute_team_day_stats(team_procs, sched_data, report_data, attend_data, tid, ds)
+            day_stats['date'] = ds
+            days.append(day_stats)
+            current += timedelta(days=1)
+        summary = _compute_team_summary(days)
+        result_teams.append({
+            'id': tid, 'name': team['name'],
+            'member_count': member_counts.get(tid, 0),
+            'summary': summary, 'days': days,
+        })
+    return jsonify({'mode': 'daily', 'date_from': date_from, 'date_to': date_to, 'teams': result_teams})
+
+
+@app.route('/api/stats/weekly')
+@login_required
+def api_stats_weekly():
+    week_start = request.args.get('week_start', '')
+    if not week_start:
+        return jsonify({'error': 'week_start required'}), 400
+    monday = datetime.strptime(week_start, '%Y-%m-%d').date()
+    weeks = []
+    for i in range(3, -1, -1):
+        ws = monday - timedelta(weeks=i)
+        we = ws + timedelta(days=6)
+        weeks.append((ws.strftime('%Y-%m-%d'), we.strftime('%Y-%m-%d')))
+    date_from = weeks[0][0]
+    date_to = weeks[-1][1]
+
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, name FROM teams ORDER BY id")
+    teams_list = [{'id': r[0], 'name': r[1]} for r in c.fetchall()]
+    member_counts = {}
+    c.execute("SELECT team_id, COUNT(*) FROM personnel WHERE is_active=1 GROUP BY team_id")
+    for r in c.fetchall():
+        member_counts[r[0]] = r[1]
+    conn.close()
+
+    team_proc_map = _get_all_team_process_map()
+    sched_data = _build_schedules_by_team_date(date_from, date_to)
+    report_data = _build_reports_by_proc_date(date_from, date_to)
+    attend_data = _build_attendance_by_team_date(date_from, date_to)
+
+    result_teams = []
+    for team in teams_list:
+        tid = team['id']
+        team_procs = team_proc_map.get(tid, set())
+        weeks_data = []
+        for ws, we in weeks:
+            week_days = []
+            current = datetime.strptime(ws, '%Y-%m-%d').date()
+            end = datetime.strptime(we, '%Y-%m-%d').date()
+            while current <= end:
+                ds = current.strftime('%Y-%m-%d')
+                day_stats = _compute_team_day_stats(team_procs, sched_data, report_data, attend_data, tid, ds)
+                week_days.append(day_stats)
+                current += timedelta(days=1)
+            ws_summary = _compute_team_summary(week_days)
+            ws_summary['week_start'] = ws
+            ws_summary['week_end'] = we
+            weeks_data.append(ws_summary)
+        overall = _compute_team_summary([{'planned_qty': w['planned_qty'], 'completed_qty': w['completed_qty'],
+            'completion_rate': w['completion_rate'], 'production_efficiency': w['production_efficiency'],
+            'good_rate': w['good_rate'], 'overtime_ratio': w['overtime_ratio'],
+            'utilization_rate': w['utilization_rate'], 'total_production_hours': 0,
+            'total_attendance_hours': 0, 'overtime_count': 0} for w in weeks_data])
+        overall['planned_qty'] = sum(w['planned_qty'] for w in weeks_data)
+        overall['completed_qty'] = sum(w['completed_qty'] for w in weeks_data)
+        if overall['planned_qty'] > 0:
+            overall['completion_rate'] = round(overall['completed_qty'] / overall['planned_qty'] * 100, 1)
+        result_teams.append({
+            'id': tid, 'name': team['name'],
+            'member_count': member_counts.get(tid, 0),
+            'summary': overall, 'weeks': weeks_data,
+        })
+    return jsonify({'mode': 'weekly', 'week_start': week_start, 'teams': result_teams})
+
+
+@app.route('/api/stats/monthly')
+@login_required
+def api_stats_monthly():
+    month = request.args.get('month', '')
+    if not month:
+        return jsonify({'error': 'month required (YYYY-MM)'}), 400
+    y, m_val = map(int, month.split('-'))
+    import calendar
+    last_day = calendar.monthrange(y, m_val)[1]
+    date_from = month + '-01'
+    date_to = '%s-%02d' % (month, last_day)
+
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, name FROM teams ORDER BY id")
+    teams_list = [{'id': r[0], 'name': r[1]} for r in c.fetchall()]
+    member_counts = {}
+    c.execute("SELECT team_id, COUNT(*) FROM personnel WHERE is_active=1 GROUP BY team_id")
+    for r in c.fetchall():
+        member_counts[r[0]] = r[1]
+    conn.close()
+
+    team_proc_map = _get_all_team_process_map()
+    sched_data = _build_schedules_by_team_date(date_from, date_to)
+    report_data = _build_reports_by_proc_date(date_from, date_to)
+    attend_data = _build_attendance_by_team_date(date_from, date_to)
+
+    result_teams = []
+    for team in teams_list:
+        tid = team['id']
+        team_procs = team_proc_map.get(tid, set())
+        days = []
+        current = datetime.strptime(date_from, '%Y-%m-%d').date()
+        end = datetime.strptime(date_to, '%Y-%m-%d').date()
+        while current <= end:
+            ds = current.strftime('%Y-%m-%d')
+            day_stats = _compute_team_day_stats(team_procs, sched_data, report_data, attend_data, tid, ds)
+            day_stats['date'] = ds
+            days.append(day_stats)
+            current += timedelta(days=1)
+        summary = _compute_team_summary(days)
+        result_teams.append({
+            'id': tid, 'name': team['name'],
+            'member_count': member_counts.get(tid, 0),
+            'summary': summary,
+            'months': [{'month': month, 'planned_qty': summary['planned_qty'],
+                'completed_qty': summary['completed_qty'],
+                'completion_rate': summary['completion_rate'],
+                'production_efficiency': summary['production_efficiency'],
+                'good_rate': summary['good_rate'],
+                'overtime_ratio': summary['overtime_ratio'],
+                'utilization_rate': summary['utilization_rate']}],
+        })
+    return jsonify({'mode': 'monthly', 'month': month, 'teams': result_teams})
+
 if __name__ == "__main__":
     init_database()
     app.run(debug=True, host="0.0.0.0", port=5000)
