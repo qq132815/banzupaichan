@@ -2,7 +2,7 @@
 {% block content %}
 <div class="page-header"><h1>📅 周报表</h1></div>
 <div class="toolbar">
-<input type="week" id="week-picker" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<input type="date" id="week-picker" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
 <select id="team-filter" onchange="loadData()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"><option value="">全部班组</option></select>
 <button class="btn btn-primary" onclick="loadData()">查询</button>
 </div>
@@ -37,7 +37,8 @@
 {% block scripts %}
 <script>
 (function(){
-    var today=new Date();var mon=new Date(today);mon.setDate(mon.getDate()-mon.getDay()+1);
+    var today=new Date();var day=today.getDay();if(day===0)day=7;
+    var mon=new Date(today);mon.setDate(today.getDate()-day+1);
     document.getElementById("week-picker").value=mon.toISOString().split('T')[0];
     fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
         var sel=document.getElementById("team-filter");
