@@ -138,9 +138,13 @@ function calculate(){
 function publishAll(){
     if(!confirm("发布所有草稿需求？发布后班组可见。")) return;
     api("/api/production-requirements/publish", {method:"POST", body:{}}).then(function(d){
-        toast("已发布 " + d.published + " 条", "success");
+        if(d.published>0){
+            toast("已发布 " + d.published + " 条", "success");
+        }else{
+            toast("没有草稿需求可发布，请先计算需求","warning");
+        }
         loadMatrix();
-    });
+    }).catch(function(e){toast(e.error||"发布失败","error");});
 }
 
 function exportMatrix(){

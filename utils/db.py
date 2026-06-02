@@ -122,6 +122,7 @@ def init_database():
         bom_level INTEGER DEFAULT 0,
         root_product TEXT DEFAULT '',
         parent_chain TEXT DEFAULT '',
+        batch_id INTEGER DEFAULT 0,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )""")
 
