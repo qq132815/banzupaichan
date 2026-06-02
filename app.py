@@ -2099,7 +2099,7 @@ def api_report_personal():
             'normal_hours': round(ad['normal'], 1),
             'utilization_rate': util_rate,
             'leave_type': ad['leave'],
-            'status': '请假' if ad['leave'] else ('迟到' if ad['check_in'] and ad['check_in'][11:16]>'08:00' else ('加班' if ad['ot']>0 else ('正常' if ad['hours']>0 else ('旷工' if ad['check_in'] or rd['qty']>0 or rd['hours']>0 else '无数据')))),
+            'status': '请假' if ad['leave'] else ('迟到' if ad['check_in'] and ad['check_in'][11:16]>'08:00' else ('加班' if ad['ot']>0 else ('正常' if ad['hours']>0 else ('旷工' if ad['check_in'] or rd['qty']>0 or rd['hours']>0 else ('休息' if datetime.strptime(ds, '%Y-%m-%d').weekday()>=5 else '无数据'))))),
         })
         current += timedelta(days=1)
     
