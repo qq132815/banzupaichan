@@ -120,8 +120,20 @@ def sync_attendance(date_from, date_to):
             
             if p['check_in'] and p['check_out']:
                 try:
-                    t_in = datetime.strptime(p['check_in'], '%Y-%m-%d %H:%M:%S')
-                    t_out = datetime.strptime(p['check_out'], '%Y-%m-%d %H:%M:%S')
+                    t_in_raw = datetime.strptime(p['check_in'], '%Y-%m-%d %H:%M:%S')
+                    t_out_raw = datetime.strptime(p['check_out'], '%Y-%m-%d %H:%M:%S')
+                    # Round: clock_in ceil to 30min, clock_out floor to 30min
+                    def ceil_half(dt):
+                        m = dt.minute
+                        if m == 0 and dt.second == 0: return dt.replace(second=0)
+                        if m <= 30: return dt.replace(minute=30, second=0)
+                        return dt.replace(hour=dt.hour+1, minute=0, second=0)
+                    def floor_half(dt):
+                        m = dt.minute
+                        if m >= 30: return dt.replace(minute=30, second=0)
+                        return dt.replace(minute=0, second=0)
+                    t_in = ceil_half(t_in_raw)
+                    t_out = floor_half(t_out_raw)
                     
                     # Morning: 08:00 ~ 11:45
                     m_s = max(t_in, t_in.replace(hour=8, minute=0, second=0))

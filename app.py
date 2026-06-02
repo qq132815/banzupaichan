@@ -2085,7 +2085,7 @@ def api_report_personal():
     while current <= end:
         ds = current.strftime('%Y-%m-%d')
         rd = report_data.get(ds, {'qty': 0, 'hours': 0, 'good_qty': 0, 'efficiency': 0})
-        ad = attend_data.get(ds, {'hours': 0, 'overtime': 0, 'leave': '', 'ot': 0})
+        ad = attend_data.get(ds, {'hours': 0, 'overtime': 0, 'leave': '', 'ot': 0, 'normal': 0})
         good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0
         util_rate = round(rd['hours'] / ad['hours'] * 100, 1) if ad['hours'] > 0 else 0
         days.append({
