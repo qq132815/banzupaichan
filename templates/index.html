@@ -1,148 +1,327 @@
 ﻿{% extends "base.html" %}
 
 {% block content %}
-<div id="workbench-container" style="position: relative; width: 100%; height: calc(100vh - 60px); overflow: hidden;">
-    <div id="info" style="position: absolute; top: 10px; width: 100%; text-align: center; color: white; text-shadow: 1px 1px 2px black; pointer-events: none; z-index: 10;">
-        3D 车间监控工作台 - 鼠标悬停查看详情
-    </div>
-    <div id="tooltip" style="position: absolute; background: rgba(0, 0, 0, 0.8); color: white; padding: 10px; border-radius: 5px; display: none; pointer-events: none; font-size: 14px; max-width: 300px; z-index: 100;"></div>
+<style>
+    #workbench-container {
+        position: relative;
+        width: 100%;
+        height: calc(100vh - 60px);
+        overflow: hidden;
+        background: #000;
+    }
     
-    <!-- Three.js container -->
-    <div id="three-container"></div>
+    /* HUD Overlay Styles */
+    .hud-panel {
+        position: absolute;
+        background: rgba(0, 20, 40, 0.8);
+        border: 1px solid rgba(0, 255, 255, 0.3);
+        box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+        color: #0ff;
+        padding: 15px;
+        font-family: 'Courier New', monospace;
+        pointer-events: none;
+        z-index: 10;
+    }
+    
+    #top-bar {
+        top: 0; left: 0; right: 0; height: 50px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 24px; text-transform: uppercase;
+        letter-spacing: 4px;
+        text-shadow: 0 0 10px #0ff;
+    }
+    
+    #stats-panel {
+        top: 60px; right: 20px; width: 300px;
+    }
+    
+    .stat-row {
+        display: flex; justify-content: space-between;
+        margin-bottom: 8px; border-bottom: 1px solid rgba(0, 255, 255, 0.1);
+        padding-bottom: 5px;
+    }
+    
+    /* Tooltip */
+    #tooltip {
+        position: absolute;
+        background: rgba(0, 0, 0, 0.9);
+        border: 1px solid #0ff;
+        color: #fff;
+        padding: 15px;
+        border-radius: 2px;
+        display: none;
+        pointer-events: none;
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+        min-width: 250px;
+        z-index: 100;
+        box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
+    }
+    
+    #tooltip::before {
+        content: 'DEVICE INFO';
+        display: block;
+        color: #0ff;
+        border-bottom: 1px solid #0ff;
+        margin-bottom: 10px;
+        font-weight: bold;
+    }
+</style>
+
+<div id="workbench-container">
+    <!-- HUD Overlay -->
+    <div id="top-bar" class="hud-panel">DIGITAL TWIN MONITORING SYSTEM</div>
+    
+    <div id="stats-panel" class="hud-panel">
+        <div style="border-bottom: 1px solid #0ff; margin-bottom: 10px; padding-bottom: 5px;">SYSTEM STATUS</div>
+        <div class="stat-row"><span>ACTIVE DEVICES</span><span id="stat-active" style="color: #0f0">0</span></div>
+        <div class="stat-row"><span>ALERTS</span><span id="stat-alerts" style="color: #f00">0</span></div>
+        <div class="stat-row"><span>EFFICIENCY</span><span style="color: #ff0">98.5%</span></div>
+    </div>
+    
+    <div id="tooltip"></div>
+
+    <!-- Three.js Canvas -->
+    <div id="three-container" style="width: 100%; height: 100%;"></div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>
-    (function() {
-        var container = document.getElementById('three-container');
-        container.style.width = '100%';
-        container.style.height = '100%';
-        
-        var scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a1a);
-        
-        var camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
-        camera.position.set(50, 50, 50);
-        camera.lookAt(0, 0, 0);
-        
-        var renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(container.clientWidth, container.clientHeight);
-        container.appendChild(renderer.domElement);
-        
-        // Floor grid
-        var grid = new THREE.GridHelper(200, 20, 0x444444, 0x333333);
-        scene.add(grid);
-        
-        // Lights
-        var ambientLight = new THREE.AmbientLight(0x404040);
-        scene.add(ambientLight);
-        var directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-        directionalLight.position.set(1, 1, 1);
-        scene.add(directionalLight);
-        
-        // Equipment group
-        var equipmentGroup = new THREE.Group();
-        scene.add(equipmentGroup);
-        
-        // Status colors
-        var statusColors = {
-            'running': 0x00ff00,
-            'idle': 0xffff00,
-            'down': 0xff0000,
-            'normal': 0xaaaaaa
-        };
-        
-        // Raycaster for interaction
-        var raycaster = new THREE.Raycaster();
-        var mouse = new THREE.Vector2();
-        var tooltip = document.getElementById('tooltip');
-        var hoveredObject = null;
-        
-        // Fetch data
-        fetch('/api/workshop/3d-status')
-            .then(function(response) { return response.json(); })
-            .then(function(data) {
-                if (data.success) {
-                    renderEquipment(data.data);
-                }
-            });
-        
-        function renderEquipment(equipments) {
-            var cols = 20;
-            equipments.forEach(function(eq, index) {
-                var geometry = new THREE.BoxGeometry(4, 3, 4);
-                var color = statusColors[eq.status] || 0xaaaaaa;
-                var material = new THREE.MeshLambertMaterial({ color: color });
-                var mesh = new THREE.Mesh(geometry, material);
-                
-                // Position in grid
-                var col = index % cols;
-                var row = Math.floor(index / cols);
-                mesh.position.set(col * 6 - 60, 1.5, row * 6 - 60);
-                
-                mesh.userData = eq;
-                equipmentGroup.add(mesh);
-                
-                // Status light
-                var lightGeometry = new THREE.SphereGeometry(0.3, 16, 16);
-                var lightMaterial = new THREE.MeshBasicMaterial({ color: color });
-                var lightMesh = new THREE.Mesh(lightGeometry, lightMaterial);
-                lightMesh.position.set(0, 2, 0);
-                mesh.add(lightMesh);
-            });
-        }
-        
-        // Mouse interaction
-        function onMouseMove(event) {
-            var rect = container.getBoundingClientRect();
-            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-            
-            raycaster.setFromCamera(mouse, camera);
-            var intersects = raycaster.intersectObjects(equipmentGroup.children);
-            
-            if (intersects.length > 0) {
-                var object = intersects[0].object;
-                if (hoveredObject !== object) {
-                    hoveredObject = object;
-                    var eq = object.userData;
-                    tooltip.innerHTML = '<b>' + eq.code + '</b> - ' + eq.name + '<br>' +
-                                       '状态: ' + eq.status + '<br>' +
-                                       '班组 ID: ' + (eq.team_id || '无');
-                    tooltip.style.display = 'block';
-                }
-                tooltip.style.left = (event.clientX + 10) + 'px';
-                tooltip.style.top = (event.clientY + 10) + 'px';
-            } else {
-                hoveredObject = null;
-                tooltip.style.display = 'none';
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+}
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+    // Scene Setup
+    const container = document.getElementById('three-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x020205);
+    scene.fog = new THREE.FogExp2(0x020205, 0.008);
+
+    // Camera
+    const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
+    camera.position.set(40, 40, 40);
+    camera.lookAt(0, 0, 0);
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.toneMapping = THREE.ReinhardToneMapping;
+    container.appendChild(renderer.domElement);
+
+    // Post Processing (Bloom)
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    const bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        1.5, // Strength
+        0.4, // Radius
+        0.85 // Threshold
+    );
+    composer.addPass(bloomPass);
+
+    // Controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 10;
+    controls.maxDistance = 100;
+    controls.maxPolarAngle = Math.PI / 2.2;
+
+    // Environment - Reflective Floor
+    const gridHelper = new THREE.GridHelper(200, 50, 0x00ffff, 0x004444);
+    gridHelper.material.opacity = 0.3;
+    gridHelper.material.transparent = true;
+    scene.add(gridHelper);
+
+    const planeGeometry = new THREE.PlaneGeometry(200, 200);
+    const planeMaterial = new THREE.MeshStandardMaterial({
+        color: 0x000000,
+        metalness: 0.9,
+        roughness: 0.1,
+        envMapIntensity: 1.0
+    });
+    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+    plane.rotation.x = -Math.PI / 2;
+    plane.receiveShadow = true;
+    scene.add(plane);
+
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0x111111);
+    scene.add(ambientLight);
+
+    const spotLight = new THREE.SpotLight(0xffffff, 100);
+    spotLight.position.set(50, 80, 50);
+    spotLight.angle = Math.PI / 6;
+    spotLight.penumbra = 1;
+    spotLight.castShadow = true;
+    scene.add(spotLight);
+
+    // Data & Objects
+    const equipmentGroup = new THREE.Group();
+    scene.add(equipmentGroup);
+
+    const statusColors = {
+        'running': new THREE.Color(0x00ff88), // Neon Green
+        'idle': new THREE.Color(0xffff00),    // Neon Yellow
+        'down': new THREE.Color(0xff0000),    // Neon Red
+        'normal': new THREE.Color(0x444444)
+    };
+
+    // Status Lights (Volumetric Look)
+    function createStatusLight(color) {
+        const geometry = new THREE.SphereGeometry(0.5, 16, 16);
+        const material = new THREE.MeshBasicMaterial({ color: color }); // Basic material ignores light, glows with bloom
+        return new THREE.Mesh(geometry, material);
+    }
+
+    // Raycaster
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const tooltip = document.getElementById('tooltip');
+    let hoveredObject = null;
+
+    // Fetch Data
+    fetch('/api/workshop/3d-status')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderEquipment(data.data);
+                updateStats(data.data);
             }
-        }
-        
-        window.addEventListener('mousemove', onMouseMove, false);
-        
-        // Animation loop
-        function animate() {
-            requestAnimationFrame(animate);
-            
-            // Rotate running equipment
-            equipmentGroup.children.forEach(function(child) {
-                if (child.userData.status === 'running') {
-                    child.rotation.y += 0.01;
-                }
-            });
-            
-            renderer.render(scene, camera);
-        }
-        
-        animate();
-        
-        // Resize handler
-        window.addEventListener('resize', function() {
-            camera.aspect = container.clientWidth / container.clientHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(container.clientWidth, container.clientHeight);
         });
-    })();
+
+    function updateStats(equipments) {
+        const active = equipments.filter(e => e.status === 'running').length;
+        const alerts = equipments.filter(e => e.status === 'down').length;
+        document.getElementById('stat-active').innerText = active;
+        document.getElementById('stat-alerts').innerText = alerts;
+    }
+
+    function renderEquipment(equipments) {
+        // Clear existing
+        while(equipmentGroup.children.length > 0){ 
+            equipmentGroup.remove(equipmentGroup.children[0]); 
+        }
+
+        const cols = 15;
+        equipments.forEach((eq, index) => {
+            // Base Machine Geometry
+            const geometry = new THREE.BoxGeometry(4, 3, 4);
+            const material = new THREE.MeshStandardMaterial({
+                color: 0x111111,
+                metalness: 0.8,
+                roughness: 0.2,
+                emissive: statusColors[eq.status] || new THREE.Color(0x000000),
+                emissiveIntensity: 0.2 // Subtle glow
+            });
+
+            const mesh = new THREE.Mesh(geometry, material);
+            
+            // Position
+            const col = index % cols;
+            const row = Math.floor(index / cols);
+            mesh.position.set(col * 8 - 60, 1.5, row * 8 - 60);
+            
+            // Add Status Light on top
+            const statusLight = createStatusLight(statusColors[eq.status] || 0x444444);
+            statusLight.position.set(0, 2, 0);
+            mesh.add(statusLight);
+
+            mesh.userData = eq;
+            equipmentGroup.add(mesh);
+        });
+    }
+
+    // Mouse Interaction
+    function onMouseMove(event) {
+        const rect = container.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(equipmentGroup.children);
+
+        if (intersects.length > 0) {
+            const object = intersects[0].object;
+            container.style.cursor = 'pointer';
+            
+            if (hoveredObject !== object) {
+                hoveredObject = object;
+                // Highlight
+                object.material.emissiveIntensity = 1.0;
+                
+                const eq = object.userData;
+                tooltip.innerHTML = `
+                    <div style="margin-bottom: 5px"><b>CODE:</b> ${eq.code}</div>
+                    <div style="margin-bottom: 5px"><b>NAME:</b> ${eq.name}</div>
+                    <div style="margin-bottom: 5px; color: ${statusColors[eq.status]?.getStyle() || '#fff'}"><b>STATUS:</b> ${eq.status.toUpperCase()}</div>
+                    <div style="margin-bottom: 5px"><b>TEAM:</b> ${eq.team_id || 'N/A'}</div>
+                    <div style="font-size: 12px; color: #888">Click for details</div>
+                `;
+                tooltip.style.display = 'block';
+            }
+            tooltip.style.left = (event.clientX + 20) + 'px';
+            tooltip.style.top = (event.clientY + 20) + 'px';
+        } else {
+            if (hoveredObject) {
+                hoveredObject.material.emissiveIntensity = 0.2;
+                hoveredObject = null;
+            }
+            container.style.cursor = 'default';
+            tooltip.style.display = 'none';
+        }
+    }
+
+    window.addEventListener('mousemove', onMouseMove, false);
+
+    // Animation Loop
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+
+        const time = Date.now() * 0.001;
+
+        equipmentGroup.children.forEach(child => {
+            // Pulse effect for running machines
+            if (child.userData.status === 'running') {
+                const intensity = 0.2 + Math.abs(Math.sin(time * 2)) * 0.3;
+                child.material.emissiveIntensity = intensity;
+                // Spin status light
+                if(child.children[0]) child.children[0].rotation.y += 0.05;
+            }
+            
+            // Flash effect for down machines
+            if (child.userData.status === 'down') {
+                const flash = Math.sin(time * 10) > 0 ? 1 : 0.2;
+                child.material.emissiveIntensity = flash;
+            }
+        });
+
+        composer.render(); // Use composer for bloom
+    }
+
+    animate();
+
+    // Resize Handler
+    window.addEventListener('resize', () => {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        composer.setSize(container.clientWidth, container.clientHeight);
+    });
+
 </script>
 {% endblock %}
