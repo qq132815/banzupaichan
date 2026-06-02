@@ -2100,7 +2100,6 @@ def api_report_personal():
             'leave_type': ad['leave'],
         })
         current += timedelta(days=1)
-        current += timedelta(days=1)
     
     return jsonify({'name': name, 'days': days})
 
