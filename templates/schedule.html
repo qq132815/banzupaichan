@@ -437,9 +437,9 @@ function renderWarnings(){
     var html="<table style='width:100%;border-collapse:collapse;font-size:11px'>";
     html+="<thead style='position:sticky;top:0;z-index:3'><tr>";
     var nameSortIcon=_warningSort.key==='name'?(_warningSort.dir==='asc'?' \u25b2':' \u25bc'):'';
-    html+="<th style='text-align:left;padding:4px 6px;background:#f9fafb;border-bottom:1px solid #e5e7eb;position:sticky;left:0;z-index:2;cursor:pointer;user-select:none' onclick='sortWarning("name")'>产品名称"+nameSortIcon+"</th>";
+    html+="<th style='text-align:left;padding:4px 6px;background:#f9fafb;border-bottom:1px solid #e5e7eb;position:sticky;left:0;z-index:2;cursor:pointer;user-select:none' onclick=\"sortWarning('name')\">产品名称"+nameSortIcon+"</th>";
     var remainSortIcon=_warningSort.key==='remain'?(_warningSort.dir==='asc'?' \u25b2':' \u25bc'):'';
-    html+="<th style='text-align:center;padding:4px 6px;background:#fef3c7;border-bottom:1px solid #e5e7eb;cursor:pointer;user-select:none' onclick='sortWarning("remain")'>未完成"+remainSortIcon+"</th>";
+    html+="<th style='text-align:center;padding:4px 6px;background:#fef3c7;border-bottom:1px solid #e5e7eb;cursor:pointer;user-select:none' onclick=\"sortWarning('remain')\">未完成"+remainSortIcon+"</th>";
     dates.forEach(function(d){
         var isToday=d===today.toISOString().split("T")[0];
         var hdr=isToday?"<b>今天</b>":d.substring(5);
