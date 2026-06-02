@@ -46,6 +46,39 @@
 - SQL: 使用参数化查询防止注入
 - 文件编码: 所有文件统一使用UTF-8
 
+﻿## 开发约束与注意事项 (Development Constraints & Checklist)
+
+**重要：每次修改代码前，必须对照以下清单进行检查，防止“改一处，坏一处”。**
+
+### 1. 前后端同步清单 (Sync Checklist)
+如果你修改了数据库字段或业务逻辑，必须同时检查以下内容：
+- **数据库层**: `utils/db.py` (CREATE TABLE) 和 `data/production.db` (ALTER TABLE)
+- **后端层**: `app.py` 中的 INSERT/UPDATE/SELECT SQL 语句
+- **前端层**:
+  - HTML表单的 `name` 属性是否匹配？
+  - API调用的 JSON key 是否匹配？
+  - 表格列头（headers）和渲染逻辑是否更新？
+
+### 2. 权限控制清单 (Permission Checklist)
+新增或修改功能时，必须通过以下三层验证：
+1. **后端路由 (Route)**: 是否使用了正确的装饰器？
+   - 管理员: `@admin_required`
+   - 计划员/管理员: `@planner_required`
+   - 登录用户: `@login_required`
+2. **侧边栏菜单 (Menu)**: 是否在 `templates/base.html` 中设置了 `data-perm` 属性？
+3. **页面元素 (Elements)**:
+   - 按钮/输入框是否对“班组”角色禁用了 `disabled` 或 `readonly`？
+   - JS 中是否处理了角色判断？(参考 `window.USER_ROLE`)
+
+### 3. 常见雷区 (Common Pitfalls)
+- **工时计算**: 
+  - 早班: 08:00-17:00 (8h)，扣除 11:45-12:45 午休。
+  - 加班: 17:30-20:00 (2.5h)，扣除 17:00-17:30 晚餐，不扣其他休息。
+  - *注意：前端显示的工时和后端计算逻辑必须一致。*
+- **设备排序**: 设备代码（如 WG7-1）必须进行自然排序，避免出现 WG7-10 排在 WG7-2 前面的情况。
+- **班组过滤**: 排班页面的甘特图和设备下拉框，必须根据当前登录用户的 `team_id` 进行过滤。
+
+
 ## 数据库表结构
 - teams: 班组信息
 - equipments: 设备信息
