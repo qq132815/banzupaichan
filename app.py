@@ -2527,6 +2527,229 @@ def api_statistics():
 
 
 
+# ========== Plan Record APIs ==========
+
+@app.route('/api/plan/today-progress')
+@login_required
+def api_plan_today_progress():
+    """Real-time daily plan progress for all teams."""
+    today = datetime.now().strftime('%Y-%m-%d')
+    conn = get_connection()
+    c = conn.cursor()
+
+    # Get today's approved/draft plans
+    c.execute("""SELECT dp.id, dp.team_id, t.name as team_name, dp.status, dp.plan_date
+        FROM daily_plans dp LEFT JOIN teams t ON dp.team_id=t.id
+        WHERE dp.plan_date=? AND dp.status IN ('approved','draft')""", (today,))
+    plans = [dict(row) for row in c.fetchall()]
+
+    # Get scheduled tasks for today
+    c.execute("""SELECT s.team_id, t.name as team_name, SUM(s.quantity) as planned_qty,
+        COUNT(*) as task_count
+        FROM schedules s LEFT JOIN teams t ON s.team_id=t.id
+        WHERE s.schedule_date=?
+        GROUP BY s.team_id""", (today,))
+    sched_by_team = {r[0]: {'planned_qty': r[2] or 0, 'task_count': r[3]} for r in c.fetchall()}
+
+    # Get actual production from work_reports today
+    c.execute("""SELECT p.id as team_id, SUM(wr.report_qty) as actual_qty,
+        SUM(wr.report_hours) as actual_hours
+        FROM work_reports wr
+        INNER JOIN processes pr ON wr.process_name=pr.process_name
+        INNER JOIN teams p ON pr.team_name LIKE '%' || p.name || '%'
+        WHERE wr.create_time LIKE ? AND wr.report_hours > 0
+        GROUP BY p.id""", (today + '%',))
+    actual_by_team = {r[0]: {'actual_qty': r[1] or 0, 'actual_hours': r[2] or 0} for r in c.fetchall()}
+
+    # Get all teams
+    c.execute("SELECT id, name FROM teams ORDER BY id")
+    teams = c.fetchall()
+    conn.close()
+
+    result = []
+    for tid, tname in teams:
+        sched = sched_by_team.get(tid, {'planned_qty': 0, 'task_count': 0})
+        actual = actual_by_team.get(tid, {'actual_qty': 0, 'actual_hours': 0})
+        planned = sched['planned_qty']
+        completed = actual['actual_qty']
+        rate = round(completed / planned * 100, 1) if planned > 0 else 0
+        status = 'completed' if rate >= 100 and planned > 0 else ('in_progress' if completed > 0 else 'not_started')
+        result.append({
+            'team_id': tid,
+            'team_name': tname,
+            'planned_qty': planned,
+            'actual_qty': completed,
+            'completion_rate': rate,
+            'task_count': sched['task_count'],
+            'actual_hours': round(actual['actual_hours'], 1),
+            'status': status,
+        })
+    return jsonify({'date': today, 'teams': result})
+
+
+@app.route('/api/plan/<int:plan_id>/gantt')
+@login_required
+def api_plan_gantt(plan_id):
+    """Get Gantt data for a specific plan: planned schedules + actual work reports."""
+    conn = get_connection()
+    c = conn.cursor()
+
+    # Get plan info
+    c.execute("""SELECT dp.*, t.name as team_name FROM daily_plans dp
+        LEFT JOIN teams t ON dp.team_id=t.id WHERE dp.id=?""", (plan_id,))
+    plan = dict(c.fetchone()) if c.rowcount else None
+    if not plan:
+        conn.close()
+        return jsonify({'error': 'Plan not found'}), 404
+
+    plan_date = plan['plan_date']
+    team_id = plan['team_id']
+
+    # Get planned schedules
+    c.execute("""SELECT s.*, e.equipment_name, e.equipment_code
+        FROM schedules s
+        LEFT JOIN equipments e ON s.equipment_id=e.id
+        WHERE s.team_id=? AND s.schedule_date=?
+        ORDER BY s.start_time""", (team_id, plan_date))
+    schedules = [dict(row) for row in c.fetchall()]
+
+    # Get actual work reports for this team on this date
+    c.execute("""SELECT wr.process_name, wr.equipment, wr.order_no,
+        SUM(wr.report_qty) as qty, SUM(wr.report_hours) as hours,
+        MIN(wr.start_time) as first_start, MAX(wr.end_time) as last_end
+        FROM work_reports wr
+        INNER JOIN processes pr ON wr.process_name=pr.process_name
+        INNER JOIN teams t ON pr.team_name LIKE '%' || t.name || '%'
+        WHERE t.id=? AND wr.create_time LIKE ? AND wr.report_hours > 0
+        GROUP BY wr.process_name, wr.equipment, wr.order_no""",
+              (team_id, plan_date + '%'))
+    reports = [dict(row) for row in c.fetchall()]
+
+    # Summary
+    total_planned = sum(s.get('quantity', 0) or 0 for s in schedules)
+    total_completed = sum(r.get('qty', 0) or 0 for r in reports)
+    rate = round(total_completed / total_planned * 100, 1) if total_planned > 0 else 0
+
+    conn.close()
+    return jsonify({
+        'plan': plan,
+        'schedules': schedules,
+        'reports': reports,
+        'summary': {
+            'total_planned': total_planned,
+            'total_completed': total_completed,
+            'completion_rate': rate,
+        }
+    })
+
+
+@app.route('/api/plan/today-gantt/<int:team_id>')
+@login_required
+def api_plan_today_gantt(team_id):
+    """Get today's Gantt data for a team: planned schedules + in-progress reports."""
+    today = datetime.now().strftime('%Y-%m-%d')
+    conn = get_connection()
+    c = conn.cursor()
+
+    # Get planned schedules
+    c.execute("""SELECT s.*, e.equipment_name, e.equipment_code
+        FROM schedules s
+        LEFT JOIN equipments e ON s.equipment_id=e.id
+        WHERE s.team_id=? AND s.schedule_date=?
+        ORDER BY s.start_time""", (team_id, today))
+    schedules = [dict(row) for row in c.fetchall()]
+
+    # Get actual reports today
+    c.execute("""SELECT wr.process_name, wr.equipment, wr.order_no,
+        SUM(wr.report_qty) as qty, SUM(wr.report_hours) as hours,
+        MIN(wr.start_time) as first_start, MAX(wr.end_time) as last_end
+        FROM work_reports wr
+        INNER JOIN processes pr ON wr.process_name=pr.process_name
+        INNER JOIN teams t ON pr.team_name LIKE '%' || t.name || '%'
+        WHERE t.id=? AND wr.create_time LIKE ? AND wr.report_hours > 0
+        GROUP BY wr.process_name, wr.equipment, wr.order_no""",
+              (team_id, today + '%'))
+    reports = [dict(row) for row in c.fetchall()]
+
+    # Team name
+    c.execute("SELECT name FROM teams WHERE id=?", (team_id,))
+    row = c.fetchone()
+    team_name = row[0] if row else ''
+
+    total_planned = sum(s.get('quantity', 0) or 0 for s in schedules)
+    total_completed = sum(r.get('qty', 0) or 0 for r in reports)
+    rate = round(total_completed / total_planned * 100, 1) if total_planned > 0 else 0
+
+    conn.close()
+    return jsonify({
+        'date': today,
+        'team_id': team_id,
+        'team_name': team_name,
+        'schedules': schedules,
+        'reports': reports,
+        'summary': {
+            'total_planned': total_planned,
+            'total_completed': total_completed,
+            'completion_rate': rate,
+        }
+    })
+
+
+@app.route('/api/plan/completion-list')
+@login_required
+def api_plan_completion_list():
+    """List plans with completion data."""
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+    team_id = request.args.get('team_id', type=int)
+    status = request.args.get('status', '')
+
+    if not date_from:
+        date_from = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+    if not date_to:
+        date_to = datetime.now().strftime('%Y-%m-%d')
+
+    conn = get_connection()
+    c = conn.cursor()
+
+    q = """SELECT dp.id, dp.plan_date, dp.status, t.name as team_name, dp.team_id,
+        (SELECT SUM(s.quantity) FROM schedules s WHERE s.daily_plan_id=dp.id) as planned_qty,
+        (SELECT COUNT(*) FROM schedules s WHERE s.daily_plan_id=dp.id) as task_count
+        FROM daily_plans dp LEFT JOIN teams t ON dp.team_id=t.id
+        WHERE dp.plan_date BETWEEN ? AND ?"""
+    params = [date_from, date_to]
+
+    if team_id:
+        q += " AND dp.team_id=?"
+        params.append(team_id)
+    if status:
+        q += " AND dp.status=?"
+        params.append(status)
+
+    q += " ORDER BY dp.plan_date DESC, dp.team_id"
+    c.execute(q, params)
+    plans = []
+    for row in c.fetchall():
+        p = dict(row)
+        # Get actual completed qty from work_reports
+        if p['plan_date']:
+            c.execute("""SELECT SUM(wr.report_qty)
+                FROM work_reports wr
+                INNER JOIN processes pr ON wr.process_name=pr.process_name
+                INNER JOIN teams t ON pr.team_name LIKE '%' || t.name || '%'
+                WHERE t.id=? AND wr.create_time LIKE ? AND wr.report_hours > 0""",
+                      (p['team_id'], p['plan_date'] + '%'))
+            r = c.fetchone()
+            p['completed_qty'] = r[0] or 0 if r else 0
+            p['completion_rate'] = round(p['completed_qty'] / p['planned_qty'] * 100, 1) if p['planned_qty'] and p['planned_qty'] > 0 else 0
+        else:
+            p['completed_qty'] = 0
+            p['completion_rate'] = 0
+        plans.append(p)
+
+    conn.close()
+    return jsonify(plans)
+
 # ========== Team Statistics APIs ==========
 
 def _get_team_process_ids(team_id):
