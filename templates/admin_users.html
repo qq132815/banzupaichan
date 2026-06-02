@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <div class="page-header"><h1>👤 账户管理</h1>
 <div class="page-actions"><button class="btn btn-primary" onclick="showAdd()">＋ 新增用户</button></div>
@@ -11,7 +11,7 @@
 <div class="modal-header"><h3 id="m-title">新增用户</h3><button class="modal-close" onclick="closeM()">&times;</button></div>
 <div class="modal-body">
 <div class="form-row"><div class="form-group"><label>用户名</label><input class="form-control" id="m-username"></div><div class="form-group"><label>密码</label><input class="form-control" id="m-password" placeholder="默认123456"></div></div>
-<div class="form-row"><div class="form-group"><label>显示名</label><input class="form-control" id="m-display"></div><div class="form-group"><label>角色</label><select class="form-control" id="m-role"><option value="team">班组</option><option value="planner">计划员</option></select></div></div>
+<div class="form-row"><div class="form-group"><label>显示名</label><input class="form-control" id="m-display"></div><div class="form-group"><label>角色</label><select class="form-control" id="m-role"><option value="team">班组</option><option value="planner">计划员</option><option value="admin">管理员</option></select></div></div>
 <div class="form-group"><label>所属班组</label><select class="form-control" id="m-team"><option value="">-- 无 --</option></select></div>
 </div>
 <div class="modal-footer"><button class="btn btn-secondary" onclick="closeM()">取消</button><button class="btn btn-primary" onclick="save()">保存</button></div>
@@ -21,7 +21,7 @@
 <script>
 var editId=null,teams=[];
 fetch("/api/teams").then(function(r){return r.json()}).then(function(d){teams=d;var sel=document.getElementById("m-team");d.forEach(function(t){var o=document.createElement("option");o.value=t.id;o.textContent=t.name;sel.appendChild(o);});});
-function load(){fetch("/api/users").then(function(r){return r.json()}).then(function(d){var tb=document.getElementById("tbody");tb.innerHTML="";d.forEach(function(u){var tr=document.createElement("tr");tr.innerHTML='<td>'+u.username+'</td><td>'+u.display_name+'</td><td><span class="badge badge-'+(u.role==='planner'?'blue':'green')+'">'+(u.role==='planner'?'计划员':'班组')+'</span></td><td>'+(u.team_name||'-')+'</td><td>'+(u.is_active?'<span class="badge badge-green">正常</span>':'<span class="badge badge-red">禁用</span>')+'</td><td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="edit('+u.id+')">编辑</button><button class="btn btn-warning btn-sm" onclick="resetPwd('+u.id+')">重置密码</button>'+(u.username!=='admin'?'<button class="btn btn-danger btn-sm" onclick="deleteUser('+u.id+')">删除</button>':'')+'</div></td>';tb.appendChild(tr);});});}
+function load(){fetch("/api/users").then(function(r){return r.json()}).then(function(d){var tb=document.getElementById("tbody");tb.innerHTML="";d.forEach(function(u){var tr=document.createElement("tr");tr.innerHTML='<td>'+u.username+'</td><td>'+u.display_name+'</td><td><span class="badge badge-'+(u.role==='admin'?'red':(u.role==='planner'?'blue':'green'))+'">'+(u.role==='planner'?'计划员':(u.role==='admin'?'管理员':'班组'))+'</span></td><td>'+(u.team_name||'-')+'</td><td>'+(u.is_active?'<span class="badge badge-green">正常</span>':'<span class="badge badge-red">禁用</span>')+'</td><td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="edit('+u.id+')">编辑</button><button class="btn btn-warning btn-sm" onclick="resetPwd('+u.id+')">重置密码</button>'+(u.username!=='admin'?'<button class="btn btn-danger btn-sm" onclick="deleteUser('+u.id+')">删除</button>':'')+'</div></td>';tb.appendChild(tr);});});}
 function showAdd(){editId=null;document.getElementById("m-title").textContent="新增用户";document.getElementById("m-username").value="";document.getElementById("m-password").value="";document.getElementById("m-display").value="";document.getElementById("m-role").value="team";document.getElementById("m-team").value="";document.getElementById("m-username").disabled=false;document.getElementById("modal").classList.add("show");}
 function closeM(){document.getElementById("modal").classList.remove("show");}
 function edit(id){fetch("/api/users").then(function(r){return r.json()}).then(function(d){var u=d.find(function(x){return x.id===id});if(!u)return;editId=id;document.getElementById("m-title").textContent="编辑用户";document.getElementById("m-username").value=u.username;document.getElementById("m-username").disabled=true;document.getElementById("m-password").value="";document.getElementById("m-display").value=u.display_name;document.getElementById("m-role").value=u.role;document.getElementById("m-team").value=u.team_id||"";document.getElementById("modal").classList.add("show");});}
