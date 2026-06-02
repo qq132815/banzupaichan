@@ -2096,6 +2096,7 @@ def api_report_personal():
             'efficiency': rd['efficiency'],
             'attendance_hours': ad['hours'],
             'overtime_hours': ad['ot'],
+            'normal_hours': round(ad['normal'], 1),
             'utilization_rate': util_rate,
             'leave_type': ad['leave'],
         })
