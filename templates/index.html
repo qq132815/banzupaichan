@@ -1,48 +1,33 @@
-﻿<!DOCTYPE html>
-<html lang="zh">
-<head>
-    <meta charset="UTF-8">
-    <title>3D 车间监控工作台</title>
-    <style>
-        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
-        #info {
-            position: absolute;
-            top: 10px;
-            width: 100%;
-            text-align: center;
-            color: white;
-            text-shadow: 1px 1px 2px black;
-            pointer-events: none;
-        }
-        #tooltip {
-            position: absolute;
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            display: none;
-            pointer-events: none;
-            font-size: 14px;
-            max-width: 300px;
-        }
-    </style>
-</head>
-<body>
-    <div id="info">3D 车间监控工作台 - 鼠标悬停查看详情</div>
-    <div id="tooltip"></div>
+﻿{% extends "base.html" %}
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script>
+{% block content %}
+<div id="workbench-container" style="position: relative; width: 100%; height: calc(100vh - 60px); overflow: hidden;">
+    <div id="info" style="position: absolute; top: 10px; width: 100%; text-align: center; color: white; text-shadow: 1px 1px 2px black; pointer-events: none; z-index: 10;">
+        3D 车间监控工作台 - 鼠标悬停查看详情
+    </div>
+    <div id="tooltip" style="position: absolute; background: rgba(0, 0, 0, 0.8); color: white; padding: 10px; border-radius: 5px; display: none; pointer-events: none; font-size: 14px; max-width: 300px; z-index: 100;"></div>
+    
+    <!-- Three.js container -->
+    <div id="three-container"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+    (function() {
+        var container = document.getElementById('three-container');
+        container.style.width = '100%';
+        container.style.height = '100%';
+        
         var scene = new THREE.Scene();
         scene.background = new THREE.Color(0x1a1a1a);
         
-        var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        var camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
         camera.position.set(50, 50, 50);
         camera.lookAt(0, 0, 0);
         
         var renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        container.appendChild(renderer.domElement);
         
         // Floor grid
         var grid = new THREE.GridHelper(200, 20, 0x444444, 0x333333);
@@ -109,8 +94,9 @@
         
         // Mouse interaction
         function onMouseMove(event) {
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            var rect = container.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             
             raycaster.setFromCamera(mouse, camera);
             var intersects = raycaster.intersectObjects(equipmentGroup.children);
@@ -153,10 +139,10 @@
         
         // Resize handler
         window.addEventListener('resize', function() {
-            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.aspect = container.clientWidth / container.clientHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setSize(container.clientWidth, container.clientHeight);
         });
-    </script>
-</body>
-</html>
+    })();
+</script>
+{% endblock %}
