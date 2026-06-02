@@ -3141,6 +3141,69 @@ def api_workshop_3d_status():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# Workshop Layout API routes
+
+@app.route('/workshop-layout-page')
+@login_required
+def workshop_layout_page():
+    return render_template('workshop_layout.html')
+
+@app.route('/api/workshop-layouts', methods=['GET'])
+@login_required
+def api_get_workshop_layouts():
+    try:
+        team_id = request.args.get('team_id')
+        conn = get_connection()
+        c = conn.cursor()
+        if team_id:
+            c.execute("SELECT * FROM workshop_layouts WHERE team_id=? ORDER BY updated_at DESC", (team_id,))
+        else:
+            c.execute("SELECT * FROM workshop_layouts ORDER BY updated_at DESC")
+        rows = c.fetchall()
+        layouts = []
+        for r in rows:
+            layouts.append({
+                'id': r[0], 'team_id': r[1], 'name': r[2],
+                'layout_data': r[3], 'created_at': r[4], 'updated_at': r[5]
+            })
+        conn.close()
+        return jsonify({'success': True, 'data': layouts})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/workshop-layouts', methods=['POST'])
+@login_required
+def api_save_workshop_layout():
+    try:
+        data = request.json
+        conn = get_connection()
+        c = conn.cursor()
+        if data.get('id'):
+            c.execute("UPDATE workshop_layouts SET name=?, layout_data=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                      (data.get('name', '默认布局'), data.get('layout_data', '{}'), data['id']))
+        else:
+            c.execute("INSERT INTO workshop_layouts (team_id, name, layout_data) VALUES (?,?,?)",
+                      (data.get('team_id'), data.get('name', '默认布局'), data.get('layout_data', '{}')))
+        conn.commit()
+        layout_id = data.get('id') or c.lastrowid
+        conn.close()
+        return jsonify({'success': True, 'id': layout_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/workshop-layouts/<int:lid>', methods=['DELETE'])
+@login_required
+def api_delete_workshop_layout(lid):
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("DELETE FROM workshop_layouts WHERE id=?", (lid,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 if __name__ == "__main__":
     init_database()
     app.run(debug=True, host="0.0.0.0", port=5000)

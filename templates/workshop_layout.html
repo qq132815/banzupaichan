@@ -1,0 +1,717 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+#editor-container {
+    display: flex; height: calc(100vh - 60px); overflow: hidden;
+    font-family: "Microsoft YaHei", sans-serif;
+}
+
+/* ========== Left Toolbox ========== */
+.toolbox {
+    width: 220px; background: #0a1929; border-right: 1px solid #1e3a5f;
+    display: flex; flex-direction: column; overflow-y: auto;
+    flex-shrink: 0;
+}
+.toolbox-title {
+    padding: 12px 15px; font-size: 14px; color: #4fc3f7;
+    border-bottom: 1px solid #1e3a5f; letter-spacing: 2px;
+}
+.toolbox-section {
+    padding: 10px 12px; border-bottom: 1px solid #1e3a5f;
+}
+.toolbox-section h4 {
+    color: #8eafc4; font-size: 12px; margin-bottom: 8px;
+    text-transform: uppercase; letter-spacing: 1px;
+}
+.tool-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; margin: 3px;
+    background: #0d2137; border: 1px solid #1e3a5f; border-radius: 4px;
+    color: #4fc3f7; cursor: pointer; font-size: 18px;
+    transition: all 0.2s;
+}
+.tool-btn:hover { background: #1e3a5f; border-color: #4fc3f7; }
+.tool-btn.active { background: #1565c0; border-color: #4fc3f7; color: #fff; }
+
+/* Equipment list */
+.eq-list { padding: 5px 0; }
+.eq-item {
+    display: flex; align-items: center; padding: 6px 12px;
+    cursor: pointer; color: #b0bec5; font-size: 12px;
+    transition: all 0.15s;
+}
+.eq-item:hover { background: #0d2137; color: #4fc3f7; }
+.eq-dot {
+    width: 8px; height: 8px; border-radius: 50%; margin-right: 8px;
+}
+.eq-dot.running { background: #00e676; box-shadow: 0 0 4px #00e676; }
+.eq-dot.idle { background: #ffd740; box-shadow: 0 0 4px #ffd740; }
+.eq-dot.down { background: #ff5252; box-shadow: 0 0 4px #ff5252; }
+.eq-dot.normal { background: #546e7a; }
+
+/* ========== Canvas Area ========== */
+.canvas-wrap {
+    flex: 1; position: relative; background: #060e18;
+}
+.canvas-toolbar {
+    position: absolute; top: 10px; left: 10px; z-index: 10;
+    display: flex; gap: 5px; background: rgba(10,25,41,0.9);
+    padding: 6px 10px; border-radius: 4px;
+    border: 1px solid #1e3a5f;
+}
+.canvas-toolbar button {
+    background: #0d2137; border: 1px solid #1e3a5f; color: #4fc3f7;
+    padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 12px;
+}
+.canvas-toolbar button:hover { background: #1e3a5f; }
+.canvas-toolbar button.danger { color: #ff5252; }
+.canvas-toolbar button.danger:hover { background: #4a1a1a; }
+.canvas-info {
+    position: absolute; bottom: 10px; left: 10px; z-index: 10;
+    color: #546e7a; font-size: 11px;
+    background: rgba(10,25,41,0.8); padding: 4px 8px; border-radius: 3px;
+}
+
+/* ========== Right Properties Panel ========== */
+.props-panel {
+    width: 260px; background: #0a1929; border-left: 1px solid #1e3a5f;
+    display: flex; flex-direction: column; overflow-y: auto;
+    flex-shrink: 0;
+}
+.props-title {
+    padding: 12px 15px; font-size: 14px; color: #4fc3f7;
+    border-bottom: 1px solid #1e3a5f; letter-spacing: 2px;
+}
+.props-body { padding: 12px; flex: 1; }
+.prop-group { margin-bottom: 12px; }
+.prop-label {
+    display: block; color: #8eafc4; font-size: 11px;
+    margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px;
+}
+.prop-input {
+    width: 100%; padding: 6px 8px; background: #0d2137;
+    border: 1px solid #1e3a5f; border-radius: 3px;
+    color: #e0f0ff; font-size: 13px; outline: none;
+}
+.prop-input:focus { border-color: #4fc3f7; }
+.prop-row { display: flex; gap: 8px; }
+.prop-row .prop-group { flex: 1; }
+
+.color-swatch {
+    display: inline-block; width: 24px; height: 24px;
+    border: 2px solid #1e3a5f; border-radius: 3px;
+    cursor: pointer; vertical-align: middle; margin-right: 6px;
+}
+
+/* Layout list */
+.layout-list { padding: 8px 12px; }
+.layout-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 8px; margin-bottom: 4px;
+    background: #0d2137; border: 1px solid #1e3a5f; border-radius: 3px;
+    cursor: pointer; color: #b0bec5; font-size: 12px;
+}
+.layout-item:hover { border-color: #4fc3f7; color: #4fc3f7; }
+.layout-item .del-btn {
+    color: #ff5252; cursor: pointer; padding: 2px 5px;
+}
+.layout-item .del-btn:hover { background: #4a1a1a; border-radius: 2px; }
+
+.btn-primary {
+    display: block; width: 100%; padding: 8px;
+    background: #1565c0; border: none; border-radius: 4px;
+    color: #fff; cursor: pointer; font-size: 13px; margin-top: 8px;
+}
+.btn-primary:hover { background: #1976d2; }
+.btn-secondary {
+    display: block; width: 100%; padding: 8px;
+    background: #0d2137; border: 1px solid #1e3a5f; border-radius: 4px;
+    color: #4fc3f7; cursor: pointer; font-size: 13px; margin-top: 8px;
+}
+.btn-secondary:hover { background: #1e3a5f; }
+
+.no-select { color: #546e7a; font-size: 12px; text-align: center; padding: 20px; }
+</style>
+
+<div id="editor-container">
+    <!-- Left: Toolbox -->
+    <div class="toolbox">
+        <div class="toolbox-title">| 工具箱</div>
+
+        <div class="toolbox-section">
+            <h4>基本形状</h4>
+            <div class="tool-btn" onclick="addRect()" title="矩形设备">▭</div>
+            <div class="tool-btn" onclick="addCircle()" title="圆形设备">○</div>
+            <div class="tool-btn" onclick="addTriangle()" title="三角形">△</div>
+            <div class="tool-btn" onclick="addDiamond()" title="菱形">◇</div>
+        </div>
+
+        <div class="toolbox-section">
+            <h4>标注</h4>
+            <div class="tool-btn" onclick="addText()" title="文字标注">T</div>
+            <div class="tool-btn" onclick="addLine()" title="连线">╱</div>
+            <div class="tool-btn" onclick="addArrow()" title="箭头">→</div>
+        </div>
+
+        <div class="toolbox-section">
+            <h4>区域</h4>
+            <div class="tool-btn" onclick="addZone()" title="功能区域">▢</div>
+        </div>
+
+        <div class="toolbox-section" id="equipment-list-section">
+            <h4>设备列表 (点击添加)</h4>
+            <div class="eq-list" id="eq-list"></div>
+        </div>
+    </div>
+
+    <!-- Center: Canvas -->
+    <div class="canvas-wrap">
+        <div class="canvas-toolbar">
+            <button onclick="saveLayout()">保存布局</button>
+            <button onclick="canvas.clear();canvas.setBackgroundColor('#060e18',canvas.renderAll.bind(canvas))">清空</button>
+            <button onclick="deleteSelected()" class="danger">删除选中</button>
+            <button onclick="toggleGrid()">网格</button>
+            <button onclick="exportImage()">导出图片</button>
+        </div>
+        <div class="canvas-info" id="canvas-info">就绪 | 拖拽画布平移 | 滚轮缩放</div>
+        <canvas id="fabric-canvas"></canvas>
+    </div>
+
+    <!-- Right: Properties -->
+    <div class="props-panel">
+        <div class="props-title">| 属性面板</div>
+
+        <!-- Layout Management -->
+        <div style="padding: 12px; border-bottom: 1px solid #1e3a5f;">
+            <h4 style="color:#8eafc4;font-size:12px;margin-bottom:8px;">布局管理</h4>
+            <div class="prop-group">
+                <input class="prop-input" id="layout-name" placeholder="布局名称" value="默认布局">
+            </div>
+            <button class="btn-primary" onclick="saveLayout()">保存当前布局</button>
+            <button class="btn-secondary" onclick="loadLayouts()">刷新列表</button>
+            <div class="layout-list" id="layout-list"></div>
+        </div>
+
+        <!-- Object Properties -->
+        <div class="props-body" id="props-body">
+            <div class="no-select" id="no-select-hint">点击画布中的对象查看属性</div>
+            <div id="props-content" style="display:none;">
+                <div class="prop-group">
+                    <label class="prop-label">名称</label>
+                    <input class="prop-input" id="prop-name" onchange="updateProp('name')">
+                </div>
+                <div class="prop-group">
+                    <label class="prop-label">设备编号</label>
+                    <input class="prop-input" id="prop-code" onchange="updateProp('code')">
+                </div>
+                <div class="prop-row">
+                    <div class="prop-group">
+                        <label class="prop-label">X</label>
+                        <input class="prop-input" id="prop-x" type="number" onchange="updatePos()">
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Y</label>
+                        <input class="prop-input" id="prop-y" type="number" onchange="updatePos()">
+                    </div>
+                </div>
+                <div class="prop-row">
+                    <div class="prop-group">
+                        <label class="prop-label">宽</label>
+                        <input class="prop-input" id="prop-w" type="number" onchange="updateSize()">
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">高</label>
+                        <input class="prop-input" id="prop-h" type="number" onchange="updateSize()">
+                    </div>
+                </div>
+                <div class="prop-group">
+                    <label class="prop-label">旋转</label>
+                    <input class="prop-input" id="prop-angle" type="number" onchange="updateAngle()">
+                </div>
+                <div class="prop-group">
+                    <label class="prop-label">填充颜色</label>
+                    <input type="color" class="prop-input" id="prop-fill" style="height:32px;padding:2px;" onchange="updateColor('fill')">
+                </div>
+                <div class="prop-group">
+                    <label class="prop-label">边框颜色</label>
+                    <input type="color" class="prop-input" id="prop-stroke" style="height:32px;padding:2px;" onchange="updateColor('stroke')">
+                </div>
+                <div class="prop-group">
+                    <label class="prop-label">透明度</label>
+                    <input class="prop-input" id="prop-opacity" type="range" min="0" max="1" step="0.05" onchange="updateOpacity()">
+                </div>
+                <div class="prop-group">
+                    <label class="prop-label">状态</label>
+                    <select class="prop-input" id="prop-status" onchange="updateStatus()">
+                        <option value="normal">未排班</option>
+                        <option value="running">运行中</option>
+                        <option value="idle">待机</option>
+                        <option value="down">故障</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+<script>
+/* ========== INIT ========== */
+var canvas = new fabric.Canvas("fabric-canvas", {
+    backgroundColor: "#060e18",
+    selection: true,
+    preserveObjectStacking: true
+});
+
+var wrapEl = document.querySelector(".canvas-wrap");
+canvas.setWidth(wrapEl.clientWidth);
+canvas.setHeight(wrapEl.clientHeight);
+
+var GRID_SIZE = 20;
+var gridVisible = true;
+var currentLayoutId = null;
+
+/* ========== GRID ========== */
+function drawGrid() {
+    var gridLines = [];
+    for (var x = 0; x < canvas.width / canvas.getZoom(); x += GRID_SIZE) {
+        gridLines.push(new fabric.Line([x, 0, x, canvas.height / canvas.getZoom()], {
+            stroke: "#0d2137", strokeWidth: 1, selectable: false, evented: false
+        }));
+    }
+    for (var y = 0; y < canvas.height / canvas.getZoom(); y += GRID_SIZE) {
+        gridLines.push(new fabric.Line([0, y, canvas.width / canvas.getZoom(), y], {
+            stroke: "#0d2137", strokeWidth: 1, selectable: false, evented: false
+        }));
+    }
+    var gridGroup = new fabric.Group(gridLines, {
+        selectable: false, evented: false, excludeFromExport: false
+    });
+    gridGroup.set("isGrid", true);
+    canvas.add(gridGroup);
+    canvas.sendToBack(gridGroup);
+}
+drawGrid();
+
+function toggleGrid() {
+    canvas.forEachObject(function(obj) {
+        if (obj.isGrid) {
+            gridVisible = !gridVisible;
+            obj.set("visible", gridVisible);
+        }
+    });
+    canvas.renderAll();
+}
+
+/* ========== ZOOM & PAN ========== */
+canvas.on("mouse:wheel", function(opt) {
+    var delta = opt.e.deltaY;
+    var zoom = canvas.getZoom();
+    zoom *= 0.999 ** delta;
+    if (zoom > 5) zoom = 5;
+    if (zoom < 0.2) zoom = 0.2;
+    canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+    opt.e.preventDefault();
+    opt.e.stopPropagation();
+});
+
+var isDragging = false;
+var lastPosX, lastPosY;
+canvas.on("mouse:down", function(opt) {
+    if (opt.e.altKey || opt.e.button === 1) {
+        isDragging = true;
+        canvas.selection = false;
+        lastPosX = opt.e.clientX;
+        lastPosY = opt.e.clientY;
+    }
+});
+canvas.on("mouse:move", function(opt) {
+    if (isDragging) {
+        var vpt = canvas.viewportTransform;
+        vpt[4] += opt.e.clientX - lastPosX;
+        vpt[5] += opt.e.clientY - lastPosY;
+        canvas.requestRenderAll();
+        lastPosX = opt.e.clientX;
+        lastPosY = opt.e.clientY;
+    }
+});
+canvas.on("mouse:up", function(opt) {
+    isDragging = false;
+    canvas.selection = true;
+});
+
+/* ========== ADD SHAPES ========== */
+function makeDefaultOpts() {
+    return {
+        left: canvas.width / 2 / canvas.getZoom() - 40,
+        top: canvas.height / 2 / canvas.getZoom() - 30,
+        fill: "#1565c0",
+        stroke: "#4fc3f7",
+        strokeWidth: 2,
+        strokeUniform: true,
+        cornerColor: "#4fc3f7",
+        cornerStrokeColor: "#0288d1",
+        borderColor: "#4fc3f7",
+        transparentCorners: false,
+        cornerSize: 8,
+        padding: 5
+    };
+}
+
+function addRect() {
+    var opts = makeDefaultOpts();
+    var rect = new fabric.Rect(Object.assign(opts, {
+        width: 100, height: 60, rx: 4, ry: 4,
+        customType: "equipment", customName: "设备", customCode: "", customStatus: "normal"
+    }));
+    canvas.add(rect);
+    canvas.setActiveObject(rect);
+}
+
+function addCircle() {
+    var opts = makeDefaultOpts();
+    var circle = new fabric.Circle(Object.assign(opts, {
+        radius: 40,
+        customType: "equipment", customName: "设备", customCode: "", customStatus: "normal"
+    }));
+    canvas.add(circle);
+    canvas.setActiveObject(circle);
+}
+
+function addTriangle() {
+    var opts = makeDefaultOpts();
+    var tri = new fabric.Triangle(Object.assign(opts, {
+        width: 80, height: 70,
+        customType: "equipment", customName: "设备", customCode: "", customStatus: "normal"
+    }));
+    canvas.add(tri);
+    canvas.setActiveObject(tri);
+}
+
+function addDiamond() {
+    var opts = makeDefaultOpts();
+    var diamond = new fabric.Rect(Object.assign(opts, {
+        width: 60, height: 60, angle: 45,
+        customType: "equipment", customName: "设备", customCode: "", customStatus: "normal"
+    }));
+    canvas.add(diamond);
+    canvas.setActiveObject(diamond);
+}
+
+function addText() {
+    var text = new fabric.IText("标注文字", {
+        left: 200, top: 200,
+        fontSize: 16, fill: "#4fc3f7",
+        fontFamily: "Microsoft YaHei",
+        editable: true,
+        customType: "label"
+    });
+    canvas.add(text);
+    canvas.setActiveObject(text);
+}
+
+function addLine() {
+    var line = new fabric.Line([100, 100, 300, 100], {
+        stroke: "#4fc3f7", strokeWidth: 2,
+        customType: "line"
+    });
+    canvas.add(line);
+    canvas.setActiveObject(line);
+}
+
+function addArrow() {
+    var line = new fabric.Line([100, 150, 300, 150], {
+        stroke: "#00e676", strokeWidth: 2,
+        customType: "arrow"
+    });
+    var head = new fabric.Triangle({
+        left: 300, top: 150, width: 15, height: 15,
+        fill: "#00e676", angle: 90, originX: "center", originY: "center",
+        selectable: false
+    });
+    var group = new fabric.Group([line, head], {
+        customType: "arrow"
+    });
+    canvas.add(group);
+    canvas.setActiveObject(group);
+}
+
+function addZone() {
+    var opts = makeDefaultOpts();
+    var zone = new fabric.Rect(Object.assign(opts, {
+        width: 200, height: 150, rx: 6, ry: 6,
+        fill: "rgba(21,101,192,0.15)", stroke: "#1e3a5f", strokeWidth: 1,
+        strokeDashArray: [8, 4],
+        customType: "zone", customName: "区域"
+    }));
+    canvas.add(zone);
+    canvas.setActiveObject(zone);
+}
+
+/* ========== ADD FROM EQUIPMENT DB ========== */
+var allEquipments = [];
+
+function loadEquipments() {
+    fetch("/api/equipments?page=1&page_size=200")
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.data) {
+                allEquipments = data.data;
+                renderEqList();
+            }
+        });
+}
+
+function renderEqList() {
+    var list = document.getElementById("eq-list");
+    var html = "";
+    allEquipments.forEach(function(eq) {
+        var sClass = eq.status || "normal";
+        html += '<div class="eq-item" onclick="addEquipmentToCanvas(' + eq.id + ')">' +
+            '<span class="eq-dot ' + sClass + '"></span>' +
+            '<span>' + (eq.equipment_code || "") + " " + (eq.equipment_name || "") + '</span></div>';
+    });
+    list.innerHTML = html || '<div style="color:#546e7a;font-size:12px;padding:8px;">暂无设备数据</div>';
+}
+
+function addEquipmentToCanvas(eqId) {
+    var eq = allEquipments.find(function(e) { return e.id === eqId; });
+    if (!eq) return;
+    var opts = makeDefaultOpts();
+    var sColors = {
+        running: { fill: "#1b5e20", stroke: "#00e676" },
+        idle: { fill: "#4a4100", stroke: "#ffd740" },
+        down: { fill: "#4a1a1a", stroke: "#ff5252" },
+        normal: { fill: "#1565c0", stroke: "#4fc3f7" }
+    };
+    var sc = sColors[eq.status] || sColors.normal;
+    var rect = new fabric.Rect(Object.assign(opts, {
+        width: 100, height: 60, rx: 4, ry: 4,
+        fill: sc.fill, stroke: sc.stroke, strokeWidth: 2,
+        customType: "equipment", customName: eq.equipment_name || "",
+        customCode: eq.equipment_code || "", customStatus: eq.status || "normal",
+        customEqId: eq.id
+    }));
+    var label = new fabric.Text(eq.equipment_code || eq.equipment_name || "", {
+        fontSize: 11, fill: "#e0f0ff", originX: "center", originY: "center",
+        top: 0, fontFamily: "Microsoft YaHei", selectable: false
+    });
+    var group = new fabric.Group([rect, label], {
+        left: opts.left, top: opts.top,
+        customType: "equipment", customName: eq.equipment_name || "",
+        customCode: eq.equipment_code || "", customStatus: eq.status || "normal",
+        customEqId: eq.id
+    });
+    canvas.add(group);
+    canvas.setActiveObject(group);
+}
+
+/* ========== SELECTION ========== */
+canvas.on("selection:created", showProps);
+canvas.on("selection:updated", showProps);
+canvas.on("selection:cleared", hideProps);
+
+function showProps() {
+    document.getElementById("no-select-hint").style.display = "none";
+    document.getElementById("props-content").style.display = "block";
+    var obj = canvas.getActiveObject();
+    if (!obj) return;
+    document.getElementById("prop-name").value = obj.customName || "";
+    document.getElementById("prop-code").value = obj.customCode || "";
+    document.getElementById("prop-x").value = Math.round(obj.left);
+    document.getElementById("prop-y").value = Math.round(obj.top);
+    document.getElementById("prop-w").value = Math.round(obj.width * (obj.scaleX || 1));
+    document.getElementById("prop-h").value = Math.round(obj.height * (obj.scaleY || 1));
+    document.getElementById("prop-angle").value = Math.round(obj.angle || 0);
+    document.getElementById("prop-fill").value = (obj.fill && obj.fill[0] === "#") ? obj.fill : "#1565c0";
+    document.getElementById("prop-stroke").value = (obj.stroke && obj.stroke[0] === "#") ? obj.stroke : "#4fc3f7";
+    document.getElementById("prop-opacity").value = obj.opacity || 1;
+    document.getElementById("prop-status").value = obj.customStatus || "normal";
+}
+
+function hideProps() {
+    document.getElementById("no-select-hint").style.display = "block";
+    document.getElementById("props-content").style.display = "none";
+}
+
+function updateProp(field) {
+    var obj = canvas.getActiveObject();
+    if (!obj) return;
+    if (field === "name") obj.customName = document.getElementById("prop-name").value;
+    if (field === "code") obj.customCode = document.getElementById("prop-code").value;
+    canvas.renderAll();
+}
+
+function updatePos() {
+    var obj = canvas.getActiveObject();
+    if (!obj) return;
+    obj.set("left", parseFloat(document.getElementById("prop-x").value));
+    obj.set("top", parseFloat(document.getElementById("prop-y").value));
+    obj.setCoords();
+    canvas.renderAll();
+}
+
+function updateSize() {
+    var obj = canvas.getActiveObject();
+    if (!obj) return;
+    var w = parseFloat(document.getElementById("prop-w").value);
+    var h = parseFloat(document.getElementById("prop-h").value);
+    obj.set("scaleX", w / obj.width);
+    obj.set("scaleY", h / obj.height);
+    obj.setCoords();
+    canvas.renderAll();
+}
+
+function updateAngle() {
+    var obj = canvas.getActiveObject();
+    if (!obj) return;
+    obj.set("angle", parseFloat(document.getElementById("prop-angle").value));
+    canvas.renderAll();
+}
+
+function updateColor(prop) {
+    var obj = canvas.getActiveObject();
+    if (!obj) return;
+    var val = document.getElementById(prop === "fill" ? "prop-fill" : "prop-stroke").value;
+    obj.set(prop, val);
+    canvas.renderAll();
+}
+
+function updateOpacity() {
+    var obj = canvas.getActiveObject();
+    if (!obj) return;
+    obj.set("opacity", parseFloat(document.getElementById("prop-opacity").value));
+    canvas.renderAll();
+}
+
+function updateStatus() {
+    var obj = canvas.getActiveObject();
+    if (!obj) return;
+    var status = document.getElementById("prop-status").value;
+    obj.customStatus = status;
+    var sColors = {
+        running: { fill: "#1b5e20", stroke: "#00e676" },
+        idle: { fill: "#4a4100", stroke: "#ffd740" },
+        down: { fill: "#4a1a1a", stroke: "#ff5252" },
+        normal: { fill: "#1565c0", stroke: "#4fc3f7" }
+    };
+    var sc = sColors[status] || sColors.normal;
+    obj.set("fill", sc.fill);
+    obj.set("stroke", sc.stroke);
+    canvas.renderAll();
+}
+
+canvas.on("object:modified", showProps);
+
+/* ========== SAVE / LOAD ========== */
+function getLayoutJSON() {
+    var json = canvas.toJSON(["customType", "customName", "customCode", "customStatus", "customEqId", "isGrid"]);
+    return JSON.stringify(json);
+}
+
+function saveLayout() {
+    var name = document.getElementById("layout-name").value || "默认布局";
+    var payload = {
+        id: currentLayoutId,
+        name: name,
+        layout_data: getLayoutJSON()
+    };
+    if (window.USER_TEAM_ID) payload.team_id = window.USER_TEAM_ID;
+
+    fetch("/api/workshop-layouts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            currentLayoutId = data.id;
+            showInfo("布局已保存");
+            loadLayouts();
+        }
+    });
+}
+
+function loadLayouts() {
+    var url = "/api/workshop-layouts";
+    if (window.USER_TEAM_ID) url += "?team_id=" + window.USER_TEAM_ID;
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) renderLayoutList(data.data);
+        });
+}
+
+function renderLayoutList(layouts) {
+    var list = document.getElementById("layout-list");
+    var html = "";
+    layouts.forEach(function(l) {
+        html += '<div class="layout-item" onclick="loadLayout(' + l.id + ')">' +
+            '<span>' + (l.name || "未命名") + '</span>' +
+            '<span class="del-btn" onclick="event.stopPropagation();deleteLayout(' + l.id + ')">删除</span></div>';
+    });
+    list.innerHTML = html || '<div style="color:#546e7a;font-size:11px;padding:6px;">暂无保存的布局</div>';
+}
+
+function loadLayout(lid) {
+    fetch("/api/workshop-layouts")
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                var layout = data.data.find(function(l) { return l.id === lid; });
+                if (layout && layout.layout_data) {
+                    canvas.loadFromJSON(layout.layout_data, function() {
+                        canvas.renderAll();
+                        currentLayoutId = layout.id;
+                        document.getElementById("layout-name").value = layout.name || "";
+                        showInfo("布局已加载: " + layout.name);
+                    });
+                }
+            }
+        });
+}
+
+function deleteLayout(lid) {
+    if (!confirm("确定删除此布局?")) return;
+    fetch("/api/workshop-layouts/" + lid, { method: "DELETE" })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                if (currentLayoutId === lid) currentLayoutId = null;
+                loadLayouts();
+                showInfo("布局已删除");
+            }
+        });
+}
+
+function deleteSelected() {
+    var obj = canvas.getActiveObject();
+    if (obj) {
+        canvas.remove(obj);
+        canvas.discardActiveObject();
+        canvas.renderAll();
+    }
+}
+
+function exportImage() {
+    var dataURL = canvas.toDataURL({ format: "png", quality: 1, multiplier: 2 });
+    var link = document.createElement("a");
+    link.download = "workshop-layout.png";
+    link.href = dataURL;
+    link.click();
+}
+
+function showInfo(msg) {
+    document.getElementById("canvas-info").textContent = msg;
+    setTimeout(function() {
+        document.getElementById("canvas-info").textContent = "就绪 | 拖拽画布平移 | 滚轮缩放";
+    }, 3000);
+}
+
+/* ========== INIT LOAD ========== */
+loadEquipments();
+loadLayouts();
+</script>
+{% endblock %}
