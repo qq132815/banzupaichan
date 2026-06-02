@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <div class="page-header">
 <h1>⚙️ 系统设置</h1>
@@ -13,51 +13,18 @@
 <button class="btn btn-primary" onclick="saveSettings()" style="margin-top:12px">保存</button>
 </div>
 </div>
-<div class="card">
-<div class="card-header"><h2>🔗 钉钉打卡接口配置</h2></div>
-<div class="card-body" style="padding:24px;max-width:480px">
-<p style="color:#6b7280;font-size:13px;margin:0 0 12px">配置钉钉开放平台的AppKey和AppSecret，用于同步员工打卡考勤数据</p>
-<div class="form-group" style="margin-bottom:12px">
-<label style="font-weight:600;font-size:14px">App Key</label>
-<input type="text" class="form-control" id="dt-key" placeholder="请输入钉钉AppKey" style="width:100%">
-</div>
-<div class="form-group" style="margin-bottom:12px">
-<label style="font-weight:600;font-size:14px">App Secret</label>
-<input type="password" class="form-control" id="dt-secret" placeholder="请输入钉钉AppSecret" style="width:100%">
-</div>
-<button class="btn btn-primary" onclick="saveDingtalk()" style="margin-top:8px">保存钉钉配置</button>
-<button class="btn btn-success" onclick="testDingtalk()" style="margin-top:8px;margin-left:8px">测试连接</button>
-<span id="dt-status" style="margin-left:12px;font-size:13px"></span>
-</div>
-</div>
+
 {% endblock %}
 {% block scripts %}
 <script>
 fetch("/api/settings").then(function(r){return r.json()}).then(function(d){
     document.getElementById("publish-time").value = d.plan_publish_time || "15:00";
-    document.getElementById("dt-key").value = d.dingtalk_app_key || "";
-    document.getElementById("dt-secret").value = d.dingtalk_app_secret || "";
 });
 function saveSettings(){
     var val = document.getElementById("publish-time").value;
     api("/api/settings", {method:"POST", body:{plan_publish_time: val}}).then(function(){
         toast("保存成功", "success");
     }).catch(function(){toast("保存失败", "error");});
-}
-function saveDingtalk(){
-    var key = document.getElementById("dt-key").value.trim();
-    var secret = document.getElementById("dt-secret").value.trim();
-    if(!key||!secret){toast("请填写AppKey和AppSecret","warning");return;}
-    api("/api/settings", {method:"POST", body:{dingtalk_app_key:key, dingtalk_app_secret:secret}}).then(function(){
-        toast("钉钉配置已保存", "success");
-    }).catch(function(){toast("保存失败", "error");});
-}
-function testDingtalk(){
-    document.getElementById("dt-status").innerHTML="<span style='color:#6b7280'>测试中...</span>";
-    fetch("/api/attendance/test",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
-        if(d.ok){document.getElementById("dt-status").innerHTML="<span style='color:#059669'>✓ 连接成功</span>";}
-        else{document.getElementById("dt-status").innerHTML="<span style='color:#dc2626'>✗ 连接失败: "+(d.error||"未知错误")+"</span>";}
-    }).catch(function(){document.getElementById("dt-status").innerHTML="<span style='color:#dc2626'>✗ 请求失败</span>";});
 }
 </script>
 {% endblock %}
