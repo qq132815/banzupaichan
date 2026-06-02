@@ -68,12 +68,13 @@ function loadData(){
         var tbody=document.getElementById("tbody");
         thead.innerHTML="";tbody.innerHTML="";
         var fields=[
-            {key:'efficiency',label:'生产效率',fmt:function(v){return v>0?v+'%':'-';}},
+            {key:'attendance_hours',label:'实际上班工时',fmt:function(v){return v>0?v+'h':'-';}},
+            {key:'overtime_hours',label:'加班工时',fmt:function(v){return v>0?v+'h':'-';}},
             {key:'hours',label:'生产工时',fmt:function(v){return v>0?v+'h':'-';}},
             {key:'qty',label:'总产量',fmt:function(v){return v||0;}},
             {key:'good_rate',label:'良品率',fmt:function(v){return v>0?v+'%':'-';}},
-            {key:'attendance_hours',label:'实际上班工时',fmt:function(v){return v>0?v+'h':'-';}},
-            {key:'is_overtime',label:'是否加班',fmt:function(v){return v?'<span class="overtime">加班</span>':'-';}}
+            {key:'efficiency',label:'生产效率',fmt:function(v){return v>0?v+'%':'-';}},
+            {key:'utilization_rate',label:'工时利用率',fmt:function(v){return v>0?v+'%':'-';}}
         ];
         var h1='<tr><th style="text-align:left;min-width:120px">指标</th>';
         d.days.forEach(function(day){h1+='<th>'+day.date.substring(5)+'</th>';});
@@ -83,9 +84,7 @@ function loadData(){
             var td='<td style="text-align:left;font-weight:600">'+f.label+'</td>';
             d.days.forEach(function(day){
                 var val=day[f.key];
-                var cls='';
-                if(f.key==='is_overtime'&&val)cls=' class="overtime"';
-                td+='<td'+cls+'>'+f.fmt(val)+'</td>';
+                td+='<td>'+f.fmt(val)+'</td>';
             });
             tr.innerHTML=td;tbody.appendChild(tr);
         });

@@ -2056,16 +2056,17 @@ def api_report_personal():
     c = conn.cursor()
     std_cap = _get_standard_capacity_map()
     
-    # Get work reports
-    c.execute("""SELECT create_time, SUM(report_qty), SUM(report_hours), SUM(good_qty)
+    # Get work reports with efficiency
+    c.execute("""SELECT create_time, SUM(report_qty), SUM(report_hours), SUM(good_qty),
+        AVG(CASE WHEN efficiency > 0 THEN efficiency END) as avg_eff
         FROM work_reports WHERE operator=? AND create_time BETWEEN ? AND ? AND report_hours > 0
         GROUP BY SUBSTR(create_time, 1, 10)""",
         (name, date_from + ' 00:00:00', date_to + ' 23:59:59'))
     report_data = {}
     for r in c.fetchall():
         dt = r[0][:10]
-        report_data[dt] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0}
-    
+        report_data[dt] = {'qty': r[1] or 0, 'hours': round(r[2] or 0, 1), 'good_qty': r[3] or 0, 'efficiency': round(r[4] or 0, 1)}
+
     # Get attendance (match by user_id via personnel)
     c.execute("""SELECT a.work_date, a.work_hours, a.is_overtime, a.leave_type, a.normal_hours, a.overtime_hours 
         FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id 
@@ -2073,35 +2074,32 @@ def api_report_personal():
               (name, date_from, date_to))
     attend_data = {}
     for r in c.fetchall():
-        attend_data[r[0]] = {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or '', 'normal': r[4] or 0, 'ot': r[5] or 0}
-    
+        attend_data[r[0]] = {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or '', 'normal': r[4] or 0, 'ot': round(r[5] or 0, 1)}
+
     conn.close()
-    
+
     # Build date columns
     days = []
     current = datetime.strptime(date_from, '%Y-%m-%d').date()
     end = datetime.strptime(date_to, '%Y-%m-%d').date()
     while current <= end:
         ds = current.strftime('%Y-%m-%d')
-        rd = report_data.get(ds, {'qty': 0, 'hours': 0, 'good_qty': 0})
-        ad = attend_data.get(ds, {'hours': 0, 'overtime': 0, 'leave': ''})
+        rd = report_data.get(ds, {'qty': 0, 'hours': 0, 'good_qty': 0, 'efficiency': 0})
+        ad = attend_data.get(ds, {'hours': 0, 'overtime': 0, 'leave': '', 'ot': 0})
         good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0
-        eff = 0
-        if rd['hours'] > 0:
-            caps = list(std_cap.values())
-            avg_cap = sum(caps) / len(caps) if caps else 0
-            if avg_cap > 0:
-                eff = round((rd['qty'] / rd['hours']) / avg_cap * 100, 1)
+        util_rate = round(rd['hours'] / ad['hours'] * 100, 1) if ad['hours'] > 0 else 0
         days.append({
             'date': ds,
             'qty': rd['qty'],
             'hours': rd['hours'],
             'good_rate': good_rate,
-            'efficiency': eff,
+            'efficiency': rd['efficiency'],
             'attendance_hours': ad['hours'],
-            'is_overtime': ad['overtime'],
+            'overtime_hours': ad['ot'],
+            'utilization_rate': util_rate,
             'leave_type': ad['leave'],
         })
+        current += timedelta(days=1)
         current += timedelta(days=1)
     
     return jsonify({'name': name, 'days': days})
