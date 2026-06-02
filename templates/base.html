@@ -11,13 +11,10 @@
 <div class="logo">📋 班组排产系统</div>
 <ul>
 <li><a href="/" class="nav-link"><span class="icon">🏠</span><span>工作台</span></a></li>
-{% if session.get("role") == "team" %}
-<li><a href="/schedule-page" class="nav-link"><span class="icon">📊</span><span>排班 &amp; 甘特图</span></a></li>
-<li><a href="/schedule-records" class="nav-link"><span class="icon">📋</span><span>排班提交记录</span></a></li>
-{% endif %}
-{% if session.get('role') in ('planner', 'admin') %}
-<li class="nav-section"><span>计划员</span></li>
-<li class="nav-item has-sub">
+<li data-perm="schedule"><a href="/schedule-page" class="nav-link"><span class="icon">📊</span><span>排班 &amp; 甘特图</span></a></li>
+<li data-perm="schedule"><a href="/schedule-records" class="nav-link"><span class="icon">📋</span><span>排班提交记录</span></a></li>
+<li class="nav-section" data-perm-section="shipping_plan"><span>计划员</span></li>
+<li class="nav-item has-sub" data-perm="shipping_plan">
 <a href="javascript:void(0)" class="nav-link has-sub-link" onclick="toggleSub(this)"><span class="icon">📦</span><span>发货计划</span><span class="arrow">▸</span></a>
 <ul class="sub-menu">
 <li><a href="/planner/shipping-plan" class="nav-link sub"><span class="icon">📋</span><span>成品计划</span></a></li>
@@ -25,10 +22,9 @@
 <li><a href="/planner/publish-history" class="nav-link sub"><span class="icon">📜</span><span>发布记录</span></a></li>
 </ul>
 </li>
-<li><a href="/planner/plans" class="nav-link"><span class="icon">📋</span><span>计划记录</span></a></li>
-<li><a href="/alerts-page" class="nav-link"><span class="icon">🔔</span><span>预警中心</span></a></li>
-<li><a href="/orders-page" class="nav-link"><span class="icon">📦</span><span>订单管理</span></a></li>
-{% endif %}
+<li data-perm="plan_approval"><a href="/planner/plans" class="nav-link"><span class="icon">📋</span><span>计划记录</span></a></li>
+<li data-perm="alerts"><a href="/alerts-page" class="nav-link"><span class="icon">🔔</span><span>预警中心</span></a></li>
+<li data-perm="orders"><a href="/orders-page" class="nav-link"><span class="icon">📦</span><span>订单管理</span></a></li>
 <li class="nav-item has-sub">
 <a href="javascript:void(0)" class="nav-link has-sub-link" onclick="toggleSub(this)"><span class="icon">📂</span><span>基础数据</span><span class="arrow">▸</span></a>
 <ul class="sub-menu">
@@ -42,8 +38,7 @@
 <li><a href="/work-reports-page" class="nav-link sub"><span class="icon">📋</span><span>报工数据</span></a></li>
 </ul>
 </li>
-{% if session.get('role') == 'admin' %}
-<li class="nav-item has-sub">
+<li class="nav-item has-sub" data-perm="production_reports">
 <a href="javascript:void(0)" class="nav-link has-sub-link" onclick="toggleSub(this)"><span class="icon">📊</span><span>生产报表</span><span class="arrow">▸</span></a>
 <ul class="sub-menu">
 <li><a href="/reports/personal-efficiency" class="nav-link sub"><span class="icon">👤</span><span>个人效率查询</span></a></li>
@@ -53,7 +48,7 @@
 <li><a href="/reports/monthly" class="nav-link sub"><span class="icon">📆</span><span>月报表</span></a></li>
 </ul>
 </li>
-<li class="nav-item has-sub">
+<li class="nav-item has-sub" data-perm="system_management">
 <a href="javascript:void(0)" class="nav-link has-sub-link" onclick="toggleSub(this)"><span class="icon">⚙️</span><span>系统管理</span><span class="arrow">▸</span></a>
 <ul class="sub-menu">
 <li><a href="/admin/users" class="nav-link sub"><span class="icon">👤</span><span>账户管理</span></a></li>
@@ -63,7 +58,6 @@
   <li><a href="/admin/permissions" class="nav-link sub"><span class="icon">🔐</span><span>权限设置</span></a></li>
   </ul>
 </li>
-{% endif %}
 </ul>
 <div class="sidebar-footer">
 <div class="user-info">
@@ -80,6 +74,29 @@
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="/static/js/app.js"></script>
 <script>
+var USER_ROLE="{{ session.get('role','') }}";
+var PERM_CACHE=null;
+function loadPermissions(cb){
+    if(PERM_CACHE){if(cb)cb(PERM_CACHE);return;}
+    fetch("/api/permissions").then(function(r){return r.json()}).then(function(d){
+        PERM_CACHE=d;
+        if(cb)cb(d);
+    }).catch(function(){if(cb)cb({});});
+}
+function applyPermissions(perms){
+    var role=USER_ROLE;
+    document.querySelectorAll("[data-perm]").forEach(function(el){
+        var key=el.getAttribute("data-perm");
+        var p=perms[key];
+        if(p && p[role]===false){el.style.display="none";}
+    });
+    document.querySelectorAll("[data-perm-section]").forEach(function(el){
+        var key=el.getAttribute("data-perm-section");
+        var p=perms[key];
+        if(p && p[role]===false){el.style.display="none";}
+    });
+}
+loadPermissions(applyPermissions);
 function doLogout(){fetch("/api/logout",{method:"POST"}).then(function(){window.location.href="/login";});}
 function toggleSub(el){
     var parent=el.closest('.has-sub');

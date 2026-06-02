@@ -1576,7 +1576,6 @@ def api_save_settings():
 # ========== Permissions API ==========
 @app.route('/api/permissions', methods=['GET'])
 @login_required
-@admin_required
 def api_get_permissions():
     conn = get_connection()
     c = conn.cursor()
