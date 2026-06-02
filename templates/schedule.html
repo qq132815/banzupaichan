@@ -12,10 +12,10 @@
 .ref-tab-content { display: none; }
 .ref-tab-content.active { display: block; }
 .ref-team-group { margin-bottom: 12px; }
-.ref-team-group h4 { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #f3f4f6; }
-.ref-item { padding: 6px 8px; font-size: 11px; border-bottom: 1px solid #f9fafb; line-height: 1.5; }
+.ref-team-group h4 { font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #f3f4f6; }
+.ref-item { padding: 8px 12px; font-size: 13px; border-bottom: 1px solid #f3f4f6; line-height: 1.6; }
 .ref-item:last-child { border-bottom: none; }
-.ref-empty { text-align: center; color: #9ca3af; font-size: 13px; padding: 20px; }
+.ref-empty { text-align: center; color: #9ca3af; font-size: 14px; padding: 30px; }
 .ref-urgent-overdue { color: #dc2626; font-weight: 600; }
 .ref-urgent-today { color: #f59e0b; font-weight: 600; }
 </style>
@@ -1409,10 +1409,12 @@ function filterSemiFinished() {
         if (filtered.length === 0) return;
         html += '<div class="ref-team-group"><h4>' + group.team + ' (' + filtered.length + '\u6761)</h4>';
         filtered.forEach(function(r) {
-            html += '<div class="ref-item">';
-            html += '<div><strong>' + (r.product_name||'') + '</strong> ' + (r.process_name||'') + '</div>';
-            html += '<div style="color:#6b7280">\u62a5\u5de5: ' + r.report_qty + ' | \u826f\u54c1: ' + r.good_qty;
-            html += ' | ' + (r.create_time||'').substring(5,16) + ' | ' + (r.operator||'') + '</div>';
+            html += '<div class="ref-item" style="display:flex;gap:16px;align-items:baseline">';
+            html += '<div style="min-width:160px"><strong>' + (r.product_name||'') + '</strong></div>';
+            html += '<div style="min-width:120px;color:#6b7280">' + (r.process_name||'') + '</div>';
+            html += '<div style="min-width:60px">\u62a5\u5de5: ' + r.report_qty + '</div>';
+            html += '<div style="min-width:60px">\u826f\u54c1: ' + r.good_qty + '</div>';
+            html += '<div style="color:#9ca3af">' + (r.create_time||'').substring(5,16) + ' ' + (r.operator||'') + '</div>';
             html += '</div>';
         });
         html += '</div>';
@@ -1437,8 +1439,12 @@ function filterUrgentOrders() {
         if (o.due_date < today) cls = 'ref-urgent-overdue';
         else if (o.due_date === today) cls = 'ref-urgent-today';
         var remaining = (o.quantity||0) - (o.completed_qty||0);
-        html += '<div class="ref-item ' + cls + '">';
-        html += '<div>' + (o.priority||'') + ' <strong>' + (o.product_name||o.product_code||'') + '</strong></div>';
+        html += '<div class="ref-item ' + cls + '" style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap">';
+        html += '<div style="min-width:140px"><strong>' + (o.product_name||o.product_code||'') + '</strong></div>';
+        html += '<div style="min-width:120px;color:#6b7280">' + (o.order_no||'') + '</div>';
+        html += '<div>\u8ba1\u5212: ' + (o.quantity||0) + ' \u5b8c\u6210: ' + (o.completed_qty||0) + ' <strong>\u5269\u4f59: ' + remaining + '</strong></div>';
+        html += '<div style="color:#6b7280">\u4ea4\u671f: ' + (o.due_date||'') + (cls==='ref-urgent-overdue' ? ' \u26a0\ufe0f\u5df2\u8d85\u671f' : '') + '</div>';
+        html += '</div>';
         html += '<div style="color:#6b7280">\u5355\u53f7: ' + (o.order_no||'') + '</div>';
         html += '<div>\u8ba1\u5212: ' + (o.quantity||0) + ' | \u5b8c\u6210: ' + (o.completed_qty||0) + ' | <strong>\u5269\u4f59: ' + remaining + '</strong></div>';
         html += '<div style="color:#6b7280">\u4ea4\u671f: ' + (o.due_date||'') + (cls==='ref-urgent-overdue' ? ' \u26a0\ufe0f\u5df2\u8d85\u671f' : '') + '</div>';
@@ -1461,8 +1467,14 @@ function filterTodayReports() {
     if (filtered.length === 0) { container.innerHTML = '<div class="ref-empty">\u65e0\u5339\u914d\u6570\u636e</div>'; return; }
     var html = '';
     filtered.forEach(function(r) {
-        html += '<div class="ref-item">';
-        html += '<div><strong>' + (r.product_name||'') + '</strong> ' + (r.process_name||'') + '</div>';
+        html += '<div class="ref-item" style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap">';
+        html += '<div style="min-width:160px"><strong>' + (r.product_name||'') + '</strong></div>';
+        html += '<div style="min-width:120px;color:#6b7280">' + (r.process_name||'') + '</div>';
+        html += '<div style="min-width:100px">' + (r.order_no||'') + '</div>';
+        html += '<div>\u62a5\u5de5: ' + (r.report_qty||0) + ' \u826f\u54c1: ' + (r.good_qty||0) + '</div>';
+        html += '<div style="color:#6b7280">' + (r.operator||'') + '</div>';
+        html += '<div style="color:#9ca3af">' + (r.create_time||'') + '</div>';
+        html += '</div>';
         html += '<div style="color:#6b7280">\u5355\u53f7: ' + (r.order_no||'') + '</div>';
         html += '<div>\u62a5\u5de5: ' + (r.report_qty||0) + ' | \u826f\u54c1: ' + (r.good_qty||0) + ' | ' + (r.operator||'') + '</div>';
         html += '<div style="color:#9ca3af;font-size:10px">' + (r.create_time||'') + '</div>';
