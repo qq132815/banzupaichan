@@ -39,6 +39,7 @@
 <li><a href="/equipments-page" class="nav-link sub"><span class="icon">⚙️</span><span>设备管理</span></a></li>
 <li><a href="/personnel-page" class="nav-link sub"><span class="icon">👥</span><span>人员管理</span></a></li>
 <li><a href="/molds-page" class="nav-link sub"><span class="icon">🔧</span><span>模具管理</span></a></li>
+<li><a href="/work-reports-page" class="nav-link sub"><span class="icon">📋</span><span>报工数据</span></a></li>
 </ul>
 </li>
 {% if session.get('role') == 'admin' %}
@@ -46,7 +47,7 @@
 <a href="javascript:void(0)" class="nav-link has-sub-link" onclick="toggleSub(this)"><span class="icon">📊</span><span>生产报表</span><span class="arrow">▸</span></a>
 <ul class="sub-menu">
 <li><a href="/statistics-page" class="nav-link sub"><span class="icon">📈</span><span>完成率统计</span></a></li>
-<li><a href="/work-reports-page" class="nav-link sub"><span class="icon">📋</span><span>报工数据</span></a></li>
+
 <li><a href="/reports/efficiency-daily" class="nav-link sub"><span class="icon">📊</span><span>效率日报</span></a></li>
 <li><a href="/reports/personal-efficiency" class="nav-link sub"><span class="icon">👤</span><span>个人效率查询</span></a></li>
 <li><a href="/reports/weekly" class="nav-link sub"><span class="icon">📅</span><span>周报表</span></a></li>
