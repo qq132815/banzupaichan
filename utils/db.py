@@ -23,7 +23,7 @@ def init_database():
 
     c.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, product_code TEXT NOT NULL UNIQUE, product_name TEXT, product_type TEXT, safety_stock REAL, unit TEXT)")
 
-    c.execute("CREATE TABLE IF NOT EXISTS work_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT, product_code TEXT, product_name TEXT, quantity REAL, completed_qty REAL, due_date TEXT, priority TEXT, status TEXT, source TEXT, parent_order_no TEXT, route_code TEXT, process_progress TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS work_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT, product_code TEXT, product_name TEXT, quantity REAL, completed_qty REAL, due_date TEXT, priority TEXT, status TEXT, source TEXT, parent_order_no TEXT, route_code TEXT, process_progress TEXT, create_time TEXT)")
 
     c.execute("CREATE TABLE IF NOT EXISTS process_routes (id INTEGER PRIMARY KEY AUTOINCREMENT, route_code TEXT, route_name TEXT, product_code TEXT, process_list TEXT, remark TEXT)")
 
@@ -272,7 +272,7 @@ def reject_daily_plan(plan_id, user_id, reason=''):
 def return_daily_plan(plan_id, user_id, reason=''):
     conn = get_connection()
     c = conn.cursor()
-    c.execute("UPDATE daily_plans SET status='returned', reject_reason=? WHERE id=? AND status='submitted'", (reason, plan_id))
+    c.execute("UPDATE daily_plans SET status='returned', reject_reason=? WHERE id=? AND status IN ('submitted','approved')", (reason, plan_id))
     conn.commit()
     conn.close()
 
