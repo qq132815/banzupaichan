@@ -75,7 +75,8 @@ function loadData(){
             {key:'qty',label:'总产量',fmt:function(v){return v||0;}},
             {key:'good_rate',label:'良品率',fmt:function(v){return v>0?v+'%':'-';}},
             {key:'efficiency',label:'生产效率',fmt:function(v){return v>0?(v>=100?'<span style="color:#059669">'+v+'%</span>':'<span style="color:#dc2626">'+v+'%</span>'):'-';}},
-            {key:'utilization_rate',label:'工时利用率',fmt:function(v){return v>0?(v>=100?'<span style="color:#059669">'+v+'%</span>':'<span style="color:#dc2626">'+v+'%</span>'):'-';}}
+            {key:'utilization_rate',label:'工时利用率',fmt:function(v){return v>0?(v>=100?'<span style="color:#059669">'+v+'%</span>':'<span style="color:#dc2626">'+v+'%</span>'):'-';}},
+            {key:'status',label:'出勤状态',fmt:function(v){var m={'正常':'#059669','迟到':'#f59e0b','加班':'#3b82f6','请假':'#8b5cf6','旷工':'#dc2626'};return v?'<span style="color:'+(m[v]||'#6b7280')+';font-weight:600">'+v+'</span>':'-';}}
         ];
         var h1='<tr><th style="text-align:left;min-width:120px">指标</th>';
         d.days.forEach(function(day){h1+='<th>'+day.date.substring(5)+'</th>';});

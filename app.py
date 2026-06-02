@@ -2068,13 +2068,13 @@ def api_report_personal():
         report_data[dt] = {'qty': r[1] or 0, 'hours': round(r[2] or 0, 1), 'good_qty': r[3] or 0, 'efficiency': round(r[4] or 0, 1)}
 
     # Get attendance (match by user_id via personnel)
-    c.execute("""SELECT a.work_date, a.work_hours, a.is_overtime, a.leave_type, a.normal_hours, a.overtime_hours 
+    c.execute("""SELECT a.work_date, a.work_hours, a.is_overtime, a.leave_type, a.normal_hours, a.overtime_hours, a.check_in
         FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id 
         WHERE p.name=? AND a.work_date BETWEEN ? AND ?""", 
               (name, date_from, date_to))
     attend_data = {}
     for r in c.fetchall():
-        attend_data[r[0]] = {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or '', 'normal': r[4] or 0, 'ot': round(r[5] or 0, 1)}
+        attend_data[r[0]] = {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or '', 'normal': r[4] or 0, 'ot': round(r[5] or 0, 1), 'check_in': r[6] or ''}
 
     conn.close()
 
@@ -2085,7 +2085,7 @@ def api_report_personal():
     while current <= end:
         ds = current.strftime('%Y-%m-%d')
         rd = report_data.get(ds, {'qty': 0, 'hours': 0, 'good_qty': 0, 'efficiency': 0})
-        ad = attend_data.get(ds, {'hours': 0, 'overtime': 0, 'leave': '', 'ot': 0, 'normal': 0})
+        ad = attend_data.get(ds, {'hours': 0, 'overtime': 0, 'leave': '', 'ot': 0, 'normal': 0, 'check_in': ''})
         good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0
         util_rate = round(rd['hours'] / ad['hours'] * 100, 1) if ad['hours'] > 0 else 0
         days.append({
@@ -2099,6 +2099,7 @@ def api_report_personal():
             'normal_hours': round(ad['normal'], 1),
             'utilization_rate': util_rate,
             'leave_type': ad['leave'],
+            'status': '请假' if ad['leave'] else ('迟到' if ad['check_in'] and ad['check_in'][11:16]>'08:00' else ('加班' if ad['ot']>0 else ('正常' if ad['hours']>0 else '旷工'))),
         })
         current += timedelta(days=1)
     
