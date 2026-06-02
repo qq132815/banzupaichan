@@ -6,54 +6,141 @@
 <select id="team-filter" onchange="loadData()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"><option value="">全部班组</option></select>
 <button class="btn btn-primary" onclick="loadData()">查询</button>
 </div>
+<div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap;align-items:center">
+<span style="font-size:13px;color:#6b7280">快速筛选：</span>
+<button class="filter-btn active" onclick="applyFilter('all',this)">全部</button>
+<button class="filter-btn" onclick="applyFilter('low_eff',this)">效率偏低 &lt;100%</button>
+<button class="filter-btn" onclick="applyFilter('low_util',this)">利用率偏低 &lt;70%</button>
+<button class="filter-btn" onclick="applyFilter('abnormal_output',this)">产出异常</button>
+<button class="filter-btn" onclick="applyFilter('problems',this)">问题汇总</button>
+<span id="filter-count" style="font-size:12px;color:#6b7280;margin-left:8px"></span>
+</div>
 <div class="card"><div class="card-body">
 <div class="table-wrap">
 <table>
 <thead><tr>
-<th style="min-width:80px">姓名</th>
-<th style="min-width:70px">班组</th>
-<th style="min-width:70px">打卡工时</th>
-<th style="min-width:70px">常规工时</th>
-<th style="min-width:70px">加班工时</th>
-<th style="min-width:70px">生产工时</th>
-<th style="min-width:60px">总产量</th>
-<th style="min-width:60px">良品率</th>
-<th style="min-width:70px">生产效率</th>
-<th style="min-width:60px">加班</th>
+<th class="sortable" onclick="sortBy('name',this)">姓名</th>
+<th class="sortable" onclick="sortBy('department',this)">班组</th>
+<th class="sortable num" onclick="sortBy('attendance_hours',this)">打卡工时</th>
+<th class="sortable num" onclick="sortBy('normal_hours',this)">常规工时</th>
+<th class="sortable num" onclick="sortBy('overtime_hours',this)">加班工时</th>
+<th class="sortable num" onclick="sortBy('production_hours',this)">生产工时</th>
+<th class="sortable num" onclick="sortBy('qty',this)">总产量</th>
+<th class="sortable num" onclick="sortBy('good_rate',this)">良品率</th>
+<th class="sortable num" onclick="sortBy('efficiency',this)">生产效率</th>
+<th class="sortable num" onclick="sortBy('utilization_rate',this)">工时利用率</th>
+<th class="sortable" onclick="sortBy('is_overtime',this)">加班</th>
 </tr></thead>
 <tbody id="tbody"></tbody>
 </table>
 </div>
 </div></div>
 
+<style>
+.sortable{cursor:pointer;user-select:none;position:relative;padding-right:14px}
+.sortable:hover{color:#3b82f6}
+.sortable::after{content:'';position:absolute;right:4px;top:50%;transform:translateY(-50%);border:4px solid transparent;border-top-color:#d1d5db;border-bottom:none}
+.sortable.asc::after{border-top-color:#3b82f6;border-bottom:none}
+.sortable.desc::after{border-top-color:transparent;border-bottom-color:#3b82f6}
+.filter-btn{padding:5px 12px;border:1px solid #d1d5db;border-radius:6px;background:#fff;font-size:12px;color:#374151;cursor:pointer;transition:all .15s}
+.filter-btn:hover{border-color:#3b82f6;color:#3b82f6}
+.filter-btn.active{background:#3b82f6;color:#fff;border-color:#3b82f6}
+</style>
 {% endblock %}
 {% block scripts %}
 <script>
+var allData=[];
+var currentSort={key:'name',dir:'asc'};
+var currentFilter='all';
+
 (function(){
-    var now=new Date();var dd=now.getFullYear()+"-"+("0"+(now.getMonth()+1)).slice(-2)+"-"+("0"+now.getDate()).slice(-2);document.getElementById("report-date").value=dd;
+    var now=new Date();var dd=now.getFullYear()+"-"+("0"+(now.getMonth()+1)).slice(-2)+"-"+("0"+now.getDate()).slice(-2);
+    document.getElementById("report-date").value=dd;
     fetch("/api/teams").then(function(r){return r.json()}).then(function(d){
         var sel=document.getElementById("team-filter");
         d.forEach(function(t){var o=document.createElement("option");o.value=t.id;o.textContent=t.name;sel.appendChild(o);});
         loadData();
     });
 })();
+
 function loadData(){
     var date=document.getElementById("report-date").value;
     var tid=document.getElementById("team-filter").value;
     var url="/api/reports/daily?date="+date;
     if(tid)url+="&team_id="+tid;
     fetch(url).then(function(r){return r.json()}).then(function(d){
-        var tb=document.getElementById("tbody");tb.innerHTML="";
-        if(!d.data||d.data.length===0){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#9ca3af;padding:40px">暂无数据</td></tr>';return;}
-        d.data.forEach(function(r){
-            var tr=document.createElement("tr");
-            var ot=r.is_overtime?'<span class="overtime">加班</span>':'<span style="color:#9ca3af">-</span>';
-            var gr=r.good_rate>0?r.good_rate+'%':'<span style="color:#9ca3af">-</span>';
-            var eff=r.efficiency>0?(r.efficiency>100?'<span style="color:#059669">'+r.efficiency+'%</span>':r.efficiency<100?'<span style="color:#dc2626">'+r.efficiency+'%</span>':'<span>'+r.efficiency+'%</span>'):'<span style="color:#9ca3af">-</span>';
-            tr.innerHTML='<td><strong>'+r.name+'</strong></td><td>'+(r.department||'')+'</td><td>'+(r.attendance_hours||0)+'h</td><td>'+(r.normal_hours||0)+'h</td><td>'+(r.overtime_hours||0)+'h</td><td>'+((r.production_hours||0)>0?((r.production_hours||0)<(r.attendance_hours||0)?'<span style="color:#dc2626">'+(r.production_hours||0)+'h</span>':(r.production_hours||0)+'h'):'<span style="color:#9ca3af">-</span>')+'</td><td>'+(r.qty||0)+'</td><td>'+gr+'</td><td>'+((r.efficiency||0)>0?((r.efficiency||0)>=100?'<span style="color:#059669">'+(r.efficiency||0)+'%</span>':'<span style="color:#dc2626">'+(r.efficiency||0)+'%</span>'):'<span style="color:#9ca3af">-</span>')+'</td><td>'+ot+'</td>';
-            tb.appendChild(tr);
-        });
+        allData=d.data||[];
+        currentSort={key:'name',dir:'asc'};
+        currentFilter='all';
+        document.querySelectorAll('.filter-btn').forEach(function(b){b.classList.remove('active');});
+        document.querySelector('.filter-btn').classList.add('active');
+        renderTable();
     });
+}
+
+function applyFilter(type,btn){
+    currentFilter=type;
+    document.querySelectorAll('.filter-btn').forEach(function(b){b.classList.remove('active');});
+    btn.classList.add('active');
+    renderTable();
+}
+
+function sortBy(key,th){
+    if(currentSort.key===key){
+        currentSort.dir=currentSort.dir==='asc'?'desc':'asc';
+    }else{
+        currentSort={key:key,dir:'asc'};
+    }
+    document.querySelectorAll('.sortable').forEach(function(h){h.classList.remove('asc','desc');});
+    th.classList.add(currentSort.dir);
+    renderTable();
+}
+
+function getFiltered(){
+    var data=allData.slice();
+    if(currentFilter==='low_eff'){
+        data=data.filter(function(r){return r.efficiency>0&&r.efficiency<100;});
+    }else if(currentFilter==='low_util'){
+        data=data.filter(function(r){return r.utilization_rate>0&&r.utilization_rate<70;});
+    }else if(currentFilter==='abnormal_output'){
+        data=data.filter(function(r){return (r.attendance_hours>0&&r.qty===0)||(r.good_rate>0&&r.good_rate<99);});
+    }else if(currentFilter==='problems'){
+        data=data.filter(function(r){
+            return (r.efficiency>0&&r.efficiency<100)||(r.utilization_rate>0&&r.utilization_rate<70)||(r.attendance_hours>0&&r.qty===0)||(r.good_rate>0&&r.good_rate<99);
+        });
+    }
+    data.sort(function(a,b){
+        var va=a[currentSort.key],vb=b[currentSort.key];
+        if(typeof va==='string')va=va||'';if(typeof vb==='string')vb=vb||'';
+        if(va<vb)return currentSort.dir==='asc'?-1:1;
+        if(va>vb)return currentSort.dir==='asc'?1:-1;
+        return 0;
+    });
+    return data;
+}
+
+function renderTable(){
+    var tb=document.getElementById("tbody");
+    var data=getFiltered();
+    var countEl=document.getElementById("filter-count");
+    if(currentFilter!=='all'){
+        countEl.textContent='命中 '+data.length+' / '+allData.length+' 人';
+    }else{
+        countEl.textContent='共 '+data.length+' 人';
+    }
+    if(!data.length){tb.innerHTML='<tr><td colspan="11" style="text-align:center;color:#9ca3af;padding:40px">暂无数据</td></tr>';return;}
+    var html='';
+    data.forEach(function(r){
+        var gr=r.good_rate>0?r.good_rate+'%':'<span style="color:#9ca3af">-</span>';
+        var eff=r.efficiency>0?(r.efficiency>=100?'<span style="color:#059669">'+r.efficiency+'%</span>':'<span style="color:#dc2626">'+r.efficiency+'%</span>'):'<span style="color:#9ca3af">-</span>';
+        var ut=(r.utilization_rate||0)>0?((r.utilization_rate>=70?'<span style="color:#059669">':'<span style="color:#dc2626">')+r.utilization_rate+'%</span>'):'<span style="color:#9ca3af">-</span>';
+        var ot=r.is_overtime?'<span class="overtime">加班</span>':'<span style="color:#9ca3af">-</span>';
+        var ph=r.production_hours||0;
+        var ah=r.attendance_hours||0;
+        var phHtml=ph>0?(ph<ah?'<span style="color:#dc2626">'+ph+'h</span>':ph+'h'):'<span style="color:#9ca3af">-</span>';
+        html+='<tr><td><strong>'+r.name+'</strong></td><td>'+(r.department||'')+'</td><td>'+ah+'h</td><td>'+(r.normal_hours||0)+'h</td><td>'+(r.overtime_hours||0)+'h</td><td>'+phHtml+'</td><td>'+(r.qty||0)+'</td><td>'+gr+'</td><td>'+eff+'</td><td>'+ut+'</td><td>'+ot+'</td></tr>';
+    });
+    tb.innerHTML=html;
 }
 </script>
 {% endblock %}

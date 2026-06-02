@@ -2026,17 +2026,21 @@ def api_report_daily():
         
         good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0
         eff = rd['efficiency']
-        
+        att_hrs = ad['hours']
+        prod_hrs = round(rd['hours'], 1)
+        util_rate = round(prod_hrs / att_hrs * 100, 1) if att_hrs > 0 else 0
+
         rows.append({
             'name': name,
             'department': info['department'],
-            'attendance_hours': ad['hours'],
+            'attendance_hours': att_hrs,
             'normal_hours': ad['normal'],
             'overtime_hours': ad['ot'],
-            'production_hours': round(rd['hours'], 1),
+            'production_hours': prod_hrs,
             'qty': rd['qty'],
             'good_rate': good_rate,
             'efficiency': eff,
+            'utilization_rate': util_rate,
             'is_overtime': ad['overtime'],
             'leave_type': ad['leave'],
         })
