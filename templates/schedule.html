@@ -428,17 +428,19 @@ function renderWarnings(){
     var html="<table style='width:100%;border-collapse:collapse;font-size:11px'>";
     html+="<thead style='position:sticky;top:0;z-index:3'><tr>";
     var _na=_ws.k==='name'?(_ws.d==='asc'?'\u25b2':'\u25bc'):'';
-    html+="<th style='text-align:left;padding:4px 6px;background:#f9fafb;border-bottom:1px solid #e5e7eb;position:sticky;left:0;z-index:2;cursor:pointer;user-select:none' onclick=\"sortWarning('name')\">\u4ea7\u54c1\u540d\u5fc6"+_na+"</th>";
-    html+="<th style='text-align:center;padding:4px 6px;background:#fef3c7;border-bottom:1px solid #e5e7eb;'>\u672a\u5b8c\u6210</th>";
+    html+="<th style='text-align:left;padding:4px 6px;background:#f9fafb;border-bottom:1px solid #e5e7eb;position:sticky;left:0;z-index:2;cursor:pointer;user-select:none' onclick=\"sortWarning('name')\">\u4ea7\u54c1名称"+_na+"</th>";
+    var _ra=_ws.k==='remain'?(_ws.d==='asc'?'\u25b2':'\u25bc'):'';html+="<th style='text-align:center;padding:4px 6px;background:#fef3c7;border-bottom:1px solid #e5e7eb;cursor:pointer;user-select:none' onclick=\"sortWarning('remain')\">\u672a\u5b8c\u6210"+_ra+"</th>";
     dates.forEach(function(d){
         var isToday=d===today.toISOString().split("T")[0];
         var hdr=isToday?"<b>\u4eca\u5929</b>":d.substring(5);
         var bg=isToday?"#dcfce7":"#f9fafb";
-        html+="<th style='text-align:center;padding:4px 6px;background:"+bg+";border-bottom:1px solid #e5e7eb;font-size:10px'>"+hdr+"</th>";
+        var dk='d_'+d;var da=_ws.k===dk?(_ws.d==='asc'?'\u25b2':'\u25bc'):'';html+="<th style='text-align:center;padding:4px 6px;background:"+bg+";border-bottom:1px solid #e5e7eb;font-size:10px;cursor:pointer;user-select:none' onclick=\"sortWarning('"+dk+"')\">"+hdr+da+"</th>";
     });
     html+="</tr></thead><tbody>";
     var prodNames=Object.keys(products);
     if(_ws.k==='name'){prodNames.sort(function(a,b){return _ws.d==='asc'?a.localeCompare(b):b.localeCompare(a);});}
+    else if(_ws.k==='remain'){prodNames.sort(function(a,b){var ra=woRemain[a]||woRemain[products[a].code]||0;var rb=woRemain[b]||woRemain[products[b].code]||0;return _ws.d==='asc'?ra-rb:rb-ra;});}
+    else if(_ws.k.indexOf('d_')===0){var dk=_ws.k.substring(2);prodNames.sort(function(a,b){var va=(products[a].dates[dk]||0);var vb=(products[b].dates[dk]||0);return _ws.d==='asc'?va-vb:vb-va;});}
     prodNames.forEach(function(name){
         var p=products[name];
         var remain=woRemain[name]||woRemain[p.code]||0;
