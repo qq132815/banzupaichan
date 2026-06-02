@@ -252,24 +252,42 @@ def import_equipment(file_path):
     ws = wb.active
     conn = get_connection()
     c = conn.cursor()
+    c.execute("SELECT id, name FROM teams")
+    team_map = {r[1]: r[0] for r in c.fetchall()}
+    sample = next(ws.iter_rows(min_row=2, max_row=2, values_only=True), None)
+    has_id_col = sample and len(sample) >= 3 and isinstance(sample[0], (int, float)) and isinstance(sample[2], str)
     count = 0
-    for row in ws.iter_rows(min_row=getattr(ws, '_import_header_row', 1) + 1, values_only=True):
-        if not row or not row[0]:
+    for row in ws.iter_rows(min_row=getattr(ws, "_import_header_row", 1) + 1, values_only=True):
+        if not row or not any(row):
             continue
-        equipment_code = str(row[0]).strip()
-        equipment_name = str(row[1]).strip() if row[1] else ''
-        team_id = int(row[2]) if row[2] else 0
-        equipment_type = str(row[3]).strip() if row[3] else 'auto'
-        capacity = float(row[4]) if row[4] else 0
-        location = str(row[5]).strip() if row[5] else ''
+        if has_id_col:
+            eq_code = str(row[1]).strip() if len(row) > 1 and row[1] else ""
+            eq_name = str(row[2]).strip() if len(row) > 2 and row[2] else ""
+            team_name = str(row[3]).strip() if len(row) > 3 and row[3] else ""
+        else:
+            eq_code = str(row[0]).strip() if row[0] else ""
+            eq_name = str(row[1]).strip() if len(row) > 1 and row[1] else ""
+            team_name = str(row[2]).strip() if len(row) > 2 and row[2] else ""
+        if not eq_code:
+            continue
+        team_id = team_map.get(team_name)
+        if team_id is None:
+            for tn, tid in team_map.items():
+                if tn in team_name or team_name in tn:
+                    team_id = tid
+                    break
+        if team_id is None:
+            try:
+                team_id = int(float(team_name))
+            except (ValueError, TypeError):
+                team_id = 1
+        equipment_type = "normal"
         c.execute("INSERT OR REPLACE INTO equipments (equipment_code, equipment_name, team_id, equipment_type, status, capacity_per_hour, location) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                  (equipment_code, equipment_name, team_id, equipment_type, 'normal', capacity, location))
+                  (eq_code, eq_name, team_id, equipment_type, "normal", 0, ""))
         count += 1
     conn.commit()
     conn.close()
     return count
-
-
 def import_reports(file_path):
     wb = openpyxl.load_workbook(file_path)
     ws = wb.active
