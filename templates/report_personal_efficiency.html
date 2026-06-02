@@ -1,8 +1,11 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <div class="page-header"><h1>👤 个人效率查询</h1></div>
 <div class="toolbar">
-<input type="text" id="emp-search" placeholder="输入员工姓名..." style="width:180px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<div style="position:relative;display:inline-block">
+<input type="text" id="emp-search" placeholder="输入员工姓名..." oninput="onNameInput()" onfocus="onNameInput()" style="width:180px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" autocomplete="off">
+<div id="name-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #d1d5db;border-radius:6px;max-height:240px;overflow-y:auto;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.1);margin-top:2px"></div>
+</div>
 <input type="date" id="date-from" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
 <span style="color:#9ca3af">至</span>
 <input type="date" id="date-to" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
@@ -10,26 +13,50 @@
 </div>
 <div class="card"><div class="card-body">
 <div class="table-wrap" style="overflow-x:auto">
-<table class="report-table">
+<table>
 <thead id="thead"></thead>
 <tbody id="tbody"></tbody>
 </table>
 </div>
 </div></div>
 <style>
-.report-table th{position:sticky;top:0;z-index:2;background:#f8fafc;border-bottom:2px solid #e5e7eb;font-size:12px;font-weight:600;color:#374151;white-space:nowrap;text-align:center}
-.report-table td{text-align:center;padding:10px 14px;border-bottom:1px solid #f3f4f6;font-size:13px;white-space:nowrap}
-.report-table td:first-child,.report-table th:first-child{text-align:left;position:sticky;left:0;background:inherit;z-index:3}
 .overtime{background:#fef2f2;color:#dc2626;font-weight:600}
 </style>
 {% endblock %}
 {% block scripts %}
 <script>
+var _allNames=[];
 (function(){
     var today=new Date();var from=new Date(today);from.setDate(from.getDate()-6);
-    document.getElementById("date-to").value=today.toISOString().split('T')[0];
-    document.getElementById("date-from").value=from.toISOString().split('T')[0];
+    var now=new Date();
+    document.getElementById("date-to").value=now.getFullYear()+"-"+("0"+(now.getMonth()+1)).slice(-2)+"-"+("0"+now.getDate()).slice(-2);
+    document.getElementById("date-from").value=from.getFullYear()+"-"+("0"+(from.getMonth()+1)).slice(-2)+"-"+("0"+from.getDate()).slice(-2);
+    fetch("/api/personnel?page=1&page_size=9999").then(function(r){return r.json()}).then(function(d){
+        _allNames=(d.data||[]).map(function(p){return p.name;}).filter(function(n){return n;});
+    });
+    document.addEventListener("click",function(e){
+        if(!e.target.closest("#emp-search")&&!e.target.closest("#name-dropdown")){
+            document.getElementById("name-dropdown").style.display="none";
+        }
+    });
 })();
+function onNameInput(){
+    var val=document.getElementById("emp-search").value.trim();
+    var dd=document.getElementById("name-dropdown");
+    if(!val){dd.style.display="none";return;}
+    var matches=_allNames.filter(function(n){return n.indexOf(val)>=0;}).slice(0,20);
+    if(matches.length===0){dd.style.display="none";return;}
+    var html="";
+    matches.forEach(function(n){
+        html+='<div style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3f4f6" onmousedown="selectName(this.textContent)">'+n.replace(val,"<strong style='color:#2563eb'>"+val+"</strong>")+'</div>';
+    });
+    dd.innerHTML=html;dd.style.display="block";
+}
+function selectName(name){
+    document.getElementById("emp-search").value=name;
+    document.getElementById("name-dropdown").style.display="none";
+    loadData();
+}
 function loadData(){
     var name=document.getElementById("emp-search").value;
     var df=document.getElementById("date-from").value;
