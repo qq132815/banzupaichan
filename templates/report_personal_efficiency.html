@@ -68,7 +68,7 @@ function loadData(){
         var tbody=document.getElementById("tbody");
         thead.innerHTML="";tbody.innerHTML="";
         var fields=[
-            {key:'attendance_hours',label:'实际上班工时',fmt:function(v){return v>0?v+'h':'-';}},
+            {key:'attendance_hours',label:'打卡工时',fmt:function(v){return v>0?v+'h':'-';}},
             {key:'overtime_hours',label:'加班工时',fmt:function(v){return v>0?v+'h':'-';}},
             {key:'hours',label:'生产工时',fmt:function(v,row){return v>0?(row&&row.attendance_hours&&v<row.attendance_hours?'<span style="color:#dc2626">'+v+'h</span>':v+'h'):'-';}},
             {key:'qty',label:'总产量',fmt:function(v){return v||0;}},

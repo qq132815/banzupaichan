@@ -50,7 +50,7 @@ function loadData(){
             var ot=r.is_overtime?'<span class="overtime">加班</span>':'<span style="color:#9ca3af">-</span>';
             var gr=r.good_rate>0?r.good_rate+'%':'<span style="color:#9ca3af">-</span>';
             var eff=r.efficiency>0?(r.efficiency>100?'<span style="color:#059669">'+r.efficiency+'%</span>':r.efficiency<100?'<span style="color:#dc2626">'+r.efficiency+'%</span>':'<span>'+r.efficiency+'%</span>'):'<span style="color:#9ca3af">-</span>';
-            tr.innerHTML='<td><strong>'+r.name+'</strong></td><td>'+(r.department||'')+'</td><td>'+(r.attendance_hours||0)+'h</td><td>'+(r.normal_hours||0)+'h</td><td>'+(r.overtime_hours||0)+'h</td><td>'+(r.production_hours||0)+'h</td><td>'+(r.qty||0)+'</td><td>'+gr+'</td><td>'+eff+'</td><td>'+ot+'</td>';
+            tr.innerHTML='<td><strong>'+r.name+'</strong></td><td>'+(r.department||'')+'</td><td>'+(r.attendance_hours||0)+'h</td><td>'+(r.normal_hours||0)+'h</td><td>'+(r.overtime_hours||0)+'h</td><td>'+((r.production_hours||0)<(r.attendance_hours||0)&&(r.production_hours||0)>0?'<span style="color:#dc2626">'+(r.production_hours||0)+'h</span>':(r.production_hours||0)+'h')+'</td><td>'+(r.qty||0)+'</td><td>'+gr+'</td><td>'+eff+'</td><td>'+ot+'</td>';
             tb.appendChild(tr);
         });
     });
