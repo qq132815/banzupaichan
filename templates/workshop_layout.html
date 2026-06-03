@@ -1,717 +1,434 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block content %}
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-#editor-container {
-    display: flex; height: calc(100vh - 60px); overflow: hidden;
-    font-family: "Microsoft YaHei", sans-serif;
-}
-
-/* ========== Left Toolbox ========== */
-.toolbox {
-    width: 220px; background: #0a1929; border-right: 1px solid #1e3a5f;
-    display: flex; flex-direction: column; overflow-y: auto;
-    flex-shrink: 0;
-}
-.toolbox-title {
-    padding: 12px 15px; font-size: 14px; color: #4fc3f7;
-    border-bottom: 1px solid #1e3a5f; letter-spacing: 2px;
-}
-.toolbox-section {
-    padding: 10px 12px; border-bottom: 1px solid #1e3a5f;
-}
-.toolbox-section h4 {
-    color: #8eafc4; font-size: 12px; margin-bottom: 8px;
-    text-transform: uppercase; letter-spacing: 1px;
-}
-.tool-btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 44px; height: 44px; margin: 3px;
-    background: #0d2137; border: 1px solid #1e3a5f; border-radius: 4px;
-    color: #4fc3f7; cursor: pointer; font-size: 18px;
-    transition: all 0.2s;
-}
+#editor-container { display: flex; height: calc(100vh - 60px); overflow: hidden; font-family: "Microsoft YaHei", sans-serif; }
+.toolbox { width: 220px; background: #0a1929; border-right: 1px solid #1e3a5f; display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0; }
+.toolbox-title { padding: 12px 15px; font-size: 14px; color: #4fc3f7; border-bottom: 1px solid #1e3a5f; letter-spacing: 2px; }
+.toolbox-section { padding: 10px 12px; border-bottom: 1px solid #1e3a5f; }
+.toolbox-section h4 { color: #8eafc4; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+.tool-btn { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; margin: 2px; background: #0d2137; border: 1px solid #1e3a5f; border-radius: 4px; color: #4fc3f7; cursor: pointer; font-size: 16px; transition: all 0.2s; }
 .tool-btn:hover { background: #1e3a5f; border-color: #4fc3f7; }
-.tool-btn.active { background: #1565c0; border-color: #4fc3f7; color: #fff; }
-
-/* Equipment list */
-.eq-list { padding: 5px 0; }
-.eq-item {
-    display: flex; align-items: center; padding: 6px 12px;
-    cursor: pointer; color: #b0bec5; font-size: 12px;
-    transition: all 0.15s;
-}
+.eq-list { max-height: 200px; overflow-y: auto; }
+.eq-item { display: flex; align-items: center; padding: 5px 10px; cursor: pointer; color: #b0bec5; font-size: 12px; transition: all 0.15s; }
 .eq-item:hover { background: #0d2137; color: #4fc3f7; }
-.eq-dot {
-    width: 8px; height: 8px; border-radius: 50%; margin-right: 8px;
-}
+.eq-dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; flex-shrink: 0; }
 .eq-dot.running { background: #00e676; box-shadow: 0 0 4px #00e676; }
 .eq-dot.idle { background: #ffd740; box-shadow: 0 0 4px #ffd740; }
 .eq-dot.down { background: #ff5252; box-shadow: 0 0 4px #ff5252; }
 .eq-dot.normal { background: #546e7a; }
-
-/* ========== Canvas Area ========== */
-.canvas-wrap {
-    flex: 1; position: relative; background: #060e18;
-}
-.canvas-toolbar {
-    position: absolute; top: 10px; left: 10px; z-index: 10;
-    display: flex; gap: 5px; background: rgba(10,25,41,0.9);
-    padding: 6px 10px; border-radius: 4px;
-    border: 1px solid #1e3a5f;
-}
-.canvas-toolbar button {
-    background: #0d2137; border: 1px solid #1e3a5f; color: #4fc3f7;
-    padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 12px;
-}
+.eq-search { width: 100%; padding: 5px 8px; background: #0d2137; border: 1px solid #1e3a5f; border-radius: 3px; color: #e0f0ff; font-size: 12px; outline: none; margin-bottom: 6px; }
+.eq-search:focus { border-color: #4fc3f7; }
+.canvas-wrap { flex: 1; position: relative; background: #060e18; min-width: 400px; }
+.canvas-toolbar { position: absolute; top: 10px; left: 10px; z-index: 10; display: flex; flex-wrap: wrap; gap: 4px; background: rgba(10,25,41,0.92); padding: 6px 10px; border-radius: 4px; border: 1px solid #1e3a5f; max-width: calc(100% - 20px); }
+.canvas-toolbar button { background: #0d2137; border: 1px solid #1e3a5f; color: #4fc3f7; padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; white-space: nowrap; }
 .canvas-toolbar button:hover { background: #1e3a5f; }
 .canvas-toolbar button.danger { color: #ff5252; }
-.canvas-toolbar button.danger:hover { background: #4a1a1a; }
-.canvas-info {
-    position: absolute; bottom: 10px; left: 10px; z-index: 10;
-    color: #546e7a; font-size: 11px;
-    background: rgba(10,25,41,0.8); padding: 4px 8px; border-radius: 3px;
-}
-
-/* ========== Right Properties Panel ========== */
-.props-panel {
-    width: 260px; background: #0a1929; border-left: 1px solid #1e3a5f;
-    display: flex; flex-direction: column; overflow-y: auto;
-    flex-shrink: 0;
-}
-.props-title {
-    padding: 12px 15px; font-size: 14px; color: #4fc3f7;
-    border-bottom: 1px solid #1e3a5f; letter-spacing: 2px;
-}
+.canvas-toolbar .sep { width: 1px; background: #1e3a5f; margin: 0 2px; }
+.canvas-info { position: absolute; bottom: 10px; left: 10px; z-index: 10; color: #546e7a; font-size: 11px; background: rgba(10,25,41,0.85); padding: 4px 10px; border-radius: 3px; border: 1px solid #1e3a5f; }
+.canvas-size { position: absolute; bottom: 10px; right: 280px; z-index: 10; display: flex; gap: 6px; align-items: center; background: rgba(10,25,41,0.85); padding: 4px 10px; border-radius: 3px; border: 1px solid #1e3a5f; }
+.canvas-size label { color: #8eafc4; font-size: 11px; }
+.canvas-size input { width: 60px; padding: 2px 5px; background: #0d2137; border: 1px solid #1e3a5f; border-radius: 3px; color: #e0f0ff; font-size: 11px; text-align: center; }
+.props-panel { width: 260px; background: #0a1929; border-left: 1px solid #1e3a5f; display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0; }
+.props-title { padding: 12px 15px; font-size: 14px; color: #4fc3f7; border-bottom: 1px solid #1e3a5f; letter-spacing: 2px; }
 .props-body { padding: 12px; flex: 1; }
-.prop-group { margin-bottom: 12px; }
-.prop-label {
-    display: block; color: #8eafc4; font-size: 11px;
-    margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px;
-}
-.prop-input {
-    width: 100%; padding: 6px 8px; background: #0d2137;
-    border: 1px solid #1e3a5f; border-radius: 3px;
-    color: #e0f0ff; font-size: 13px; outline: none;
-}
+.prop-group { margin-bottom: 10px; }
+.prop-label { display: block; color: #8eafc4; font-size: 11px; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 1px; }
+.prop-input { width: 100%; padding: 5px 8px; background: #0d2137; border: 1px solid #1e3a5f; border-radius: 3px; color: #e0f0ff; font-size: 12px; outline: none; }
 .prop-input:focus { border-color: #4fc3f7; }
 .prop-row { display: flex; gap: 8px; }
 .prop-row .prop-group { flex: 1; }
-
-.color-swatch {
-    display: inline-block; width: 24px; height: 24px;
-    border: 2px solid #1e3a5f; border-radius: 3px;
-    cursor: pointer; vertical-align: middle; margin-right: 6px;
-}
-
-/* Layout list */
-.layout-list { padding: 8px 12px; }
-.layout-item {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 6px 8px; margin-bottom: 4px;
-    background: #0d2137; border: 1px solid #1e3a5f; border-radius: 3px;
-    cursor: pointer; color: #b0bec5; font-size: 12px;
-}
+.layout-list { padding: 6px 0; max-height: 150px; overflow-y: auto; }
+.layout-item { display: flex; justify-content: space-between; align-items: center; padding: 5px 8px; margin-bottom: 3px; background: #0d2137; border: 1px solid #1e3a5f; border-radius: 3px; cursor: pointer; color: #b0bec5; font-size: 12px; }
 .layout-item:hover { border-color: #4fc3f7; color: #4fc3f7; }
-.layout-item .del-btn {
-    color: #ff5252; cursor: pointer; padding: 2px 5px;
-}
-.layout-item .del-btn:hover { background: #4a1a1a; border-radius: 2px; }
-
-.btn-primary {
-    display: block; width: 100%; padding: 8px;
-    background: #1565c0; border: none; border-radius: 4px;
-    color: #fff; cursor: pointer; font-size: 13px; margin-top: 8px;
-}
+.layout-item .del-btn { color: #ff5252; cursor: pointer; padding: 2px 5px; font-size: 11px; }
+.btn-primary { display: block; width: 100%; padding: 7px; background: #1565c0; border: none; border-radius: 4px; color: #fff; cursor: pointer; font-size: 12px; margin-top: 6px; }
 .btn-primary:hover { background: #1976d2; }
-.btn-secondary {
-    display: block; width: 100%; padding: 8px;
-    background: #0d2137; border: 1px solid #1e3a5f; border-radius: 4px;
-    color: #4fc3f7; cursor: pointer; font-size: 13px; margin-top: 8px;
-}
-.btn-secondary:hover { background: #1e3a5f; }
-
+.btn-secondary { display: block; width: 100%; padding: 7px; background: #0d2137; border: 1px solid #1e3a5f; border-radius: 4px; color: #4fc3f7; cursor: pointer; font-size: 12px; margin-top: 6px; }
 .no-select { color: #546e7a; font-size: 12px; text-align: center; padding: 20px; }
+.shortcuts-hint { padding: 8px 12px; border-top: 1px solid #1e3a5f; color: #546e7a; font-size: 10px; line-height: 1.8; }
+.shortcuts-hint kbd { background: #0d2137; border: 1px solid #1e3a5f; border-radius: 2px; padding: 1px 4px; color: #8eafc4; font-size: 10px; }
 </style>
 
 <div id="editor-container">
-    <!-- Left: Toolbox -->
     <div class="toolbox">
         <div class="toolbox-title">| 工具箱</div>
-
         <div class="toolbox-section">
             <h4>基本形状</h4>
-            <div class="tool-btn" onclick="addRect()" title="矩形设备">▭</div>
-            <div class="tool-btn" onclick="addCircle()" title="圆形设备">○</div>
-            <div class="tool-btn" onclick="addTriangle()" title="三角形">△</div>
-            <div class="tool-btn" onclick="addDiamond()" title="菱形">◇</div>
+            <div class="tool-btn" onclick="addRect()" title="矩形">&#9645;</div>
+            <div class="tool-btn" onclick="addCircle()" title="圆形">&#9675;</div>
+            <div class="tool-btn" onclick="addTriangle()" title="三角形">&#9651;</div>
+            <div class="tool-btn" onclick="addDiamond()" title="菱形">&#9671;</div>
+            <div class="tool-btn" onclick="addRoundedRect()" title="圆角矩形">&#9634;</div>
         </div>
-
         <div class="toolbox-section">
-            <h4>标注</h4>
-            <div class="tool-btn" onclick="addText()" title="文字标注">T</div>
-            <div class="tool-btn" onclick="addLine()" title="连线">╱</div>
-            <div class="tool-btn" onclick="addArrow()" title="箭头">→</div>
+            <h4>标注 &amp; 连线</h4>
+            <div class="tool-btn" onclick="addText()" title="文字">T</div>
+            <div class="tool-btn" onclick="addLine()" title="直线">/</div>
+            <div class="tool-btn" onclick="addArrow()" title="箭头">&rarr;</div>
+            <div class="tool-btn" onclick="addZone()" title="区域框">&#9744;</div>
         </div>
-
         <div class="toolbox-section">
-            <h4>区域</h4>
-            <div class="tool-btn" onclick="addZone()" title="功能区域">▢</div>
+            <h4>快捷操作</h4>
+            <div class="tool-btn" onclick="duplicateSelected()" title="复制选中">&#10063;</div>
+            <div class="tool-btn" onclick="lockToggle()" title="锁定/解锁">&#128274;</div>
+            <div class="tool-btn" onclick="bringForward()" title="上移一层">&uarr;</div>
+            <div class="tool-btn" onclick="sendBackward()" title="下移一层">&darr;</div>
         </div>
-
         <div class="toolbox-section" id="equipment-list-section">
             <h4>设备列表 (点击添加)</h4>
+            <input class="eq-search" id="eq-search" placeholder="搜索设备..." oninput="filterEqList()">
             <div class="eq-list" id="eq-list"></div>
+        </div>
+        <div class="shortcuts-hint">
+            <kbd>Del</kbd> 删除选中<br>
+            <kbd>Ctrl+Z</kbd> 撤销 / <kbd>Ctrl+Y</kbd> 重做<br>
+            <kbd>Ctrl+C</kbd> 复制 / <kbd>Ctrl+V</kbd> 粘贴<br>
+            <kbd>Ctrl+A</kbd> 全选 / <kbd>Esc</kbd> 取消选中<br>
+            <kbd>鼠标中键</kbd> 平移画布<br>
+            <kbd>滚轮</kbd> 缩放画布 / <kbd>Shift+拖拽</kbd> 吸附网格
         </div>
     </div>
 
-    <!-- Center: Canvas -->
-    <div class="canvas-wrap">
+    <div class="canvas-wrap" id="canvas-wrap">
         <div class="canvas-toolbar">
-            <button onclick="saveLayout()">保存布局</button>
-            <button onclick="canvas.clear();canvas.setBackgroundColor('#060e18',canvas.renderAll.bind(canvas))">清空</button>
-            <button onclick="deleteSelected()" class="danger">删除选中</button>
+            <button onclick="saveLayout()" style="background:#1565c0;color:#fff;">保存布局</button>
+            <button onclick="clearCanvas()">清空</button>
+            <span class="sep"></span>
+            <button onclick="undoAction()">撤销</button>
+            <button onclick="redoAction()">重做</button>
+            <span class="sep"></span>
+            <button onclick="deleteSelected()" class="danger">删除</button>
+            <span class="sep"></span>
             <button onclick="toggleGrid()">网格</button>
+            <button onclick="alignSelected('h')">居中H</button>
+            <button onclick="alignSelected('v')">居中V</button>
+            <span class="sep"></span>
             <button onclick="exportImage()">导出图片</button>
+            <button onclick="exportJSON()">导出JSON</button>
+            <button onclick="importJSON()">导入JSON</button>
         </div>
-        <div class="canvas-info" id="canvas-info">就绪 | 拖拽画布平移 | 滚轮缩放</div>
+        <div class="canvas-info" id="canvas-info">就绪 | 中键平移 | 滚轮缩放 | Del删除</div>
+        <div class="canvas-size">
+            <label>画布:</label>
+            <input id="canvas-w" type="number" value="2000" onchange="resizeCanvas()"> x
+            <input id="canvas-h" type="number" value="1200" onchange="resizeCanvas()">
+        </div>
         <canvas id="fabric-canvas"></canvas>
     </div>
 
-    <!-- Right: Properties -->
     <div class="props-panel">
         <div class="props-title">| 属性面板</div>
-
-        <!-- Layout Management -->
         <div style="padding: 12px; border-bottom: 1px solid #1e3a5f;">
             <h4 style="color:#8eafc4;font-size:12px;margin-bottom:8px;">布局管理</h4>
-            <div class="prop-group">
-                <input class="prop-input" id="layout-name" placeholder="布局名称" value="默认布局">
-            </div>
+            <div class="prop-group"><input class="prop-input" id="layout-name" placeholder="布局名称" value="默认布局"></div>
             <button class="btn-primary" onclick="saveLayout()">保存当前布局</button>
             <button class="btn-secondary" onclick="loadLayouts()">刷新列表</button>
             <div class="layout-list" id="layout-list"></div>
         </div>
-
-        <!-- Object Properties -->
         <div class="props-body" id="props-body">
             <div class="no-select" id="no-select-hint">点击画布中的对象查看属性</div>
             <div id="props-content" style="display:none;">
-                <div class="prop-group">
-                    <label class="prop-label">名称</label>
-                    <input class="prop-input" id="prop-name" onchange="updateProp('name')">
-                </div>
-                <div class="prop-group">
-                    <label class="prop-label">设备编号</label>
-                    <input class="prop-input" id="prop-code" onchange="updateProp('code')">
-                </div>
-                <div class="prop-row">
-                    <div class="prop-group">
-                        <label class="prop-label">X</label>
-                        <input class="prop-input" id="prop-x" type="number" onchange="updatePos()">
-                    </div>
-                    <div class="prop-group">
-                        <label class="prop-label">Y</label>
-                        <input class="prop-input" id="prop-y" type="number" onchange="updatePos()">
-                    </div>
-                </div>
-                <div class="prop-row">
-                    <div class="prop-group">
-                        <label class="prop-label">宽</label>
-                        <input class="prop-input" id="prop-w" type="number" onchange="updateSize()">
-                    </div>
-                    <div class="prop-group">
-                        <label class="prop-label">高</label>
-                        <input class="prop-input" id="prop-h" type="number" onchange="updateSize()">
-                    </div>
-                </div>
-                <div class="prop-group">
-                    <label class="prop-label">旋转</label>
-                    <input class="prop-input" id="prop-angle" type="number" onchange="updateAngle()">
-                </div>
-                <div class="prop-group">
-                    <label class="prop-label">填充颜色</label>
-                    <input type="color" class="prop-input" id="prop-fill" style="height:32px;padding:2px;" onchange="updateColor('fill')">
-                </div>
-                <div class="prop-group">
-                    <label class="prop-label">边框颜色</label>
-                    <input type="color" class="prop-input" id="prop-stroke" style="height:32px;padding:2px;" onchange="updateColor('stroke')">
-                </div>
-                <div class="prop-group">
-                    <label class="prop-label">透明度</label>
-                    <input class="prop-input" id="prop-opacity" type="range" min="0" max="1" step="0.05" onchange="updateOpacity()">
-                </div>
-                <div class="prop-group">
-                    <label class="prop-label">状态</label>
-                    <select class="prop-input" id="prop-status" onchange="updateStatus()">
-                        <option value="normal">未排班</option>
-                        <option value="running">运行中</option>
-                        <option value="idle">待机</option>
-                        <option value="down">故障</option>
-                    </select>
-                </div>
+                <div class="prop-group"><label class="prop-label">名称</label><input class="prop-input" id="prop-name" onchange="updateProp('name')"></div>
+                <div class="prop-group"><label class="prop-label">设备编号</label><input class="prop-input" id="prop-code" onchange="updateProp('code')"></div>
+                <div class="prop-group"><label class="prop-label">绑定设备</label><select class="prop-input" id="prop-bind-eq" onchange="bindEquipment()"><option value="">-- 不绑定 --</option></select></div>
+                <div class="prop-row"><div class="prop-group"><label class="prop-label">X</label><input class="prop-input" id="prop-x" type="number" onchange="updatePos()"></div><div class="prop-group"><label class="prop-label">Y</label><input class="prop-input" id="prop-y" type="number" onchange="updatePos()"></div></div>
+                <div class="prop-row"><div class="prop-group"><label class="prop-label">宽</label><input class="prop-input" id="prop-w" type="number" onchange="updateSize()"></div><div class="prop-group"><label class="prop-label">高</label><input class="prop-input" id="prop-h" type="number" onchange="updateSize()"></div></div>
+                <div class="prop-group"><label class="prop-label">旋转 (度)</label><input class="prop-input" id="prop-angle" type="number" onchange="updateAngle()"></div>
+                <div class="prop-group"><label class="prop-label">填充颜色</label><input type="color" class="prop-input" id="prop-fill" style="height:30px;padding:2px;" onchange="updateColor('fill')"></div>
+                <div class="prop-group"><label class="prop-label">边框颜色</label><input type="color" class="prop-input" id="prop-stroke" style="height:30px;padding:2px;" onchange="updateColor('stroke')"></div>
+                <div class="prop-group"><label class="prop-label">边框宽度</label><input class="prop-input" id="prop-strokeWidth" type="number" min="0" max="10" onchange="updateStrokeWidth()"></div>
+                <div class="prop-group"><label class="prop-label">透明度</label><input class="prop-input" id="prop-opacity" type="range" min="0" max="1" step="0.05" onchange="updateOpacity()"></div>
+                <div class="prop-group"><label class="prop-label">状态</label><select class="prop-input" id="prop-status" onchange="updateStatus()"><option value="normal">未排班</option><option value="running">运行中</option><option value="idle">待机</option><option value="down">故障</option></select></div>
+                <div class="prop-group"><label class="prop-label">备注</label><input class="prop-input" id="prop-remark" onchange="updateProp('remark')"></div>
             </div>
         </div>
     </div>
 </div>
 
+<input type="file" id="json-file-input" accept=".json" style="display:none" onchange="handleJSONImport(event)">
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
 <script>
-/* ========== INIT ========== */
 var canvas = new fabric.Canvas("fabric-canvas", {
-    backgroundColor: "#060e18",
-    selection: true,
-    preserveObjectStacking: true
+    backgroundColor: "#060e18", selection: true, preserveObjectStacking: true,
+    selectionColor: "rgba(79,195,247,0.15)", selectionBorderColor: "#4fc3f7", selectionLineWidth: 1
 });
-
-var wrapEl = document.querySelector(".canvas-wrap");
+var wrapEl = document.getElementById("canvas-wrap");
+var CANVAS_W = 2000, CANVAS_H = 1200;
 canvas.setWidth(wrapEl.clientWidth);
 canvas.setHeight(wrapEl.clientHeight);
+var GRID_SIZE = 20, gridVisible = true, currentLayoutId = null;
+var undoStack = [], redoStack = [], MAX_UNDO = 30;
 
-var GRID_SIZE = 20;
-var gridVisible = true;
-var currentLayoutId = null;
+function saveUndo() {
+    var json = JSON.stringify(canvas.toJSON(["customType","customName","customCode","customStatus","customEqId","customRemark","isGrid","lockMovementX","lockMovementY","lockScalingX","lockScalingY","lockRotation","hasControls"]));
+    undoStack.push(json);
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    redoStack = [];
+}
+function undoAction() {
+    if (undoStack.length < 2) { showInfo("没有可撤销的操作"); return; }
+    redoStack.push(undoStack.pop());
+    canvas.loadFromJSON(undoStack[undoStack.length-1], function() { canvas.renderAll(); showInfo("已撤销"); });
+}
+function redoAction() {
+    if (redoStack.length === 0) { showInfo("没有可重做的操作"); return; }
+    var next = redoStack.pop(); undoStack.push(next);
+    canvas.loadFromJSON(next, function() { canvas.renderAll(); showInfo("已重做"); });
+}
 
-/* ========== GRID ========== */
 function drawGrid() {
-    var gridLines = [];
-    for (var x = 0; x < canvas.width / canvas.getZoom(); x += GRID_SIZE) {
-        gridLines.push(new fabric.Line([x, 0, x, canvas.height / canvas.getZoom()], {
-            stroke: "#0d2137", strokeWidth: 1, selectable: false, evented: false
-        }));
-    }
-    for (var y = 0; y < canvas.height / canvas.getZoom(); y += GRID_SIZE) {
-        gridLines.push(new fabric.Line([0, y, canvas.width / canvas.getZoom(), y], {
-            stroke: "#0d2137", strokeWidth: 1, selectable: false, evented: false
-        }));
-    }
-    var gridGroup = new fabric.Group(gridLines, {
-        selectable: false, evented: false, excludeFromExport: false
-    });
-    gridGroup.set("isGrid", true);
-    canvas.add(gridGroup);
-    canvas.sendToBack(gridGroup);
+    var lines = [];
+    for (var x = 0; x <= CANVAS_W; x += GRID_SIZE) lines.push(new fabric.Line([x,0,x,CANVAS_H], {stroke:"#0d2137",strokeWidth:1,selectable:false,evented:false}));
+    for (var y = 0; y <= CANVAS_H; y += GRID_SIZE) lines.push(new fabric.Line([0,y,CANVAS_W,y], {stroke:"#0d2137",strokeWidth:1,selectable:false,evented:false}));
+    var g = new fabric.Group(lines, {selectable:false,evented:false});
+    g.set("isGrid", true);
+    canvas.add(g); canvas.sendToBack(g);
 }
 drawGrid();
 
 function toggleGrid() {
-    canvas.forEachObject(function(obj) {
-        if (obj.isGrid) {
-            gridVisible = !gridVisible;
-            obj.set("visible", gridVisible);
-        }
-    });
+    canvas.forEachObject(function(o) { if (o.isGrid) { gridVisible = !gridVisible; o.set("visible", gridVisible); } });
     canvas.renderAll();
 }
 
-/* ========== ZOOM & PAN ========== */
+function resizeCanvas() {
+    CANVAS_W = parseInt(document.getElementById("canvas-w").value) || 2000;
+    CANVAS_H = parseInt(document.getElementById("canvas-h").value) || 1200;
+    showInfo("画布: " + CANVAS_W + " x " + CANVAS_H);
+}
+
+window.addEventListener("resize", function() { canvas.setWidth(wrapEl.clientWidth); canvas.setHeight(wrapEl.clientHeight); canvas.renderAll(); });
+
+// Zoom
 canvas.on("mouse:wheel", function(opt) {
-    var delta = opt.e.deltaY;
-    var zoom = canvas.getZoom();
-    zoom *= 0.999 ** delta;
-    if (zoom > 5) zoom = 5;
-    if (zoom < 0.2) zoom = 0.2;
-    canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
-    opt.e.preventDefault();
-    opt.e.stopPropagation();
+    var z = canvas.getZoom() * Math.pow(0.999, opt.e.deltaY);
+    z = Math.max(0.15, Math.min(5, z));
+    canvas.zoomToPoint({x:opt.e.offsetX,y:opt.e.offsetY}, z);
+    opt.e.preventDefault(); opt.e.stopPropagation();
 });
 
-var isDragging = false;
-var lastPosX, lastPosY;
+// Middle mouse pan
+var isPanning = false, panX, panY;
 canvas.on("mouse:down", function(opt) {
-    if (opt.e.altKey || opt.e.button === 1) {
-        isDragging = true;
-        canvas.selection = false;
-        lastPosX = opt.e.clientX;
-        lastPosY = opt.e.clientY;
-    }
+    if (opt.e.button === 1) { isPanning = true; canvas.selection = false; panX = opt.e.clientX; panY = opt.e.clientY; opt.e.preventDefault(); }
 });
 canvas.on("mouse:move", function(opt) {
-    if (isDragging) {
-        var vpt = canvas.viewportTransform;
-        vpt[4] += opt.e.clientX - lastPosX;
-        vpt[5] += opt.e.clientY - lastPosY;
-        canvas.requestRenderAll();
-        lastPosX = opt.e.clientX;
-        lastPosY = opt.e.clientY;
+    if (isPanning) {
+        var v = canvas.viewportTransform;
+        v[4] += opt.e.clientX - panX; v[5] += opt.e.clientY - panY;
+        canvas.requestRenderAll(); panX = opt.e.clientX; panY = opt.e.clientY;
     }
 });
-canvas.on("mouse:up", function(opt) {
-    isDragging = false;
-    canvas.selection = true;
+canvas.on("mouse:up", function() { if (isPanning) { isPanning = false; canvas.selection = true; } });
+document.getElementById("fabric-canvas").addEventListener("mousedown", function(e) { if (e.button === 1) e.preventDefault(); });
+
+// Snap to grid (hold Shift)
+canvas.on("object:moving", function(opt) {
+    if (!opt.e.shiftKey) return;
+    opt.target.set({ left: Math.round(opt.target.left/GRID_SIZE)*GRID_SIZE, top: Math.round(opt.target.top/GRID_SIZE)*GRID_SIZE });
 });
 
-/* ========== ADD SHAPES ========== */
-function makeDefaultOpts() {
-    return {
-        left: canvas.width / 2 / canvas.getZoom() - 40,
-        top: canvas.height / 2 / canvas.getZoom() - 30,
-        fill: "#1565c0",
-        stroke: "#4fc3f7",
-        strokeWidth: 2,
-        strokeUniform: true,
-        cornerColor: "#4fc3f7",
-        cornerStrokeColor: "#0288d1",
-        borderColor: "#4fc3f7",
-        transparentCorners: false,
-        cornerSize: 8,
-        padding: 5
-    };
-}
+// Auto-save undo on changes
+canvas.on("object:added", function() { if (undoStack.length === 0) saveUndo(); });
+canvas.on("object:modified", function() { saveUndo(); showProps(); });
+canvas.on("object:removed", function() { saveUndo(); });
 
-function addRect() {
-    var opts = makeDefaultOpts();
-    var rect = new fabric.Rect(Object.assign(opts, {
-        width: 100, height: 60, rx: 4, ry: 4,
-        customType: "equipment", customName: "设备", customCode: "", customStatus: "normal"
-    }));
-    canvas.add(rect);
-    canvas.setActiveObject(rect);
+function defaultOpts() {
+    return { left: 100+Math.random()*200, top: 100+Math.random()*200, fill:"#1565c0", stroke:"#4fc3f7", strokeWidth:2, strokeUniform:true, cornerColor:"#4fc3f7", cornerStrokeColor:"#0288d1", borderColor:"#4fc3f7", transparentCorners:false, cornerSize:8, padding:4 };
 }
-
-function addCircle() {
-    var opts = makeDefaultOpts();
-    var circle = new fabric.Circle(Object.assign(opts, {
-        radius: 40,
-        customType: "equipment", customName: "设备", customCode: "", customStatus: "normal"
-    }));
-    canvas.add(circle);
-    canvas.setActiveObject(circle);
-}
-
-function addTriangle() {
-    var opts = makeDefaultOpts();
-    var tri = new fabric.Triangle(Object.assign(opts, {
-        width: 80, height: 70,
-        customType: "equipment", customName: "设备", customCode: "", customStatus: "normal"
-    }));
-    canvas.add(tri);
-    canvas.setActiveObject(tri);
-}
-
-function addDiamond() {
-    var opts = makeDefaultOpts();
-    var diamond = new fabric.Rect(Object.assign(opts, {
-        width: 60, height: 60, angle: 45,
-        customType: "equipment", customName: "设备", customCode: "", customStatus: "normal"
-    }));
-    canvas.add(diamond);
-    canvas.setActiveObject(diamond);
-}
-
-function addText() {
-    var text = new fabric.IText("标注文字", {
-        left: 200, top: 200,
-        fontSize: 16, fill: "#4fc3f7",
-        fontFamily: "Microsoft YaHei",
-        editable: true,
-        customType: "label"
-    });
-    canvas.add(text);
-    canvas.setActiveObject(text);
-}
-
-function addLine() {
-    var line = new fabric.Line([100, 100, 300, 100], {
-        stroke: "#4fc3f7", strokeWidth: 2,
-        customType: "line"
-    });
-    canvas.add(line);
-    canvas.setActiveObject(line);
-}
-
+function addShape(s) { canvas.add(s); canvas.setActiveObject(s); canvas.renderAll(); }
+function addRect() { var o=defaultOpts(); addShape(new fabric.Rect(Object.assign(o,{width:100,height:60,rx:3,ry:3,customType:"equipment",customName:"设备",customCode:"",customStatus:"normal"}))); }
+function addCircle() { var o=defaultOpts(); addShape(new fabric.Circle(Object.assign(o,{radius:35,customType:"equipment",customName:"设备",customCode:"",customStatus:"normal"}))); }
+function addTriangle() { var o=defaultOpts(); addShape(new fabric.Triangle(Object.assign(o,{width:80,height:70,customType:"equipment",customName:"设备",customCode:"",customStatus:"normal"}))); }
+function addDiamond() { var o=defaultOpts(); addShape(new fabric.Rect(Object.assign(o,{width:50,height:50,angle:45,customType:"equipment",customName:"设备",customCode:"",customStatus:"normal"}))); }
+function addRoundedRect() { var o=defaultOpts(); addShape(new fabric.Rect(Object.assign(o,{width:120,height:70,rx:15,ry:15,customType:"equipment",customName:"设备",customCode:"",customStatus:"normal"}))); }
+function addText() { addShape(new fabric.IText("标注文字",{left:200,top:200,fontSize:16,fill:"#4fc3f7",fontFamily:"Microsoft YaHei",customType:"label"})); }
+function addLine() { addShape(new fabric.Line([100,100,300,100],{stroke:"#4fc3f7",strokeWidth:2,customType:"line"})); }
 function addArrow() {
-    var line = new fabric.Line([100, 150, 300, 150], {
-        stroke: "#00e676", strokeWidth: 2,
-        customType: "arrow"
-    });
-    var head = new fabric.Triangle({
-        left: 300, top: 150, width: 15, height: 15,
-        fill: "#00e676", angle: 90, originX: "center", originY: "center",
-        selectable: false
-    });
-    var group = new fabric.Group([line, head], {
-        customType: "arrow"
-    });
-    canvas.add(group);
-    canvas.setActiveObject(group);
+    var l = new fabric.Line([0,0,180,0],{stroke:"#00e676",strokeWidth:2});
+    var h = new fabric.Triangle({width:12,height:12,fill:"#00e676",left:180,top:0,angle:90,originX:"center",originY:"center"});
+    addShape(new fabric.Group([l,h],{left:200,top:200,customType:"arrow"}));
 }
+function addZone() { var o=defaultOpts(); addShape(new fabric.Rect(Object.assign(o,{width:200,height:150,rx:6,ry:6,fill:"rgba(21,101,192,0.1)",stroke:"#1e3a5f",strokeWidth:1,strokeDashArray:[8,4],customType:"zone",customName:"功能区域"}))); }
 
-function addZone() {
-    var opts = makeDefaultOpts();
-    var zone = new fabric.Rect(Object.assign(opts, {
-        width: 200, height: 150, rx: 6, ry: 6,
-        fill: "rgba(21,101,192,0.15)", stroke: "#1e3a5f", strokeWidth: 1,
-        strokeDashArray: [8, 4],
-        customType: "zone", customName: "区域"
-    }));
-    canvas.add(zone);
-    canvas.setActiveObject(zone);
-}
-
-/* ========== ADD FROM EQUIPMENT DB ========== */
+// Equipment
 var allEquipments = [];
-
 function loadEquipments() {
-    fetch("/api/equipments?page=1&page_size=200")
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (data.data) {
-                allEquipments = data.data;
-                renderEqList();
-            }
-        });
+    fetch("/api/equipments?page=1&page_size=200").then(function(r){return r.json();}).then(function(d){
+        if(d.data){allEquipments=d.data;renderEqList();populateBindDropdown();}
+    });
 }
-
 function renderEqList() {
-    var list = document.getElementById("eq-list");
-    var html = "";
-    allEquipments.forEach(function(eq) {
-        var sClass = eq.status || "normal";
-        html += '<div class="eq-item" onclick="addEquipmentToCanvas(' + eq.id + ')">' +
-            '<span class="eq-dot ' + sClass + '"></span>' +
-            '<span>' + (eq.equipment_code || "") + " " + (eq.equipment_name || "") + '</span></div>';
+    var q=(document.getElementById("eq-search").value||"").toLowerCase();
+    var list=document.getElementById("eq-list"),html="";
+    allEquipments.forEach(function(eq){
+        var n=(eq.equipment_code||"")+" "+(eq.equipment_name||"");
+        if(q&&n.toLowerCase().indexOf(q)<0)return;
+        html+='<div class="eq-item" onclick="addEquipmentToCanvas('+eq.id+')"><span class="eq-dot '+(eq.status||"normal")+'"></span><span>'+n+'</span></div>';
     });
-    list.innerHTML = html || '<div style="color:#546e7a;font-size:12px;padding:8px;">暂无设备数据</div>';
+    list.innerHTML=html||'<div style="color:#546e7a;font-size:11px;padding:8px;">无匹配设备</div>';
+}
+function filterEqList(){renderEqList();}
+function populateBindDropdown(){
+    var sel=document.getElementById("prop-bind-eq"),h='<option value="">-- 不绑定 --</option>';
+    allEquipments.forEach(function(eq){h+='<option value="'+eq.id+'">'+(eq.equipment_code||"")+" "+(eq.equipment_name||"")+'</option>';});
+    sel.innerHTML=h;
+}
+function addEquipmentToCanvas(eqId){
+    var eq=allEquipments.find(function(e){return e.id===eqId;});
+    if(!eq)return;
+    var sc={running:{fill:"#1b5e20",stroke:"#00e676"},idle:{fill:"#4a4100",stroke:"#ffd740"},down:{fill:"#4a1a1a",stroke:"#ff5252"},normal:{fill:"#1565c0",stroke:"#4fc3f7"}};
+    var c=sc[eq.status]||sc.normal;
+    var rect=new fabric.Rect({width:100,height:50,rx:4,ry:4,fill:c.fill,stroke:c.stroke,strokeWidth:2,originX:"center",originY:"center"});
+    var label=new fabric.Text(eq.equipment_code||eq.equipment_name||"",{fontSize:11,fill:"#e0f0ff",originX:"center",originY:"center",fontFamily:"Microsoft YaHei"});
+    addShape(new fabric.Group([rect,label],{left:100+Math.random()*300,top:100+Math.random()*200,customType:"equipment",customName:eq.equipment_name||"",customCode:eq.equipment_code||"",customStatus:eq.status||"normal",customEqId:eq.id}));
 }
 
-function addEquipmentToCanvas(eqId) {
-    var eq = allEquipments.find(function(e) { return e.id === eqId; });
-    if (!eq) return;
-    var opts = makeDefaultOpts();
-    var sColors = {
-        running: { fill: "#1b5e20", stroke: "#00e676" },
-        idle: { fill: "#4a4100", stroke: "#ffd740" },
-        down: { fill: "#4a1a1a", stroke: "#ff5252" },
-        normal: { fill: "#1565c0", stroke: "#4fc3f7" }
-    };
-    var sc = sColors[eq.status] || sColors.normal;
-    var rect = new fabric.Rect(Object.assign(opts, {
-        width: 100, height: 60, rx: 4, ry: 4,
-        fill: sc.fill, stroke: sc.stroke, strokeWidth: 2,
-        customType: "equipment", customName: eq.equipment_name || "",
-        customCode: eq.equipment_code || "", customStatus: eq.status || "normal",
-        customEqId: eq.id
-    }));
-    var label = new fabric.Text(eq.equipment_code || eq.equipment_name || "", {
-        fontSize: 11, fill: "#e0f0ff", originX: "center", originY: "center",
-        top: 0, fontFamily: "Microsoft YaHei", selectable: false
-    });
-    var group = new fabric.Group([rect, label], {
-        left: opts.left, top: opts.top,
-        customType: "equipment", customName: eq.equipment_name || "",
-        customCode: eq.equipment_code || "", customStatus: eq.status || "normal",
-        customEqId: eq.id
-    });
-    canvas.add(group);
-    canvas.setActiveObject(group);
-}
-
-/* ========== SELECTION ========== */
-canvas.on("selection:created", showProps);
-canvas.on("selection:updated", showProps);
-canvas.on("selection:cleared", hideProps);
-
-function showProps() {
-    document.getElementById("no-select-hint").style.display = "none";
-    document.getElementById("props-content").style.display = "block";
-    var obj = canvas.getActiveObject();
-    if (!obj) return;
-    document.getElementById("prop-name").value = obj.customName || "";
-    document.getElementById("prop-code").value = obj.customCode || "";
-    document.getElementById("prop-x").value = Math.round(obj.left);
-    document.getElementById("prop-y").value = Math.round(obj.top);
-    document.getElementById("prop-w").value = Math.round(obj.width * (obj.scaleX || 1));
-    document.getElementById("prop-h").value = Math.round(obj.height * (obj.scaleY || 1));
-    document.getElementById("prop-angle").value = Math.round(obj.angle || 0);
-    document.getElementById("prop-fill").value = (obj.fill && obj.fill[0] === "#") ? obj.fill : "#1565c0";
-    document.getElementById("prop-stroke").value = (obj.stroke && obj.stroke[0] === "#") ? obj.stroke : "#4fc3f7";
-    document.getElementById("prop-opacity").value = obj.opacity || 1;
-    document.getElementById("prop-status").value = obj.customStatus || "normal";
-}
-
-function hideProps() {
-    document.getElementById("no-select-hint").style.display = "block";
-    document.getElementById("props-content").style.display = "none";
-}
-
-function updateProp(field) {
-    var obj = canvas.getActiveObject();
-    if (!obj) return;
-    if (field === "name") obj.customName = document.getElementById("prop-name").value;
-    if (field === "code") obj.customCode = document.getElementById("prop-code").value;
+// Bind equipment
+function bindEquipment(){
+    var obj=canvas.getActiveObject();if(!obj)return;
+    var eqId=parseInt(document.getElementById("prop-bind-eq").value);
+    if(!eqId){obj.customEqId=null;obj.customCode="";obj.customName="";document.getElementById("prop-code").value="";document.getElementById("prop-name").value="";showInfo("已解除绑定");return;}
+    var eq=allEquipments.find(function(e){return e.id===eqId;});
+    if(eq){obj.customEqId=eq.id;obj.customCode=eq.equipment_code||"";obj.customName=eq.equipment_name||"";document.getElementById("prop-code").value=obj.customCode;document.getElementById("prop-name").value=obj.customName;showInfo("已绑定: "+obj.customCode);}
     canvas.renderAll();
 }
 
-function updatePos() {
-    var obj = canvas.getActiveObject();
-    if (!obj) return;
-    obj.set("left", parseFloat(document.getElementById("prop-x").value));
-    obj.set("top", parseFloat(document.getElementById("prop-y").value));
-    obj.setCoords();
-    canvas.renderAll();
+// Selection
+canvas.on("selection:created",showProps);
+canvas.on("selection:updated",showProps);
+canvas.on("selection:cleared",hideProps);
+function showProps(){
+    document.getElementById("no-select-hint").style.display="none";
+    document.getElementById("props-content").style.display="block";
+    var o=canvas.getActiveObject();if(!o)return;
+    document.getElementById("prop-name").value=o.customName||"";
+    document.getElementById("prop-code").value=o.customCode||"";
+    document.getElementById("prop-x").value=Math.round(o.left);
+    document.getElementById("prop-y").value=Math.round(o.top);
+    document.getElementById("prop-w").value=Math.round(o.width*(o.scaleX||1));
+    document.getElementById("prop-h").value=Math.round(o.height*(o.scaleY||1));
+    document.getElementById("prop-angle").value=Math.round(o.angle||0);
+    var f=o.fill;
+    document.getElementById("prop-fill").value=(typeof f==="string"&&f[0]==="#")?f:"#1565c0";
+    document.getElementById("prop-stroke").value=(o.stroke&&o.stroke[0]==="#")?o.stroke:"#4fc3f7";
+    document.getElementById("prop-strokeWidth").value=o.strokeWidth||2;
+    document.getElementById("prop-opacity").value=o.opacity||1;
+    document.getElementById("prop-status").value=o.customStatus||"normal";
+    document.getElementById("prop-remark").value=o.customRemark||"";
+    document.getElementById("prop-bind-eq").value=o.customEqId||"";
 }
+function hideProps(){document.getElementById("no-select-hint").style.display="block";document.getElementById("props-content").style.display="none";}
+function updateProp(f){var o=canvas.getActiveObject();if(!o)return;if(f==="name")o.customName=document.getElementById("prop-name").value;if(f==="code")o.customCode=document.getElementById("prop-code").value;if(f==="remark")o.customRemark=document.getElementById("prop-remark").value;canvas.renderAll();}
+function updatePos(){var o=canvas.getActiveObject();if(!o)return;o.set("left",parseFloat(document.getElementById("prop-x").value));o.set("top",parseFloat(document.getElementById("prop-y").value));o.setCoords();canvas.renderAll();}
+function updateSize(){var o=canvas.getActiveObject();if(!o)return;var w=parseFloat(document.getElementById("prop-w").value),h=parseFloat(document.getElementById("prop-h").value);o.set("scaleX",w/o.width);o.set("scaleY",h/o.height);o.setCoords();canvas.renderAll();}
+function updateAngle(){var o=canvas.getActiveObject();if(!o)return;o.set("angle",parseFloat(document.getElementById("prop-angle").value));canvas.renderAll();}
+function updateColor(p){var o=canvas.getActiveObject();if(!o)return;o.set(p,document.getElementById(p==="fill"?"prop-fill":"prop-stroke").value);canvas.renderAll();}
+function updateStrokeWidth(){var o=canvas.getActiveObject();if(!o)return;o.set("strokeWidth",parseInt(document.getElementById("prop-strokeWidth").value)||1);canvas.renderAll();}
+function updateOpacity(){var o=canvas.getActiveObject();if(!o)return;o.set("opacity",parseFloat(document.getElementById("prop-opacity").value));canvas.renderAll();}
+function updateStatus(){var o=canvas.getActiveObject();if(!o)return;var s=document.getElementById("prop-status").value;o.customStatus=s;var sc={running:{fill:"#1b5e20",stroke:"#00e676"},idle:{fill:"#4a4100",stroke:"#ffd740"},down:{fill:"#4a1a1a",stroke:"#ff5252"},normal:{fill:"#1565c0",stroke:"#4fc3f7"}};var c=sc[s]||sc.normal;o.set("fill",c.fill);o.set("stroke",c.stroke);canvas.renderAll();}
 
-function updateSize() {
-    var obj = canvas.getActiveObject();
-    if (!obj) return;
-    var w = parseFloat(document.getElementById("prop-w").value);
-    var h = parseFloat(document.getElementById("prop-h").value);
-    obj.set("scaleX", w / obj.width);
-    obj.set("scaleY", h / obj.height);
-    obj.setCoords();
-    canvas.renderAll();
-}
+// Keyboard shortcuts
+document.addEventListener("keydown",function(e){
+    if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"||e.target.tagName==="SELECT")return;
+    if(e.target.isContentEditable)return;
+    if(e.key==="Delete"||e.key==="Backspace"){deleteSelected();e.preventDefault();return;}
+    if(e.ctrlKey&&e.key==="z"){undoAction();e.preventDefault();return;}
+    if(e.ctrlKey&&e.key==="y"){redoAction();e.preventDefault();return;}
+    if(e.ctrlKey&&e.key==="c"){copySelected();e.preventDefault();return;}
+    if(e.ctrlKey&&e.key==="v"){pasteClipboard();e.preventDefault();return;}
+    if(e.ctrlKey&&e.key==="a"){selectAll();e.preventDefault();return;}
+    if(e.key==="Escape"){canvas.discardActiveObject();canvas.renderAll();return;}
+    var o=canvas.getActiveObject();if(!o)return;
+    var step=e.shiftKey?10:1;
+    if(e.key==="ArrowLeft"){o.set("left",o.left-step);canvas.renderAll();e.preventDefault();}
+    if(e.key==="ArrowRight"){o.set("left",o.left+step);canvas.renderAll();e.preventDefault();}
+    if(e.key==="ArrowUp"){o.set("top",o.top-step);canvas.renderAll();e.preventDefault();}
+    if(e.key==="ArrowDown"){o.set("top",o.top+step);canvas.renderAll();e.preventDefault();}
+});
 
-function updateAngle() {
-    var obj = canvas.getActiveObject();
-    if (!obj) return;
-    obj.set("angle", parseFloat(document.getElementById("prop-angle").value));
-    canvas.renderAll();
-}
-
-function updateColor(prop) {
-    var obj = canvas.getActiveObject();
-    if (!obj) return;
-    var val = document.getElementById(prop === "fill" ? "prop-fill" : "prop-stroke").value;
-    obj.set(prop, val);
-    canvas.renderAll();
-}
-
-function updateOpacity() {
-    var obj = canvas.getActiveObject();
-    if (!obj) return;
-    obj.set("opacity", parseFloat(document.getElementById("prop-opacity").value));
-    canvas.renderAll();
-}
-
-function updateStatus() {
-    var obj = canvas.getActiveObject();
-    if (!obj) return;
-    var status = document.getElementById("prop-status").value;
-    obj.customStatus = status;
-    var sColors = {
-        running: { fill: "#1b5e20", stroke: "#00e676" },
-        idle: { fill: "#4a4100", stroke: "#ffd740" },
-        down: { fill: "#4a1a1a", stroke: "#ff5252" },
-        normal: { fill: "#1565c0", stroke: "#4fc3f7" }
-    };
-    var sc = sColors[status] || sColors.normal;
-    obj.set("fill", sc.fill);
-    obj.set("stroke", sc.stroke);
-    canvas.renderAll();
-}
-
-canvas.on("object:modified", showProps);
-
-/* ========== SAVE / LOAD ========== */
-function getLayoutJSON() {
-    var json = canvas.toJSON(["customType", "customName", "customCode", "customStatus", "customEqId", "isGrid"]);
-    return JSON.stringify(json);
-}
-
-function saveLayout() {
-    var name = document.getElementById("layout-name").value || "默认布局";
-    var payload = {
-        id: currentLayoutId,
-        name: name,
-        layout_data: getLayoutJSON()
-    };
-    if (window.USER_TEAM_ID) payload.team_id = window.USER_TEAM_ID;
-
-    fetch("/api/workshop-layouts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-        if (data.success) {
-            currentLayoutId = data.id;
-            showInfo("布局已保存");
-            loadLayouts();
-        }
+// Copy/Paste
+var clipboard=null;
+function copySelected(){var o=canvas.getActiveObject();if(!o)return;o.clone(function(c){clipboard=c;});showInfo("已复制");}
+function pasteClipboard(){
+    if(!clipboard){showInfo("剪贴板为空");return;}
+    clipboard.clone(function(c){
+        c.set({left:c.left+20,top:c.top+20});
+        if(c.type==="activeSelection"){c.canvas=canvas;c.forEachObject(function(o){canvas.add(o);});c.setCoords();}else{canvas.add(c);}
+        clipboard.set({left:clipboard.left+20,top:clipboard.top+20});
+        canvas.setActiveObject(c);canvas.renderAll();showInfo("已粘贴");
     });
 }
+function duplicateSelected(){copySelected();pasteClipboard();}
+function selectAll(){canvas.discardActiveObject();var sel=new fabric.ActiveSelection(canvas.getObjects().filter(function(o){return !o.isGrid&&o.selectable!==false;}),{canvas:canvas});canvas.setActiveObject(sel);canvas.renderAll();}
 
-function loadLayouts() {
-    var url = "/api/workshop-layouts";
-    if (window.USER_TEAM_ID) url += "?team_id=" + window.USER_TEAM_ID;
-    fetch(url)
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (data.success) renderLayoutList(data.data);
-        });
+// Delete
+function deleteSelected(){
+    var o=canvas.getActiveObject();if(!o)return;
+    if(o.type==="activeSelection"){o.forEachObject(function(x){canvas.remove(x);});canvas.discardActiveObject();}else{canvas.remove(o);}
+    canvas.renderAll();
 }
 
-function renderLayoutList(layouts) {
-    var list = document.getElementById("layout-list");
-    var html = "";
-    layouts.forEach(function(l) {
-        html += '<div class="layout-item" onclick="loadLayout(' + l.id + ')">' +
-            '<span>' + (l.name || "未命名") + '</span>' +
-            '<span class="del-btn" onclick="event.stopPropagation();deleteLayout(' + l.id + ')">删除</span></div>';
+// Layer
+function bringForward(){var o=canvas.getActiveObject();if(o){canvas.bringForward(o);canvas.renderAll();}}
+function sendBackward(){var o=canvas.getActiveObject();if(o){canvas.sendBackwards(o);canvas.renderAll();}}
+
+// Lock
+function lockToggle(){
+    var o=canvas.getActiveObject();if(!o)return;
+    var lk=!o.lockMovementX;
+    o.set({lockMovementX:lk,lockMovementY:lk,lockScalingX:lk,lockScalingY:lk,lockRotation:lk,hasControls:!lk});
+    canvas.renderAll();showInfo(lk?"已锁定":"已解锁");
+}
+
+// Align
+function alignSelected(dir){
+    var o=canvas.getActiveObject();if(!o)return;
+    if(dir==="h")o.set("left",CANVAS_W/2/canvas.getZoom()-(o.width*(o.scaleX||1))/2);
+    else o.set("top",CANVAS_H/2/canvas.getZoom()-(o.height*(o.scaleY||1))/2);
+    o.setCoords();canvas.renderAll();
+}
+
+// Save/Load
+function getLayoutJSON(){return JSON.stringify(canvas.toJSON(["customType","customName","customCode","customStatus","customEqId","customRemark","isGrid","lockMovementX","lockMovementY","lockScalingX","lockScalingY","lockRotation","hasControls"]));}
+function saveLayout(){
+    var n=document.getElementById("layout-name").value||"默认布局";
+    var p={id:currentLayoutId,name:n,layout_data:getLayoutJSON()};
+    if(window.USER_TEAM_ID)p.team_id=window.USER_TEAM_ID;
+    fetch("/api/workshop-layouts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)}).then(function(r){return r.json();}).then(function(d){if(d.success){currentLayoutId=d.id;showInfo("已保存: "+n);loadLayouts();}});
+}
+function loadLayouts(){
+    var url="/api/workshop-layouts";
+    if(window.USER_TEAM_ID)url+="?team_id="+window.USER_TEAM_ID;
+    fetch(url).then(function(r){return r.json();}).then(function(d){if(d.success)renderLayoutList(d.data);});
+}
+function renderLayoutList(ls){
+    var list=document.getElementById("layout-list"),h="";
+    ls.forEach(function(l){h+='<div class="layout-item" onclick="loadLayout('+l.id+')"><span>'+(l.name||"未命名")+'</span><span class="del-btn" onclick="event.stopPropagation();deleteLayout('+l.id+')">删除</span></div>';});
+    list.innerHTML=h||'<div style="color:#546e7a;font-size:11px;padding:6px;">暂无布局</div>';
+}
+function loadLayout(lid){
+    fetch("/api/workshop-layouts").then(function(r){return r.json();}).then(function(d){
+        if(d.success){var l=d.data.find(function(x){return x.id===lid;});
+        if(l&&l.layout_data){canvas.loadFromJSON(l.layout_data,function(){canvas.renderAll();currentLayoutId=l.id;document.getElementById("layout-name").value=l.name||"";showInfo("已加载: "+l.name);undoStack=[];redoStack=[];});}}
     });
-    list.innerHTML = html || '<div style="color:#546e7a;font-size:11px;padding:6px;">暂无保存的布局</div>';
 }
-
-function loadLayout(lid) {
-    fetch("/api/workshop-layouts")
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (data.success) {
-                var layout = data.data.find(function(l) { return l.id === lid; });
-                if (layout && layout.layout_data) {
-                    canvas.loadFromJSON(layout.layout_data, function() {
-                        canvas.renderAll();
-                        currentLayoutId = layout.id;
-                        document.getElementById("layout-name").value = layout.name || "";
-                        showInfo("布局已加载: " + layout.name);
-                    });
-                }
-            }
-        });
+function deleteLayout(lid){
+    if(!confirm("确定删除?"))return;
+    fetch("/api/workshop-layouts/"+lid,{method:"DELETE"}).then(function(r){return r.json();}).then(function(d){if(d.success){if(currentLayoutId===lid)currentLayoutId=null;loadLayouts();showInfo("已删除");}});
 }
+function clearCanvas(){if(!confirm("确定清空?"))return;canvas.clear();canvas.setBackgroundColor("#060e18",canvas.renderAll.bind(canvas));drawGrid();}
 
-function deleteLayout(lid) {
-    if (!confirm("确定删除此布局?")) return;
-    fetch("/api/workshop-layouts/" + lid, { method: "DELETE" })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (data.success) {
-                if (currentLayoutId === lid) currentLayoutId = null;
-                loadLayouts();
-                showInfo("布局已删除");
-            }
-        });
-}
+// Export/Import
+function exportImage(){var a=document.createElement("a");a.download="workshop-layout.png";a.href=canvas.toDataURL({format:"png",quality:1,multiplier:2});a.click();}
+function exportJSON(){var b=new Blob([getLayoutJSON()],{type:"application/json"});var a=document.createElement("a");a.download="workshop-layout.json";a.href=URL.createObjectURL(b);a.click();}
+function importJSON(){document.getElementById("json-file-input").click();}
+function handleJSONImport(e){var f=e.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(ev){canvas.loadFromJSON(ev.target.result,function(){canvas.renderAll();showInfo("已导入");});};r.readAsText(f);e.target.value="";}
 
-function deleteSelected() {
-    var obj = canvas.getActiveObject();
-    if (obj) {
-        canvas.remove(obj);
-        canvas.discardActiveObject();
-        canvas.renderAll();
-    }
-}
+function showInfo(m){document.getElementById("canvas-info").textContent=m;setTimeout(function(){document.getElementById("canvas-info").textContent="就绪 | 中键平移 | 滚轮缩放 | Del删除 | Shift+拖拽吸附网格";},3000);}
 
-function exportImage() {
-    var dataURL = canvas.toDataURL({ format: "png", quality: 1, multiplier: 2 });
-    var link = document.createElement("a");
-    link.download = "workshop-layout.png";
-    link.href = dataURL;
-    link.click();
-}
-
-function showInfo(msg) {
-    document.getElementById("canvas-info").textContent = msg;
-    setTimeout(function() {
-        document.getElementById("canvas-info").textContent = "就绪 | 拖拽画布平移 | 滚轮缩放";
-    }, 3000);
-}
-
-/* ========== INIT LOAD ========== */
-loadEquipments();
-loadLayouts();
+loadEquipments();loadLayouts();
 </script>
 {% endblock %}
