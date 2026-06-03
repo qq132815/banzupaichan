@@ -1,687 +1,458 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block content %}
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-#workbench-container {
-    position: relative;
-    width: 100%;
-    height: calc(100vh - 60px);
-    overflow: hidden;
-    background: #020a18;
-    font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif;
-}
+#dashboard { display: flex; flex-direction: column; height: calc(100vh - 60px); overflow: hidden; font-family: "Microsoft YaHei", sans-serif; background: #060e18; }
 
-/* ========== HUD Overlay ========== */
-.hud-title {
-    position: absolute; top: 0; left: 0; right: 0; height: 48px;
-    background: linear-gradient(180deg, rgba(0,80,160,0.6) 0%, transparent 100%);
+/* ========== Top KPI Cards ========== */
+.kpi-bar {
+    display: flex; gap: 12px; padding: 12px 16px;
+    background: #0a1929; border-bottom: 1px solid #1e3a5f;
+    flex-shrink: 0;
+}
+.kpi-card {
+    flex: 1; background: #0d2137; border: 1px solid #1e3a5f;
+    border-radius: 6px; padding: 12px 16px;
+    display: flex; align-items: center; gap: 12px;
+}
+.kpi-icon {
+    width: 42px; height: 42px; border-radius: 8px;
     display: flex; align-items: center; justify-content: center;
-    color: #4fc3f7; font-size: 20px; letter-spacing: 6px;
-    text-shadow: 0 0 15px rgba(79,195,247,0.8), 0 0 30px rgba(79,195,247,0.3);
-    z-index: 20; pointer-events: none;
-    border-bottom: 1px solid rgba(79,195,247,0.2);
+    font-size: 20px;
 }
-.hud-title::before, .hud-title::after {
-    content: ''; position: absolute; bottom: 0; width: 120px; height: 2px;
-    background: linear-gradient(90deg, transparent, #4fc3f7, transparent);
-}
-.hud-title::before { left: calc(50% - 160px); }
-.hud-title::after { right: calc(50% - 160px); }
+.kpi-icon.blue { background: rgba(79,195,247,0.15); color: #4fc3f7; }
+.kpi-icon.green { background: rgba(0,230,118,0.15); color: #00e676; }
+.kpi-icon.yellow { background: rgba(255,215,64,0.15); color: #ffd740; }
+.kpi-icon.red { background: rgba(255,82,82,0.15); color: #ff5252; }
+.kpi-info { flex: 1; }
+.kpi-label { color: #8eafc4; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+.kpi-value { color: #fff; font-size: 26px; font-weight: bold; line-height: 1.2; }
+.kpi-sub { color: #546e7a; font-size: 10px; margin-top: 2px; }
 
-/* Stats Panel */
-.hud-stats {
-    position: absolute; top: 60px; right: 15px; width: 260px;
-    background: rgba(0,20,50,0.85); border: 1px solid rgba(79,195,247,0.3);
-    border-radius: 4px; z-index: 20; pointer-events: none;
-    backdrop-filter: blur(8px);
-}
-.hud-stats-header {
-    padding: 10px 15px; font-size: 13px; color: #4fc3f7;
-    border-bottom: 1px solid rgba(79,195,247,0.2);
-    letter-spacing: 2px; text-transform: uppercase;
-}
-.hud-stat-row {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 8px 15px; border-bottom: 1px solid rgba(79,195,247,0.08);
-}
-.hud-stat-row .label { color: #8eafc4; font-size: 12px; }
-.hud-stat-row .value { font-size: 18px; font-weight: bold; }
-.val-green { color: #00e676; text-shadow: 0 0 8px rgba(0,230,118,0.5); }
-.val-red { color: #ff5252; text-shadow: 0 0 8px rgba(255,82,82,0.5); }
-.val-yellow { color: #ffd740; text-shadow: 0 0 8px rgba(255,215,64,0.5); }
-.val-blue { color: #4fc3f7; text-shadow: 0 0 8px rgba(79,195,247,0.5); }
-
-/* Legend */
-.hud-legend {
-    position: absolute; bottom: 15px; left: 15px;
-    background: rgba(0,20,50,0.85); border: 1px solid rgba(79,195,247,0.3);
-    border-radius: 4px; padding: 12px 15px; z-index: 20;
-    pointer-events: none; backdrop-filter: blur(8px);
-}
-.legend-item { display: flex; align-items: center; margin-bottom: 6px; }
-.legend-item:last-child { margin-bottom: 0; }
-.legend-dot {
-    width: 10px; height: 10px; border-radius: 50%; margin-right: 10px;
-    box-shadow: 0 0 6px currentColor;
-}
-.legend-text { color: #8eafc4; font-size: 12px; }
-
-/* Info Panel (bottom-right) */
-.hud-info {
-    position: absolute; bottom: 15px; right: 15px; width: 300px;
-    background: rgba(0,20,50,0.9); border: 1px solid rgba(79,195,247,0.4);
-    border-radius: 4px; z-index: 30; display: none;
-    backdrop-filter: blur(10px);
-    box-shadow: 0 0 30px rgba(79,195,247,0.15);
-}
-.hud-info-header {
-    padding: 12px 15px; font-size: 14px; color: #4fc3f7; font-weight: bold;
-    border-bottom: 1px solid rgba(79,195,247,0.3);
-    display: flex; justify-content: space-between; align-items: center;
-}
-.hud-info-close {
-    cursor: pointer; color: #8eafc4; font-size: 18px; line-height: 1;
-    pointer-events: auto;
-}
-.hud-info-close:hover { color: #ff5252; }
-.hud-info-body { padding: 12px 15px; }
-.info-row {
-    display: flex; justify-content: space-between;
-    padding: 5px 0; border-bottom: 1px solid rgba(79,195,247,0.08);
-}
-.info-label { color: #8eafc4; font-size: 12px; }
-.info-value { color: #e0f0ff; font-size: 13px; font-weight: 500; }
-
-/* Progress Bar */
-.progress-bar {
-    width: 100%; height: 6px; background: rgba(79,195,247,0.1);
-    border-radius: 3px; margin-top: 8px; overflow: hidden;
-}
-.progress-fill {
-    height: 100%; border-radius: 3px;
-    background: linear-gradient(90deg, #0288d1, #4fc3f7);
-    box-shadow: 0 0 8px rgba(79,195,247,0.6);
-    transition: width 0.5s ease;
+/* ========== Main Content ========== */
+.main-content {
+    flex: 1; display: flex; overflow: hidden;
 }
 
-/* Tooltip */
-.hud-tooltip {
-    position: absolute; background: rgba(0,20,50,0.95);
-    border: 1px solid #4fc3f7; color: #e0f0ff;
-    padding: 10px 14px; border-radius: 3px;
-    display: none; pointer-events: none; z-index: 100;
-    font-size: 13px; min-width: 200px;
+/* Left: Floor Plan */
+.plan-area {
+    flex: 1; position: relative; border-right: 1px solid #1e3a5f;
+    min-width: 0;
+}
+.plan-header {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 14px; background: rgba(10,25,41,0.9);
+    border-bottom: 1px solid #1e3a5f;
+}
+.plan-title { color: #4fc3f7; font-size: 14px; letter-spacing: 2px; }
+.plan-controls { display: flex; gap: 6px; align-items: center; }
+.plan-controls button {
+    background: #0d2137; border: 1px solid #1e3a5f; color: #4fc3f7;
+    padding: 4px 10px; border-radius: 3px; cursor: pointer; font-size: 11px;
+}
+.plan-controls button:hover { background: #1e3a5f; }
+.plan-controls button.live-on { background: #1b5e20; color: #00e676; border-color: #00e676; }
+.plan-canvas-wrap { width: 100%; height: 100%; }
+#plan-canvas { width: 100%; height: 100%; }
+.plan-info {
+    position: absolute; bottom: 8px; left: 8px; z-index: 10;
+    color: #546e7a; font-size: 10px; background: rgba(10,25,41,0.8);
+    padding: 3px 8px; border-radius: 3px; border: 1px solid #1e3a5f;
+}
+.eq-hover-card {
+    position: absolute; background: rgba(0,20,50,0.95); border: 1px solid #4fc3f7;
+    color: #e0f0ff; padding: 10px 14px; border-radius: 4px; font-size: 12px;
+    display: none; pointer-events: none; z-index: 100; min-width: 200px;
     box-shadow: 0 0 20px rgba(79,195,247,0.3);
 }
-.hud-tooltip .tt-code { color: #4fc3f7; font-weight: bold; font-size: 14px; }
-.hud-tooltip .tt-name { color: #8eafc4; font-size: 12px; margin-top: 2px; }
-.hud-tooltip .tt-status { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(79,195,247,0.2); }
+.eq-hover-card .hc-title { color: #4fc3f7; font-weight: bold; font-size: 14px; margin-bottom: 6px; border-bottom: 1px solid rgba(79,195,247,0.3); padding-bottom: 4px; }
+.eq-hover-card .hc-row { display: flex; justify-content: space-between; padding: 2px 0; }
+.eq-hover-card .hc-label { color: #8eafc4; }
+.eq-hover-card .hc-val { color: #fff; font-weight: 500; }
 
-/* Camera Controls Hint */
-.hud-controls {
-    position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%);
-    color: rgba(79,195,247,0.4); font-size: 11px; z-index: 20;
-    pointer-events: none; text-align: center;
+/* Right: Charts */
+.charts-area {
+    width: 380px; flex-shrink: 0; overflow-y: auto;
+    background: #0a1929; border-left: 1px solid #1e3a5f;
+    display: flex; flex-direction: column;
 }
+.chart-box {
+    padding: 12px; border-bottom: 1px solid #1e3a5f;
+}
+.chart-box-title {
+    color: #4fc3f7; font-size: 12px; letter-spacing: 1px;
+    margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+}
+.chart-box-title::before {
+    content: ""; width: 3px; height: 12px; background: #4fc3f7; border-radius: 2px;
+}
+.chart-container { width: 100%; height: 200px; }
 
-/* Three container */
-#three-container { width: 100%; height: 100%; }
+/* Alert list */
+.alert-list { max-height: 180px; overflow-y: auto; }
+.alert-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 0; border-bottom: 1px solid rgba(79,195,247,0.08);
+    font-size: 12px;
+}
+.alert-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.alert-dot.red { background: #ff5252; }
+.alert-dot.yellow { background: #ffd740; }
+.alert-text { color: #b0bec5; flex: 1; }
+.alert-time { color: #546e7a; font-size: 10px; }
+
+/* No data hint */
+.no-data { color: #546e7a; font-size: 12px; text-align: center; padding: 30px; }
 </style>
 
-<div id="workbench-container">
-    <!-- HUD Title -->
-    <div class="hud-title">智能制造车间数字孪生监控平台</div>
-
-    <!-- Stats Panel -->
-    <div class="hud-stats">
-        <div class="hud-stats-header">| 生产概览</div>
-        <div class="hud-stat-row">
-            <span class="label">设备总数</span>
-            <span class="value val-blue" id="stat-total">--</span>
+<div id="dashboard">
+    <!-- KPI Bar -->
+    <div class="kpi-bar">
+        <div class="kpi-card">
+            <div class="kpi-icon blue">&#9881;</div>
+            <div class="kpi-info">
+                <div class="kpi-label">设备总数</div>
+                <div class="kpi-value" id="kpi-total">--</div>
+            </div>
         </div>
-        <div class="hud-stat-row">
-            <span class="label">运行中</span>
-            <span class="value val-green" id="stat-running">--</span>
+        <div class="kpi-card">
+            <div class="kpi-icon green">&#9654;</div>
+            <div class="kpi-info">
+                <div class="kpi-label">运行中</div>
+                <div class="kpi-value" id="kpi-running">--</div>
+                <div class="kpi-sub" id="kpi-running-pct"></div>
+            </div>
         </div>
-        <div class="hud-stat-row">
-            <span class="label">待机</span>
-            <span class="value val-yellow" id="stat-idle">--</span>
+        <div class="kpi-card">
+            <div class="kpi-icon yellow">&#9208;</div>
+            <div class="kpi-info">
+                <div class="kpi-label">待机</div>
+                <div class="kpi-value" id="kpi-idle">--</div>
+            </div>
         </div>
-        <div class="hud-stat-row">
-            <span class="label">故障</span>
-            <span class="value val-red" id="stat-down">--</span>
+        <div class="kpi-card">
+            <div class="kpi-icon red">&#9888;</div>
+            <div class="kpi-info">
+                <div class="kpi-label">故障</div>
+                <div class="kpi-value" id="kpi-down">--</div>
+            </div>
         </div>
-        <div class="hud-stat-row">
-            <span class="label">综合效率</span>
-            <span class="value val-green" id="stat-eff">--</span>
-        </div>
-    </div>
-
-    <!-- Legend -->
-    <div class="hud-legend">
-        <div class="legend-item">
-            <div class="legend-dot" style="color:#00e676;background:#00e676;"></div>
-            <span class="legend-text">运行中</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-dot" style="color:#ffd740;background:#ffd740;"></div>
-            <span class="legend-text">待机/调试</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-dot" style="color:#ff5252;background:#ff5252;"></div>
-            <span class="legend-text">故障/停机</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-dot" style="color:#546e7a;background:#546e7a;"></div>
-            <span class="legend-text">未排班</span>
+        <div class="kpi-card">
+            <div class="kpi-icon green">&#9733;</div>
+            <div class="kpi-info">
+                <div class="kpi-label">综合效率</div>
+                <div class="kpi-value" id="kpi-eff">--</div>
+            </div>
         </div>
     </div>
 
-    <!-- Detail Panel -->
-    <div class="hud-info" id="detail-panel">
-        <div class="hud-info-header">
-            <span id="detail-title">设备详情</span>
-            <span class="hud-info-close" onclick="document.getElementById('detail-panel').style.display='none'">&times;</span>
+    <!-- Main -->
+    <div class="main-content">
+        <!-- Left: Floor Plan -->
+        <div class="plan-area">
+            <div class="plan-header">
+                <span class="plan-title">| 车间实时监控</span>
+                <div class="plan-controls">
+                    <button onclick="toggleLive()" id="btn-live">LIVE</button>
+                    <button onclick="zoomIn()">+</button>
+                    <button onclick="zoomOut()">-</button>
+                    <button onclick="resetView()">重置</button>
+                    <span style="color:#546e7a;font-size:10px;" id="plan-status">未加载布局</span>
+                </div>
+            </div>
+            <div class="plan-canvas-wrap" id="plan-wrap">
+                <canvas id="plan-canvas"></canvas>
+            </div>
+            <div class="eq-hover-card" id="hover-card"></div>
+            <div class="plan-info">滚轮缩放 | 拖拽平移 | 悬停查看详情</div>
         </div>
-        <div class="hud-info-body" id="detail-body"></div>
+
+        <!-- Right: Charts -->
+        <div class="charts-area">
+            <div class="chart-box">
+                <div class="chart-box-title">设备状态分布</div>
+                <div class="chart-container" id="chart-status"></div>
+            </div>
+            <div class="chart-box">
+                <div class="chart-box-title">班组运行对比</div>
+                <div class="chart-container" id="chart-team"></div>
+            </div>
+            <div class="chart-box">
+                <div class="chart-box-title">近期告警</div>
+                <div class="alert-list" id="alert-list">
+                    <div class="no-data">暂无告警</div>
+                </div>
+            </div>
+        </div>
     </div>
-
-    <!-- Tooltip -->
-    <div class="hud-tooltip" id="tooltip"></div>
-
-    <!-- Controls Hint -->
-    <div class="hud-controls">左键旋转 | 右键平移 | 滚轮缩放 | 点击设备查看详情</div>
-
-    <!-- 3D Container -->
-    <div id="three-container"></div>
 </div>
 
-<script type="importmap">
-{
-    "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-    }
-}
-</script>
-<script type="module">
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-
-/* ============ SCENE SETUP ============ */
-const container = document.getElementById('three-container');
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x020a18);
-scene.fog = new THREE.FogExp2(0x020a18, 0.006);
-
-const camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.1, 500);
-camera.position.set(60, 45, 60);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-renderer.setSize(container.clientWidth, container.clientHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-container.appendChild(renderer.domElement);
-
-/* ============ POST-PROCESSING ============ */
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-
-const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(container.clientWidth, container.clientHeight),
-    0.8, 0.4, 0.85
-);
-composer.addPass(bloomPass);
-composer.addPass(new OutputPass());
-
-/* ============ CONTROLS ============ */
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.06;
-controls.minDistance = 15;
-controls.maxDistance = 150;
-controls.maxPolarAngle = Math.PI / 2.15;
-controls.target.set(0, 2, 0);
-controls.update();
-
-/* ============ LIGHTING ============ */
-scene.add(new THREE.AmbientLight(0x1a2a4a, 0.6));
-
-const mainLight = new THREE.DirectionalLight(0x4fc3f7, 1.2);
-mainLight.position.set(40, 60, 30);
-mainLight.castShadow = true;
-mainLight.shadow.mapSize.set(2048, 2048);
-mainLight.shadow.camera.near = 1;
-mainLight.shadow.camera.far = 200;
-mainLight.shadow.camera.left = -80;
-mainLight.shadow.camera.right = 80;
-mainLight.shadow.camera.top = 80;
-mainLight.shadow.camera.bottom = -80;
-scene.add(mainLight);
-
-const fillLight = new THREE.DirectionalLight(0x0288d1, 0.4);
-fillLight.position.set(-30, 20, -20);
-scene.add(fillLight);
-
-const rimLight = new THREE.PointLight(0x4fc3f7, 2, 100);
-rimLight.position.set(0, 30, -40);
-scene.add(rimLight);
-
-/* ============ GROUND ============ */
-const floorGeo = new THREE.PlaneGeometry(200, 200);
-const floorMat = new THREE.MeshStandardMaterial({
-    color: 0x0a1628, metalness: 0.8, roughness: 0.3,
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<script>
+/* ========== Fabric Canvas (Read-Only) ========== */
+var planCanvas = new fabric.Canvas("plan-canvas", {
+    backgroundColor: "#060e18",
+    selection: false,
+    interactive: false
 });
-const floor = new THREE.Mesh(floorGeo, floorMat);
-floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
-scene.add(floor);
+var planWrap = document.getElementById("plan-wrap");
 
-// Grid
-const gridHelper = new THREE.GridHelper(200, 40, 0x0d3b66, 0x0d2640);
-gridHelper.position.y = 0.01;
-scene.add(gridHelper);
+function fitPlanCanvas() {
+    planCanvas.setWidth(planWrap.clientWidth);
+    planCanvas.setHeight(planWrap.clientHeight);
+}
+fitPlanCanvas();
+window.addEventListener("resize", function() { fitPlanCanvas(); });
 
-/* ============ MATERIALS ============ */
-const matRunning = new THREE.MeshStandardMaterial({
-    color: 0x1565c0, metalness: 0.85, roughness: 0.15,
-    emissive: 0x00e676, emissiveIntensity: 0.15,
+// Zoom & Pan
+planCanvas.on("mouse:wheel", function(opt) {
+    var z = planCanvas.getZoom() * Math.pow(0.999, opt.e.deltaY);
+    z = Math.max(0.1, Math.min(3, z));
+    planCanvas.zoomToPoint({x:opt.e.offsetX,y:opt.e.offsetY}, z);
+    opt.e.preventDefault(); opt.e.stopPropagation();
 });
-const matIdle = new THREE.MeshStandardMaterial({
-    color: 0x37474f, metalness: 0.8, roughness: 0.25,
-    emissive: 0xffd740, emissiveIntensity: 0.1,
+var isDrag = false, dX, dY;
+planCanvas.on("mouse:down", function(opt) { isDrag=true; dX=opt.e.clientX; dY=opt.e.clientY; });
+planCanvas.on("mouse:move", function(opt) {
+    if(!isDrag) return;
+    var v=planCanvas.viewportTransform;
+    v[4]+=opt.e.clientX-dX; v[5]+=opt.e.clientY-dY;
+    planCanvas.requestRenderAll(); dX=opt.e.clientX; dY=opt.e.clientY;
 });
-const matDown = new THREE.MeshStandardMaterial({
-    color: 0x4a1a1a, metalness: 0.8, roughness: 0.2,
-    emissive: 0xff5252, emissiveIntensity: 0.2,
-});
-const matNormal = new THREE.MeshStandardMaterial({
-    color: 0x263238, metalness: 0.7, roughness: 0.4,
-    emissive: 0x37474f, emissiveIntensity: 0.05,
-});
-const matAccent = new THREE.MeshStandardMaterial({
-    color: 0x0288d1, metalness: 0.9, roughness: 0.1,
-    emissive: 0x4fc3f7, emissiveIntensity: 0.3,
-});
+planCanvas.on("mouse:up", function() { isDrag=false; });
 
-const statusMats = { running: matRunning, idle: matIdle, down: matDown, normal: matNormal };
+function zoomIn() { var z=Math.min(3,planCanvas.getZoom()*1.2); planCanvas.setZoom(z); planCanvas.renderAll(); }
+function zoomOut() { var z=Math.max(0.1,planCanvas.getZoom()/1.2); planCanvas.setZoom(z); planCanvas.renderAll(); }
+function resetView() { planCanvas.setViewportTransform([1,0,0,1,0,0]); }
 
-function getMat(status) { return statusMats[status] || matNormal; }
+/* ========== Load Layout ========== */
+var layoutData = null;
+var liveMode = false;
+var liveInterval = null;
+var liveEqData = {};
 
-/* ============ EQUIPMENT BUILDER ============ */
-function buildCNCMachine() {
-    const group = new THREE.Group();
-    // Base
-    const base = new THREE.Mesh(new THREE.BoxGeometry(5, 2.5, 4), null);
-    base.castShadow = true;
-    group.add(base);
-    // Top housing
-    const top = new THREE.Mesh(new THREE.BoxGeometry(5.2, 1.5, 4.2), null);
-    top.position.y = 2;
-    top.castShadow = true;
-    group.add(top);
-    // Screen panel
-    const screen = new THREE.Mesh(
-        new THREE.BoxGeometry(2, 1.2, 0.1),
-        new THREE.MeshStandardMaterial({ color: 0x0d47a1, emissive: 0x4fc3f7, emissiveIntensity: 0.5 })
-    );
-    screen.position.set(0.8, 2.5, 2.15);
-    group.add(screen);
-    // Spindle
-    const spindle = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.3, 0.3, 1, 16),
-        matAccent
-    );
-    spindle.position.set(0, 3.5, 0);
-    group.add(spindle);
-    // Status light
-    const light = new THREE.Mesh(
-        new THREE.SphereGeometry(0.25, 12, 12),
-        new THREE.MeshBasicMaterial({ color: 0x00e676 })
-    );
-    light.position.set(2.2, 3.2, 0);
-    light.name = 'statusLight';
-    group.add(light);
-    return group;
-}
-
-function buildPressMachine() {
-    const group = new THREE.Group();
-    const base = new THREE.Mesh(new THREE.BoxGeometry(4, 3, 3.5), null);
-    base.castShadow = true;
-    group.add(base);
-    const ram = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2, 1.5), matAccent);
-    ram.position.set(0, 2.5, 0);
-    ram.name = 'ram';
-    group.add(ram);
-    const pillar1 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 4, 8), matAccent);
-    pillar1.position.set(-1.2, 2, 0);
-    group.add(pillar1);
-    const pillar2 = pillar1.clone();
-    pillar2.position.set(1.2, 2, 0);
-    group.add(pillar2);
-    const light = new THREE.Mesh(
-        new THREE.SphereGeometry(0.25, 12, 12),
-        new THREE.MeshBasicMaterial({ color: 0x00e676 })
-    );
-    light.position.set(1.8, 3.5, 0);
-    light.name = 'statusLight';
-    group.add(light);
-    return group;
-}
-
-function buildRoboticArm() {
-    const group = new THREE.Group();
-    const base = new THREE.Mesh(
-        new THREE.CylinderGeometry(1.2, 1.4, 0.8, 16),
-        null
-    );
-    base.castShadow = true;
-    group.add(base);
-    const joint1 = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 3, 12), matAccent);
-    joint1.position.y = 2;
-    group.add(joint1);
-    const joint2 = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 2.5, 12), matAccent);
-    joint2.position.set(0, 4, 0);
-    joint2.rotation.z = 0.3;
-    group.add(joint2);
-    const effector = new THREE.Mesh(
-        new THREE.BoxGeometry(0.8, 0.3, 0.8),
-        new THREE.MeshStandardMaterial({ color: 0xff6f00, emissive: 0xff6f00, emissiveIntensity: 0.3 })
-    );
-    effector.position.set(0.5, 5.2, 0);
-    group.add(effector);
-    const light = new THREE.Mesh(
-        new THREE.SphereGeometry(0.2, 12, 12),
-        new THREE.MeshBasicMaterial({ color: 0x00e676 })
-    );
-    light.position.set(0, 5.6, 0);
-    light.name = 'statusLight';
-    group.add(light);
-    return group;
-}
-
-const machineTypes = [buildCNCMachine, buildPressMachine, buildRoboticArm];
-
-/* ============ CONVEYOR BELTS ============ */
-const conveyorGroup = new THREE.Group();
-scene.add(conveyorGroup);
-
-function buildConveyor(length, x, z, direction) {
-    const group = new THREE.Group();
-    const belt = new THREE.Mesh(
-        new THREE.BoxGeometry(length, 0.3, 1.5),
-        new THREE.MeshStandardMaterial({ color: 0x1a237e, metalness: 0.6, roughness: 0.5 })
-    );
-    belt.position.y = 0.4;
-    belt.receiveShadow = true;
-    group.add(belt);
-    // Rails
-    for (let i = 0; i < length; i += 2) {
-        const roller = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.15, 0.15, 1.6, 8),
-            matAccent
-        );
-        roller.rotation.x = Math.PI / 2;
-        roller.position.set(i - length / 2 + 1, 0.3, 0);
-        group.add(roller);
-    }
-    // Side rails
-    const railMat = new THREE.MeshStandardMaterial({ color: 0x263238, metalness: 0.9, roughness: 0.2 });
-    const rail1 = new THREE.Mesh(new THREE.BoxGeometry(length, 0.6, 0.15), railMat);
-    rail1.position.set(0, 0.6, 0.8);
-    group.add(rail1);
-    const rail2 = rail1.clone();
-    rail2.position.z = -0.8;
-    group.add(rail2);
-    group.position.set(x, 0, z);
-    group.userData = { type: 'conveyor', direction: direction, length: length };
-    return group;
-}
-
-conveyorGroup.add(buildConveyor(30, 0, 12, 1));
-conveyorGroup.add(buildConveyor(30, 0, -12, -1));
-
-/* ============ FLOOR MARKINGS ============ */
-function addFloorLine(x1, z1, x2, z2, color) {
-    const points = [new THREE.Vector3(x1, 0.02, z1), new THREE.Vector3(x2, 0.02, z2)];
-    const geo = new THREE.BufferGeometry().setFromPoints(points);
-    const mat = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.4 });
-    scene.add(new THREE.Line(geo, mat));
-}
-for (let x = -60; x <= 60; x += 20) {
-    addFloorLine(x, -60, x, 60, 0x0d3b66);
-}
-for (let z = -60; z <= 60; z += 20) {
-    addFloorLine(-60, z, 60, z, 0x0d3b66);
-}
-
-/* ============ LOAD DATA & BUILD SCENE ============ */
-const equipmentGroup = new THREE.Group();
-scene.add(equipmentGroup);
-
-const tooltip = document.getElementById('tooltip');
-const detailPanel = document.getElementById('detail-panel');
-const detailBody = document.getElementById('detail-body');
-const detailTitle = document.getElementById('detail-title');
-
-fetch('/api/workshop/3d-status')
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            renderEquipment(data.data);
-            updateStats(data.data);
+function loadLatestLayout() {
+    fetch("/api/workshop-layouts").then(function(r){return r.json();}).then(function(d){
+        if(d.success && d.data && d.data.length > 0) {
+            var layout = d.data[0];
+            planCanvas.loadFromJSON(layout.layout_data, function() {
+                // Make all objects non-interactive
+                planCanvas.forEachObject(function(obj) {
+                    obj.set({selectable:false,evented:true,hasControls:false,lockMovementX:true,lockMovementY:true});
+                });
+                planCanvas.renderAll();
+                layoutData = layout;
+                document.getElementById("plan-status").textContent = "布局: " + (layout.name||"默认");
+                toggleLive(); // Auto-start live mode
+            });
+        } else {
+            document.getElementById("plan-status").textContent = "未保存布局 (请先在编辑器中创建)";
         }
     });
-
-function updateStats(list) {
-    document.getElementById('stat-total').textContent = list.length;
-    document.getElementById('stat-running').textContent = list.filter(e => e.status === 'running').length;
-    document.getElementById('stat-idle').textContent = list.filter(e => e.status === 'idle').length;
-    document.getElementById('stat-down').textContent = list.filter(e => e.status === 'down').length;
-    const eff = list.length > 0
-        ? Math.round(list.filter(e => e.status === 'running').length / list.length * 100) + '%'
-        : '--';
-    document.getElementById('stat-eff').textContent = eff;
 }
 
-function renderEquipment(list) {
-    while (equipmentGroup.children.length) equipmentGroup.remove(equipmentGroup.children[0]);
-
-    const cols = 15;
-    const spacingX = 8;
-    const spacingZ = 10;
-    const offsetX = -(cols - 1) * spacingX / 2;
-    const offsetZ = -Math.ceil(list.length / cols) * spacingZ / 2;
-
-    list.forEach((eq, i) => {
-        const builder = machineTypes[i % machineTypes.length];
-        const machine = builder();
-
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        machine.position.set(offsetX + col * spacingX, 0, offsetZ + row * spacingZ + 8);
-
-        // Set material on all children
-        const mat = getMat(eq.status);
-        machine.traverse(child => {
-            if (child.isMesh && child.name !== 'statusLight' && child.name !== 'ram') {
-                if (!child.material || child.material === matAccent) return;
-                child.material = mat;
-            }
-        });
-
-        // Status light color
-        const sl = machine.getObjectByName('statusLight');
-        if (sl) {
-            const colors = { running: 0x00e676, idle: 0xffd740, down: 0xff5252 };
-            sl.material.color.set(colors[eq.status] || 0x546e7a);
-        }
-
-        machine.userData = eq;
-        machine.traverse(c => { if (c.isMesh) c.userData = eq; });
-        equipmentGroup.add(machine);
-    });
-}
-
-/* ============ RAYCASTER ============ */
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
-let hovered = null;
-
-function onMouseMove(e) {
-    const rect = container.getBoundingClientRect();
-    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(equipmentGroup.children, true);
-
-    if (hits.length > 0) {
-        let obj = hits[0].object;
-        while (obj.parent && obj.parent !== equipmentGroup) obj = obj.parent;
-
-        container.style.cursor = 'pointer';
-
-        if (hovered !== obj) {
-            if (hovered) resetHighlight(hovered);
-            hovered = obj;
-            highlightMachine(obj);
-        }
-
-        const eq = obj.userData;
-        if (eq && eq.code) {
-            const sColors = { running: '#00e676', idle: '#ffd740', down: '#ff5252' };
-            tooltip.innerHTML =
-                '<div class="tt-code">' + eq.code + '</div>' +
-                '<div class="tt-name">' + (eq.name || '') + '</div>' +
-                '<div class="tt-status">状态: <span style="color:' + (sColors[eq.status] || '#546e7a') + '">' +
-                (eq.status || 'unknown').toUpperCase() + '</span></div>';
-            tooltip.style.display = 'block';
-            tooltip.style.left = (e.clientX + 15) + 'px';
-            tooltip.style.top = (e.clientY + 15) + 'px';
-        }
+/* ========== Live Mode ========== */
+function toggleLive() {
+    liveMode = !liveMode;
+    var btn = document.getElementById("btn-live");
+    if(liveMode) {
+        btn.classList.add("live-on");
+        fetchLiveData();
+        liveInterval = setInterval(fetchLiveData, 5000);
     } else {
-        if (hovered) { resetHighlight(hovered); hovered = null; }
-        container.style.cursor = 'default';
-        tooltip.style.display = 'none';
+        btn.classList.remove("live-on");
+        if(liveInterval) { clearInterval(liveInterval); liveInterval=null; }
+        resetVisuals();
     }
 }
 
-function highlightMachine(group) {
-    group.traverse(c => {
-        if (c.isMesh && c.material) {
-            c.material = c.material.clone();
-            c.material.emissiveIntensity = 1.0;
-        }
-    });
+function fetchLiveData() {
+    fetch("/api/workshop/3d-status").then(function(r){return r.json();}).then(function(d){
+        if(!d.success) return;
+        liveEqData = {};
+        d.data.forEach(function(eq){ liveEqData[eq.id]=eq; });
+        updateKPIs(d.data);
+        updatePlanVisuals();
+        updateCharts(d.data);
+        updateAlerts(d.data);
+    }).catch(function(){});
 }
 
-function resetHighlight(group) {
-    const mat = getMat(group.userData.status);
-    group.traverse(c => {
-        if (c.isMesh && c.name !== 'statusLight' && c.name !== 'ram') {
-            if (!c.material || c.userData._isAccent) return;
-            c.material = mat;
-        }
-    });
+function updateKPIs(list) {
+    var total = list.length;
+    var running = list.filter(function(e){return e.status==="running";}).length;
+    var idle = list.filter(function(e){return e.status==="idle";}).length;
+    var down = list.filter(function(e){return e.status==="down";}).length;
+    var eff = total > 0 ? Math.round(running/total*100) : 0;
+
+    document.getElementById("kpi-total").textContent = total;
+    document.getElementById("kpi-running").textContent = running;
+    document.getElementById("kpi-running-pct").textContent = total > 0 ? Math.round(running/total*100)+"%" : "";
+    document.getElementById("kpi-idle").textContent = idle;
+    document.getElementById("kpi-down").textContent = down;
+    document.getElementById("kpi-eff").textContent = eff + "%";
 }
 
-function onClick(e) {
-    if (!hovered) return;
-    const eq = hovered.userData;
-    if (!eq || !eq.code) return;
+var statusColors = {
+    running: {fill:"#1b5e20",stroke:"#00e676"},
+    idle: {fill:"#4a4100",stroke:"#ffd740"},
+    down: {fill:"#4a1a1a",stroke:"#ff5252"},
+    normal: {fill:"#263238",stroke:"#546e7a"}
+};
 
-    detailTitle.textContent = eq.code + ' - ' + (eq.name || '');
-    const sColors = { running: '#00e676', idle: '#ffd740', down: '#ff5252' };
-    const statusLabel = { running: '运行中', idle: '待机', down: '故障' };
-    const progress = Math.round(Math.random() * 100);
-
-    detailBody.innerHTML =
-        '<div class="info-row"><span class="info-label">设备编号</span><span class="info-value">' + eq.code + '</span></div>' +
-        '<div class="info-row"><span class="info-label">设备名称</span><span class="info-value">' + (eq.name || '--') + '</span></div>' +
-        '<div class="info-row"><span class="info-label">所属班组</span><span class="info-value">' + (eq.team_id || '--') + '</span></div>' +
-        '<div class="info-row"><span class="info-label">当前状态</span><span class="info-value" style="color:' + (sColors[eq.status] || '#546e7a') + '">' + (statusLabel[eq.status] || eq.status) + '</span></div>' +
-        '<div class="info-row"><span class="info-label">设备类型</span><span class="info-value">' + (eq.model || 'CNC') + '</span></div>' +
-        '<div class="info-row"><span class="info-label">当前工单</span><span class="info-value">--</span></div>' +
-        '<div class="info-row"><span class="info-label">完成进度</span><span class="info-value">' + progress + '%</span></div>' +
-        '<div class="progress-bar"><div class="progress-fill" style="width:' + progress + '%"></div></div>';
-
-    detailPanel.style.display = 'block';
-}
-
-container.addEventListener('mousemove', onMouseMove, false);
-container.addEventListener('click', onClick, false);
-
-/* ============ ANIMATION ============ */
-const clock = new THREE.Clock();
-
-function animate() {
-    requestAnimationFrame(animate);
-    const t = clock.getElapsedTime();
-    controls.update();
-
-    equipmentGroup.children.forEach(child => {
-        if (child.userData.status === 'running') {
-            // Pulse emissive
-            child.traverse(c => {
-                if (c.isMesh && c.name !== 'statusLight') {
-                    if (c.material && c.material.emissive) {
-                        c.material.emissiveIntensity = 0.1 + Math.sin(t * 3) * 0.08;
-                    }
-                }
+function updatePlanVisuals() {
+    planCanvas.forEachObject(function(obj) {
+        if(!obj.customEqId) return;
+        var eq = liveEqData[obj.customEqId];
+        if(!eq) return;
+        var sc = statusColors[eq.status] || statusColors.normal;
+        obj.customStatus = eq.status;
+        if(obj.type==="group") {
+            obj.forEachObject(function(ch){
+                if(ch.type==="rect") { ch.set("fill",sc.fill); ch.set("stroke",sc.stroke); }
             });
-            // Spin spindle
-            const spindle = child.children[3];
-            if (spindle) spindle.rotation.y += 0.08;
-            // Ram animation
-            const ram = child.getObjectByName('ram');
-            if (ram) ram.position.y = 2.5 + Math.sin(t * 4) * 0.3;
+        } else {
+            obj.set("fill",sc.fill); obj.set("stroke",sc.stroke);
         }
-
-        if (child.userData.status === 'down') {
-            const flash = Math.sin(t * 6) > 0.3 ? 0.6 : 0.1;
-            child.traverse(c => {
-                if (c.isMesh && c.material && c.material.emissive) {
-                    c.material.emissiveIntensity = flash;
-                }
-            });
-        }
-
-        // Status light pulse
-        const sl = child.getObjectByName('statusLight');
-        if (sl && sl.material) {
-            sl.material.opacity = 0.7 + Math.sin(t * 4) * 0.3;
-        }
+        obj._liveEq = eq;
     });
-
-    // Conveyor animation
-    conveyorGroup.children.forEach(conv => {
-        conv.children.forEach(child => {
-            if (child.geometry && child.geometry.type === 'CylinderGeometry') {
-                child.rotation.z += 0.05;
-            }
-        });
-    });
-
-    composer.render();
+    planCanvas.renderAll();
 }
 
-animate();
+function resetVisuals() {
+    planCanvas.forEachObject(function(obj){
+        if(obj.customEqId && obj.customStatus) {
+            var sc = statusColors[obj.customStatus] || statusColors.normal;
+            if(obj.type==="group") {
+                obj.forEachObject(function(ch){ if(ch.type==="rect"){ch.set("fill",sc.fill);ch.set("stroke",sc.stroke);} });
+            } else { obj.set("fill",sc.fill);obj.set("stroke",sc.stroke); }
+            obj.set("opacity",1);
+        }
+    });
+    planCanvas.renderAll();
+}
 
-/* ============ RESIZE ============ */
-window.addEventListener('resize', () => {
-    camera.aspect = container.clientWidth / container.clientHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    composer.setSize(container.clientWidth, container.clientHeight);
+/* Hover card */
+planCanvas.on("mouse:over", function(opt) {
+    if(!liveMode) return;
+    var obj = opt.target;
+    if(!obj || !obj._liveEq) return;
+    var eq = obj._liveEq;
+    var st = {running:"运行中",idle:"待机",down:"故障",normal:"未排班"};
+    var sc = {running:"#00e676",idle:"#ffd740",down:"#ff5252",normal:"#546e7a"};
+    var card = document.getElementById("hover-card");
+    card.innerHTML = '<div class="hc-title">'+(eq.code||"")+'</div>' +
+        '<div class="hc-row"><span class="hc-label">名称</span><span class="hc-val">'+(eq.name||"--")+'</span></div>' +
+        '<div class="hc-row"><span class="hc-label">状态</span><span class="hc-val" style="color:'+(sc[eq.status]||"#fff")+'">'+(st[eq.status]||eq.status)+'</span></div>' +
+        '<div class="hc-row"><span class="hc-label">班组</span><span class="hc-val">'+(eq.team_id||"--")+'</span></div>' +
+        '<div class="hc-row"><span class="hc-label">类型</span><span class="hc-val">'+(eq.model||"--")+'</span></div>';
+    card.style.display = "block";
 });
+planCanvas.on("mouse:move", function(opt) {
+    if(!liveMode) return;
+    var card = document.getElementById("hover-card");
+    if(card.style.display==="block") {
+        card.style.left = (opt.e.clientX+15)+"px";
+        card.style.top = (opt.e.clientY-60)+"px";
+    }
+});
+planCanvas.on("mouse:out", function() {
+    document.getElementById("hover-card").style.display = "none";
+});
+
+/* ========== ECharts ========== */
+var chartStatus = echarts.init(document.getElementById("chart-status"));
+var chartTeam = echarts.init(document.getElementById("chart-team"));
+
+chartStatus.setOption({
+    tooltip: { trigger: "item", backgroundColor: "#0d2137", borderColor: "#1e3a5f", textStyle: { color: "#e0f0ff" } },
+    legend: { bottom: 0, textStyle: { color: "#8eafc4", fontSize: 11 } },
+    series: [{
+        type: "pie", radius: ["40%","70%"], center: ["50%","45%"],
+        label: { show: false },
+        emphasis: { label: { show: true, fontSize: 14, color: "#fff" } },
+        data: [
+            { value: 0, name: "运行中", itemStyle: { color: "#00e676" } },
+            { value: 0, name: "待机", itemStyle: { color: "#ffd740" } },
+            { value: 0, name: "故障", itemStyle: { color: "#ff5252" } },
+            { value: 0, name: "未排班", itemStyle: { color: "#546e7a" } }
+        ]
+    }]
+});
+
+chartTeam.setOption({
+    tooltip: { trigger: "axis", backgroundColor: "#0d2137", borderColor: "#1e3a5f", textStyle: { color: "#e0f0ff" } },
+    grid: { left: 40, right: 15, top: 10, bottom: 30 },
+    xAxis: { type: "category", data: [], axisLabel: { color: "#8eafc4", fontSize: 10 }, axisLine: { lineStyle: { color: "#1e3a5f" } } },
+    yAxis: { type: "value", axisLabel: { color: "#8eafc4", fontSize: 10 }, splitLine: { lineStyle: { color: "#0d2137" } }, axisLine: { lineStyle: { color: "#1e3a5f" } } },
+    series: [
+        { name: "运行", type: "bar", stack: "total", data: [], itemStyle: { color: "#00e676" } },
+        { name: "待机", type: "bar", stack: "total", data: [], itemStyle: { color: "#ffd740" } },
+        { name: "故障", type: "bar", stack: "total", data: [], itemStyle: { color: "#ff5252" } }
+    ]
+});
+
+function updateCharts(list) {
+    // Status pie
+    var running = list.filter(function(e){return e.status==="running";}).length;
+    var idle = list.filter(function(e){return e.status==="idle";}).length;
+    var down = list.filter(function(e){return e.status==="down";}).length;
+    var normal = list.length - running - idle - down;
+    chartStatus.setOption({ series: [{ data: [
+        { value: running, name: "运行中", itemStyle: { color: "#00e676" } },
+        { value: idle, name: "待机", itemStyle: { color: "#ffd740" } },
+        { value: down, name: "故障", itemStyle: { color: "#ff5252" } },
+        { value: normal, name: "未排班", itemStyle: { color: "#546e7a" } }
+    ] }] });
+
+    // Team bar
+    var teams = {};
+    list.forEach(function(eq) {
+        var tid = eq.team_id || "unknown";
+        if(!teams[tid]) teams[tid] = {running:0,idle:0,down:0};
+        if(eq.status==="running") teams[tid].running++;
+        else if(eq.status==="idle") teams[tid].idle++;
+        else if(eq.status==="down") teams[tid].down++;
+    });
+    var teamNames = [], tRun=[], tIdle=[], tDown=[];
+    Object.keys(teams).forEach(function(k) {
+        teamNames.push("班组"+k);
+        tRun.push(teams[k].running);
+        tIdle.push(teams[k].idle);
+        tDown.push(teams[k].down);
+    });
+    chartTeam.setOption({
+        xAxis: { data: teamNames },
+        series: [
+            { data: tRun },
+            { data: tIdle },
+            { data: tDown }
+        ]
+    });
+}
+
+function updateAlerts(list) {
+    var alerts = list.filter(function(e){return e.status==="down";});
+    var el = document.getElementById("alert-list");
+    if(alerts.length === 0) {
+        el.innerHTML = '<div class="no-data">暂无告警</div>';
+        return;
+    }
+    var html = "";
+    alerts.forEach(function(eq) {
+        html += '<div class="alert-item"><span class="alert-dot red"></span>' +
+            '<span class="alert-text">'+(eq.code||"")+" "+(eq.name||"")+' - 故障停机</span>' +
+            '<span class="alert-time">实时</span></div>';
+    });
+    el.innerHTML = html;
+}
+
+// Resize charts
+window.addEventListener("resize", function() { chartStatus.resize(); chartTeam.resize(); });
+
+// Load
+loadLatestLayout();
 </script>
 {% endblock %}

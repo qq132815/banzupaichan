@@ -3176,14 +3176,25 @@ def api_get_workshop_layouts():
 def api_save_workshop_layout():
     try:
         data = request.json
+        name = data.get('name', '默认布局').strip()
+        if not name:
+            return jsonify({'success': False, 'error': '布局名称不能为空'}), 400
         conn = get_connection()
         c = conn.cursor()
+        # Check duplicate name
+        if data.get('id'):
+            c.execute("SELECT id FROM workshop_layouts WHERE name=? AND id!=?", (name, data['id']))
+        else:
+            c.execute("SELECT id FROM workshop_layouts WHERE name=?", (name,))
+        if c.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': '布局名称已存在，请使用其他名称'}), 400
         if data.get('id'):
             c.execute("UPDATE workshop_layouts SET name=?, layout_data=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                      (data.get('name', '默认布局'), data.get('layout_data', '{}'), data['id']))
+                      (name, data.get('layout_data', '{}'), data['id']))
         else:
             c.execute("INSERT INTO workshop_layouts (team_id, name, layout_data) VALUES (?,?,?)",
-                      (data.get('team_id'), data.get('name', '默认布局'), data.get('layout_data', '{}')))
+                      (data.get('team_id'), name, data.get('layout_data', '{}')))
         conn.commit()
         layout_id = data.get('id') or c.lastrowid
         conn.close()
@@ -3197,10 +3208,15 @@ def api_delete_workshop_layout(lid):
     try:
         conn = get_connection()
         c = conn.cursor()
+        c.execute("SELECT id FROM workshop_layouts WHERE id=?", (lid,))
+        if not c.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': '布局不存在'}), 404
         c.execute("DELETE FROM workshop_layouts WHERE id=?", (lid,))
         conn.commit()
+        deleted = c.rowcount
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'deleted': deleted})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
