@@ -48,6 +48,17 @@
 .no-select { color: #546e7a; font-size: 12px; text-align: center; padding: 20px; }
 .shortcuts-hint { padding: 8px 12px; border-top: 1px solid #1e3a5f; color: #546e7a; font-size: 10px; line-height: 1.8; }
 .shortcuts-hint kbd { background: #0d2137; border: 1px solid #1e3a5f; border-radius: 2px; padding: 1px 4px; color: #8eafc4; font-size: 10px; }
+
+/* Live Mode */
+.canvas-toolbar button.live-on { background: #1b5e20; color: #00e676; border-color: #00e676; }
+.live-badge { position: absolute; top: 10px; right: 280px; z-index: 10; background: rgba(27,94,32,0.9); color: #00e676; padding: 4px 12px; border-radius: 3px; border: 1px solid #00e676; font-size: 12px; display: none; animation: livePulse 2s infinite; }
+@keyframes livePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+.eq-data-overlay { position: absolute; background: rgba(0,20,50,0.92); border: 1px solid #4fc3f7; color: #e0f0ff; padding: 8px 12px; border-radius: 4px; font-size: 12px; display: none; pointer-events: none; z-index: 50; min-width: 180px; box-shadow: 0 0 15px rgba(79,195,247,0.3); }
+.eq-data-overlay .eq-title { color: #4fc3f7; font-weight: bold; margin-bottom: 4px; }
+.eq-data-overlay .eq-row { display: flex; justify-content: space-between; padding: 2px 0; }
+.eq-data-overlay .eq-label { color: #8eafc4; }
+.eq-data-overlay .eq-val { color: #fff; }
+
 </style>
 
 <div id="editor-container">
@@ -100,6 +111,7 @@
             <span class="sep"></span>
             <button onclick="deleteSelected()" class="danger">删除</button>
             <span class="sep"></span>
+            <button onclick="toggleLiveMode()" id="btn-live">实时监控</button>
             <button onclick="toggleGrid()">网格</button>
             <button onclick="alignSelected('h')">居中H</button>
             <button onclick="alignSelected('v')">居中V</button>
@@ -108,6 +120,8 @@
             <button onclick="exportJSON()">导出JSON</button>
             <button onclick="importJSON()">导入JSON</button>
         </div>
+        <div class="live-badge" id="live-badge">LIVE</div>
+<div class="eq-data-overlay" id="eq-data-overlay"></div>
         <div class="canvas-info" id="canvas-info">就绪 | 中键平移 | 滚轮缩放 | Del删除</div>
         <div class="canvas-size">
             <label>画布:</label>
@@ -428,6 +442,144 @@ function importJSON(){document.getElementById("json-file-input").click();}
 function handleJSONImport(e){var f=e.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(ev){canvas.loadFromJSON(ev.target.result,function(){canvas.renderAll();showInfo("已导入");});};r.readAsText(f);e.target.value="";}
 
 function showInfo(m){document.getElementById("canvas-info").textContent=m;setTimeout(function(){document.getElementById("canvas-info").textContent="就绪 | 中键平移 | 滚轮缩放 | Del删除 | Shift+拖拽吸附网格";},3000);}
+
+
+/* ========== LIVE MODE ========== */
+var liveMode = false;
+var liveInterval = null;
+var liveData = {};
+
+function toggleLiveMode() {
+    liveMode = !liveMode;
+    var btn = document.getElementById("btn-live");
+    var badge = document.getElementById("live-badge");
+    if (liveMode) {
+        btn.classList.add("live-on");
+        btn.textContent = "实时监控 ON";
+        badge.style.display = "block";
+        fetchLiveData();
+        liveInterval = setInterval(fetchLiveData, 5000);
+        showInfo("实时监控已开启 (每5秒刷新)");
+    } else {
+        btn.classList.remove("live-on");
+        btn.textContent = "实时监控";
+        badge.style.display = "none";
+        if (liveInterval) { clearInterval(liveInterval); liveInterval = null; }
+        showInfo("实时监控已关闭");
+    }
+}
+
+function fetchLiveData() {
+    fetch("/api/workshop/3d-status").then(function(r){return r.json();}).then(function(data){
+        if (!data.success) return;
+        liveData = {};
+        data.data.forEach(function(eq) { liveData[eq.id] = eq; });
+        updateLiveVisuals();
+    }).catch(function(){});
+}
+
+function updateLiveVisuals() {
+    if (!liveMode) return;
+    var sColors = {
+        running: { fill: "#1b5e20", stroke: "#00e676" },
+        idle: { fill: "#4a4100", stroke: "#ffd740" },
+        down: { fill: "#4a1a1a", stroke: "#ff5252" },
+        normal: { fill: "#263238", stroke: "#546e7a" }
+    };
+
+    canvas.forEachObject(function(obj) {
+        if (!obj.customEqId) return;
+        var eq = liveData[obj.customEqId];
+        if (!eq) return;
+
+        var sc = sColors[eq.status] || sColors.normal;
+        obj.customStatus = eq.status;
+
+        // Update fill/stroke
+        if (obj.type === "group") {
+            obj.forEachObject(function(child) {
+                if (child.type === "rect") {
+                    child.set("fill", sc.fill);
+                    child.set("stroke", sc.stroke);
+                }
+            });
+        } else {
+            obj.set("fill", sc.fill);
+            obj.set("stroke", sc.stroke);
+        }
+
+        // Add live data to object
+        obj._liveData = {
+            code: eq.code,
+            name: eq.name,
+            status: eq.status,
+            team_id: eq.team_id,
+            model: eq.model
+        };
+    });
+
+    canvas.renderAll();
+}
+
+// Hover to show live data overlay
+canvas.on("mouse:over", function(opt) {
+    if (!liveMode) return;
+    var obj = opt.target;
+    if (!obj || !obj._liveData) return;
+
+    var overlay = document.getElementById("eq-data-overlay");
+    var d = obj._liveData;
+    var statusText = { running: "运行中", idle: "待机", down: "故障", normal: "未排班" };
+    var statusColor = { running: "#00e676", idle: "#ffd740", down: "#ff5252", normal: "#546e7a" };
+
+    overlay.innerHTML =
+        '<div class="eq-title">' + (d.code || "") + '</div>' +
+        '<div class="eq-row"><span class="eq-label">名称</span><span class="eq-val">' + (d.name || "--") + '</span></div>' +
+        '<div class="eq-row"><span class="eq-label">状态</span><span class="eq-val" style="color:' + (statusColor[d.status]||"#fff") + '">' + (statusText[d.status]||d.status) + '</span></div>' +
+        '<div class="eq-row"><span class="eq-label">班组</span><span class="eq-val">' + (d.team_id || "--") + '</span></div>' +
+        '<div class="eq-row"><span class="eq-label">类型</span><span class="eq-val">' + (d.model || "--") + '</span></div>';
+    overlay.style.display = "block";
+});
+
+canvas.on("mouse:move", function(opt) {
+    if (!liveMode) return;
+    var overlay = document.getElementById("eq-data-overlay");
+    if (overlay.style.display === "block") {
+        overlay.style.left = (opt.e.clientX + 15) + "px";
+        overlay.style.top = (opt.e.clientY - 50) + "px";
+    }
+});
+
+canvas.on("mouse:out", function(opt) {
+    document.getElementById("eq-data-overlay").style.display = "none";
+});
+
+// Animation loop for live effects
+var liveAnimFrame = 0;
+function liveAnimation() {
+    if (!liveMode) { requestAnimationFrame(liveAnimation); return; }
+    liveAnimFrame++;
+
+    canvas.forEachObject(function(obj) {
+        if (!obj.customEqId || !obj._liveData) return;
+        var status = obj._liveData.status;
+
+        if (status === "running") {
+            // Pulse effect
+            var pulse = 0.7 + Math.sin(liveAnimFrame * 0.05) * 0.3;
+            obj.set("opacity", pulse);
+        } else if (status === "down") {
+            // Flash effect
+            var flash = Math.sin(liveAnimFrame * 0.15) > 0 ? 1 : 0.4;
+            obj.set("opacity", flash);
+        } else {
+            obj.set("opacity", 1);
+        }
+    });
+    canvas.renderAll();
+    requestAnimationFrame(liveAnimation);
+}
+liveAnimation();
 
 loadEquipments();loadLayouts();
 </script>
