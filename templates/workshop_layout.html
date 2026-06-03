@@ -41,7 +41,7 @@
 .layout-list { padding: 6px 0; max-height: 150px; overflow-y: auto; }
 .layout-item { display: flex; justify-content: space-between; align-items: center; padding: 5px 8px; margin-bottom: 3px; background: #0d2137; border: 1px solid #1e3a5f; border-radius: 3px; cursor: pointer; color: #b0bec5; font-size: 12px; }
 .layout-item:hover { border-color: #4fc3f7; color: #4fc3f7; }
-.layout-item .del-btn { color: #ff5252; cursor: pointer; padding: 2px 5px; font-size: 11px; }
+.layout-item .del-btn { color: #ff5252; cursor: pointer; padding: 2px 8px; font-size: 11px; pointer-events: auto; user-select: none; border-radius: 3px; } .layout-item .del-btn:hover { background: rgba(255,82,82,0.2); }
 .btn-primary { display: block; width: 100%; padding: 7px; background: #1565c0; border: none; border-radius: 4px; color: #fff; cursor: pointer; font-size: 12px; margin-top: 6px; }
 .btn-primary:hover { background: #1976d2; }
 .btn-secondary { display: block; width: 100%; padding: 7px; background: #0d2137; border: 1px solid #1e3a5f; border-radius: 4px; color: #4fc3f7; cursor: pointer; font-size: 12px; margin-top: 6px; }
@@ -412,7 +412,7 @@ function saveLayout(){
     var n=document.getElementById("layout-name").value||"默认布局";
     var p={id:currentLayoutId,name:n,layout_data:getLayoutJSON()};
     if(window.USER_TEAM_ID)p.team_id=window.USER_TEAM_ID;
-    fetch("/api/workshop-layouts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)}).then(function(r){return r.json();}).then(function(d){if(d.success){currentLayoutId=d.id;showInfo("已保存: "+n);loadLayouts();}});
+    fetch("/api/workshop-layouts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)}).then(function(r){return r.json().then(function(d){return {status:r.status,data:d};});}).then(function(result){var d=result.data;if(d.success){currentLayoutId=d.id;showInfo("已保存: "+n);loadLayouts();}else{alert("保存失败: "+(d.error||"未知错误"));}}).catch(function(e){alert("保存请求失败: "+e);});
 }
 function loadLayouts(){
     var url="/api/workshop-layouts";
@@ -431,8 +431,19 @@ function loadLayout(lid){
     });
 }
 function deleteLayout(lid){
-    if(!confirm("确定删除?"))return;
-    fetch("/api/workshop-layouts/"+lid,{method:"DELETE"}).then(function(r){return r.json();}).then(function(d){if(d.success){if(currentLayoutId===lid)currentLayoutId=null;loadLayouts();showInfo("已删除");}});
+    if(!confirm("确定删除此布局?"))return;
+    fetch("/api/workshop-layouts/"+lid,{method:"DELETE"})
+    .then(function(r){return r.json().then(function(d){return {status:r.status,data:d};});})
+    .then(function(result){
+        if(result.data.success){
+            if(currentLayoutId===lid)currentLayoutId=null;
+            loadLayouts();
+            showInfo("布局已删除");
+        } else {
+            alert("删除失败: "+(result.data.error||"未知错误"));
+        }
+    })
+    .catch(function(e){alert("删除请求失败: "+e);});
 }
 function clearCanvas(){if(!confirm("确定清空?"))return;canvas.clear();canvas.setBackgroundColor("#060e18",canvas.renderAll.bind(canvas));drawGrid();}
 
