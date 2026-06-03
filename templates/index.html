@@ -238,9 +238,21 @@ function loadLatestLayout() {
         if(d.success && d.data && d.data.length > 0) {
             var layout = d.data[0];
             planCanvas.loadFromJSON(layout.layout_data, function() {
-                // Make all objects non-interactive
+                // Restore custom properties from JSON
+                var origObjects = JSON.parse(layout.layout_data).objects || [];
+                var idx = 0;
                 planCanvas.forEachObject(function(obj) {
+                    if(idx < origObjects.length) {
+                        var orig = origObjects[idx];
+                        obj.customType = orig.customType || "";
+                        obj.customName = orig.customName || "";
+                        obj.customCode = orig.customCode || "";
+                        obj.customStatus = orig.customStatus || "normal";
+                        obj.customEqId = orig.customEqId || null;
+                        obj.customRemark = orig.customRemark || "";
+                    }
                     obj.set({selectable:false,evented:true,hasControls:false,lockMovementX:true,lockMovementY:true});
+                    idx++;
                 });
                 planCanvas.renderAll();
                 layoutData = layout;
