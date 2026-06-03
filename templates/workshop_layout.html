@@ -103,6 +103,8 @@
 
     <div class="canvas-wrap" id="canvas-wrap">
         <div class="canvas-toolbar">
+            <button onclick="toggleLiveMode()" id="btn-live" style="background:#1b5e20;color:#00e676;font-weight:bold;border-color:#00e676;min-width:100px;">LIVE</button>
+            <span class="sep"></span>
             <button onclick="saveLayout()" style="background:#1565c0;color:#fff;">保存布局</button>
             <button onclick="clearCanvas()">清空</button>
             <span class="sep"></span>
@@ -111,7 +113,6 @@
             <span class="sep"></span>
             <button onclick="deleteSelected()" class="danger">删除</button>
             <span class="sep"></span>
-            <button onclick="toggleLiveMode()" id="btn-live">实时监控</button>
             <button onclick="toggleGrid()">网格</button>
             <button onclick="alignSelected('h')">居中H</button>
             <button onclick="alignSelected('v')">居中V</button>
