@@ -27,6 +27,11 @@
 .ref-table .row-today { background: #fffbeb; }
 .ref-table .row-today td { color: #d97706; }
 .ref-table td strong { font-weight: 600; }
+
+/* 排班模态框样式 */
+#task-modal .modal{max-width:1000px;max-height:95vh;overflow-y:auto}
+#task-modal .form-row{grid-template-columns:repeat(4,1fr);gap:12px}
+#task-modal .form-group{min-width:0}
 </style>
 <div class="page-header">
 <h1>📊 排班 &amp; 甘特图</h1>
@@ -150,16 +155,11 @@
 <div class="form-row">
 <div class="form-group"><label>工序</label><select class="form-control" id="process-select" onchange="onProcessChange()" ><option value="">-- 先搜索工单 --</option></select></div>
 <div class="form-group"><label>设备</label><div class="search-box"><input type="text" class="form-control" id="equip-search" placeholder="搜索设备..." oninput="searchEquipments()"><div id="equip-results" class="search-results"></div></div><input type="hidden" id="equipment-select" value=""></div>
-</div>
-<div class="form-row">
-<div class="form-group"><label>生产人员</label><input type="text" class="form-control" id="operator" placeholder="输入或选择人员" list="operator-list"><datalist id="operator-list"></datalist></div>
-<div class="form-group"><label>优先级</label><select class="form-control" id="priority"><option value="P0">P0 主机厂</option><option value="P1">P1 加工单</option><option value="P2" selected>P2 库存</option></select></div>
-</div>
-<div class="form-row">
 <div class="form-group"><label>开始时间</label><select class="form-control" id="start-time"></select></div>
 <div class="form-group"><label>结束时间</label><select class="form-control" id="end-time"></select></div>
 </div>
 <div class="form-row">
+<div class="form-group"><label>生产人员</label><input type="text" class="form-control" id="operator" placeholder="输入或选择人员" list="operator-list"><datalist id="operator-list"></datalist></div>
 <div class="form-group"><label>工时(h)</label><input type="number" class="form-control" id="work-hours" step="0.25" oninput="calcQty()"></div>
 <div class="form-group"><label>产能/h</label><input type="number" class="form-control" id="capacity" step="1" oninput="calcQty()"><span style="font-size:11px;color:#9ca3af" id="capacity-hint"></span></div>
 <div class="form-group"><label>产量</label><input type="number" class="form-control" id="plan-qty"><span style="font-size:11px;color:#9ca3af">= 工时 × 产能</span></div>
@@ -169,6 +169,18 @@
 <span id="overtime-hint" style="font-size:12px;color:#9ca3af;margin-left:8px"></span>
 </div>
 <div id="conflict-msg" class="conflict-warning" style="display:none"><span class="cw-icon">⚠️</span><span id="conflict-text"></span></div>
+
+<!-- 产品图片区域 -->
+<div style="margin-top:12px">
+    <label style="font-weight:600;margin-bottom:8px;display:block">产品图片</label>
+    <div id="product-image-container" style="width:100%;height:200px;border:1px solid #e5e7eb;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f9fafb">
+        <div id="product-image-placeholder" style="text-align:center;color:#9ca3af;font-size:13px">
+            <div style="font-size:48px;margin-bottom:10px">📦</div>
+            <div>选择工单后显示产品图片</div>
+        </div>
+        <img id="product-image" src="" style="max-width:100%;max-height:100%;object-fit:contain;display:none">
+    </div>
+</div>
 </div>
 <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="saveTask()">保存</button></div>
 </div>
@@ -191,6 +203,7 @@ var currentTeamId=null, selectedOrder=null, editingId=null, currentPlan=null;
 var orderProcessProgress=[];window._preselectEquipment=null;
 var CELL_W=80;
 var allEquips=[], allTasks=[], allSearchEquips=[];
+var productImagesCache={};
 var USER_ROLE="{{ session.get('role','') }}";
 var USER_TEAM={{ session.get('team_id')|default('null', true) }};
 var TEAM_NAME="{{ session.get('team_name','') }}";
@@ -475,8 +488,60 @@ function loadData(){
         fetch("/api/schedule?team_id="+currentTeamId+"&date="+dt).then(function(r){return r.json()})
     ]).then(function(res){
         allEquips=res[0].data||res[0];allSearchEquips=res[1].data||res[1];allTasks=res[2].data||res[2];
-        renderGantt();renderTable();
+        loadProductImagesForGantt();
     });
+}
+
+function loadProductImagesForGantt(){
+    var codes=[];
+    allTasks.forEach(function(t){
+        if(t.product_code && codes.indexOf(t.product_code)===-1) codes.push(t.product_code);
+    });
+    if(!codes.length){renderGantt();renderTable();return;}
+    fetch("/api/product-definitions?page_size=1000")
+        .then(function(r){return r.json()})
+        .then(function(resp){
+            var data=resp.data||resp;
+            data.forEach(function(p){
+                if(p.product_code && (p.image_path || p.image_url)){
+                    productImagesCache[p.product_code]=p.image_path || p.image_url;
+                }
+            });
+            renderGantt();renderTable();
+        })
+        .catch(function(err){ console.log("loadProductImagesForGantt error:", err); renderGantt();renderTable(); });
+}
+
+function loadProductImage(productCode){
+    var img = document.getElementById("product-image");
+    var placeholder = document.getElementById("product-image-placeholder");
+    if(!productCode){
+        if(img) img.style.display = "none";
+        if(placeholder) {
+            placeholder.style.display = "block";
+            placeholder.innerHTML = '<div style="font-size:48px;margin-bottom:10px">📦</div><div>选择工单后显示产品图片</div>';
+        }
+        return;
+    }
+    fetch("/api/product-definitions?exact_product_code=" + encodeURIComponent(productCode) + "&page_size=1")
+        .then(function(r){return r.json()})
+        .then(function(resp){
+            var data = resp.data || resp;
+            if(data.length > 0 && (data[0].image_path || data[0].image_url)){
+                img.src = data[0].image_path || data[0].image_url;
+                img.style.display = "block";
+                placeholder.style.display = "none";
+            } else {
+                img.style.display = "none";
+                placeholder.style.display = "block";
+                placeholder.innerHTML = '<div style="font-size:48px;margin-bottom:10px">❌</div><div>未找到产品图片</div>';
+            }
+        })
+        .catch(function(){
+            img.style.display = "none";
+            placeholder.style.display = "block";
+            placeholder.innerHTML = '<div style="font-size:48px;margin-bottom:10px">⚠️</div><div>加载图片失败</div>';
+        });
 }
 
 // ========== Gantt Chart ==========
@@ -733,10 +798,11 @@ function resetForm(){
     document.getElementById("capacity").value="";
     document.getElementById("plan-qty").value="";
     document.getElementById("capacity-hint").textContent="";
-    document.getElementById("priority").value="P2";
+    //     document.getElementById("priority").value="P2";
     document.getElementById("is-overtime").checked=false;
     selectedOrder=null;window._preselectEquipment=null;
     autoCalcHours();
+    loadProductImage(null);
 }
 function editTask(id){
     var t=allTasks.find(function(x){return x.id===id});if(!t)return;
@@ -750,10 +816,11 @@ function editTask(id){
     document.getElementById("work-hours").value=t.hours||"";
     document.getElementById("capacity").value=t.capacity_per_hour||"";
     document.getElementById("plan-qty").value=t.quantity||"";
-    document.getElementById("priority").value=t.priority||"P2";
+    //     document.getElementById("priority").value=t.priority||"P2";
     document.getElementById("is-overtime").checked=!!t.is_overtime;
     document.getElementById("equipment-select").value=t.equipment_id||"";
     document.getElementById("process-select").innerHTML='<option value="'+t.process_code+'">'+(t.process_name||t.process_code)+'</option>';
+    loadProductImage(t.product_code);
     document.getElementById("task-modal").classList.add("show");
     checkOvertime();
 }
@@ -814,6 +881,7 @@ function selectOrder(o){
     document.getElementById("selected-order").style.display="block";
     document.getElementById("order-results").innerHTML="";
     document.getElementById("order-search").value=o.product_name||o.product_code||o.order_no;
+    loadProductImage(o.product_code);
     
     // Load processes from API and filter by progress
     fetch("/api/product-processes?product_code="+encodeURIComponent(o.product_code)).then(function(r){return r.json()}).then(function(d){
@@ -925,6 +993,15 @@ function calcQty(){var h=parseFloat(document.getElementById("work-hours").value)
 function saveTask(){
     if(!selectedOrder&&!editingId){toast("请先选择工单","warning");return;}
     var eqId=document.getElementById("equipment-select").value;if(!eqId){toast("请选择设备","warning");return;}
+    var capacityInput=document.getElementById("capacity");
+    if(!capacityInput.value||parseFloat(capacityInput.value)<=0){
+        capacityInput.style.border="2px solid #ef4444";
+        capacityInput.style.boxShadow="0 0 0 3px rgba(239,68,68,0.2)";
+        capacityInput.focus();
+        toast("⚠️ 请输入产能（每小时产量）","error");
+        setTimeout(function(){capacityInput.style.border="";capacityInput.style.boxShadow="";},3000);
+        return;
+    }
     var ps=document.getElementById("process-select");
     var pn=ps.options[ps.selectedIndex].getAttribute("data-name")||ps.options[ps.selectedIndex].text;
     var data={
@@ -941,7 +1018,7 @@ function saveTask(){
         quantity:parseFloat(document.getElementById("plan-qty").value)||0,
         is_overtime:document.getElementById("is-overtime").checked?1:0,
         team_id:parseInt(currentTeamId),
-        priority:document.getElementById("priority").value,
+        //         priority:document.getElementById("priority").value,
         operator:document.getElementById("operator").value
     };
     var url=editingId?"/api/schedule/"+editingId:"/api/schedule";

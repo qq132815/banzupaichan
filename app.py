@@ -1,5 +1,6 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+import json
 import os
 import sys
 import threading
@@ -247,6 +248,51 @@ def product_routes_page():
 def product_cycles_page():
     return render_template('product_cycles.html')
 
+
+
+
+
+
+
+@app.route('/test-select-order')
+@login_required
+def test_select_order_page():
+    return render_template('test_select_order.html')
+
+@app.route('/test-schedule-image')
+@login_required
+def test_schedule_image_page():
+    return render_template('test_schedule_image.html')
+
+@app.route('/test-product-image')
+@login_required
+def test_product_image_page():
+    return render_template('test_product_image.html')
+
+@app.route('/js-test')
+
+@app.route('/test-image-debug')
+def test_image_debug_page():
+    return render_template('test_image_debug.html')
+@login_required
+def js_test_page():
+    return render_template('js_test.html')
+
+@app.route('/simple-test')
+@login_required
+def simple_test_page():
+    return render_template('simple_test.html')
+
+@app.route('/test-progress')
+@login_required
+def test_progress_page():
+    return render_template('test_progress_modal.html')
+
+@app.route('/products/definitions')
+@login_required
+def product_definitions_page():
+    return render_template('product_definitions.html')
+
 @app.route('/products/bom')
 @login_required
 def product_bom_page():
@@ -348,18 +394,53 @@ def api_shipping_plan_template():
     import openpyxl
     from io import BytesIO
     from flask import send_file
+    from datetime import date
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "发货计划"
-    # Headers matching the import format: product_code, then date columns
-    from datetime import date
-    ws.append(["产品编码", "数量", date(2026,6,1), date(2026,6,2), date(2026,6,3)])
-    ws.append(["示例产品A", 100, 50, 80, 120])
-    ws.append(["示例产品B", 200, 60, 90, 150])
+
+    # Row 1: Title (merged)
+    ws.merge_cells('A1:AK1')
+    ws['A1'] = 'X年X月发货计划（X月X日更新）'
+
+    # Row 2: Headers
+    headers = ['客户', '项目', '客户件号', '广升件号', '名称']
+    for d in range(1, 32):
+        headers.append(str(d) + '\u53f7')
+    headers.append('\u5408\u8ba1')
+    ws.append(headers)
+
+    # Row 3: Weekday hints (dynamic based on current month)
+    weekdays = ['\u661f\u671f\u4e00', '\u661f\u671f\u4e8c', '\u661f\u671f\u4e09', '\u661f\u671f\u56db', '\u661f\u671f\u4e94', '\u661f\u671f\u516d', '\u661f\u671f\u65e5']
+    import calendar
+    now = date.today()
+    year, month = now.year, now.month
+    days_in_month = calendar.monthrange(year, month)[1]
+    row3 = [None, None, None, None, None]
+    for d in range(1, 32):
+        try:
+            wd = date(year, month, d).weekday()
+            row3.append(weekdays[wd])
+        except:
+            row3.append(None)
+    row3.append(None)
+    ws.append(row3)
+
+    # Sample data rows
+    ws.append(['\u5947\u745e', 'T1J PHEV', 'F26-8108010HV', '03.GS200-95A100A', '\u84b8\u53d1\u5668-\u538b\u7f29\u673a\u548c\u51b7\u51dd\u5668\u7ba1\u8def\u603b\u6210', None, 216, None, None, 216, None, None, 576])
+    ws.append([None, None, 'F26-8108020HV', '03.GS200-95A200Z', '\u7535\u6c60\u51b7\u5374-\u538b\u7f29\u673a\u7ba1\u8def\u603b\u6210', None, None, None, None, 0, None, None, 800])
+
+    # Style: make header row bold
+    from openpyxl.styles import Font, Alignment
+    for cell in ws[2]:
+        if cell.value:
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal='center', wrap_text=True)
+
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
-    return send_file(buf, as_attachment=True, download_name="发货计划导入模板.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return send_file(buf, as_attachment=True, download_name="\u53d1\u8d27\u8ba1\u5212\u5bfc\u5165\u6a21\u677f.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 @app.route('/planner/shipping-plan')
 @login_required
@@ -461,6 +542,321 @@ def api_equipment_delete(eid):
     conn.close()
     return jsonify({'ok': True})
 
+
+# ========== Product Definition API ==========
+@app.route('/api/product-definitions')
+@login_required
+def api_product_definitions():
+    q = request.args.get('q', '').strip()
+    exact_product_code = request.args.get('exact_product_code', '').strip()
+    category = request.args.get('category', '').strip()
+    status = request.args.get('status', '').strip()
+    product_type = request.args.get('product_type', '').strip()
+    customer = request.args.get('customer', '').strip()
+    field = request.args.get('field', '').strip()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
+    
+    # 如果请求特定字段的唯一值（用于筛选下拉框）
+    if field:
+        conn = get_connection()
+        c = conn.cursor()
+        if field == 'customer':
+            c.execute("SELECT DISTINCT customer FROM products WHERE customer IS NOT NULL AND customer != '' ORDER BY customer")
+            values = [row['customer'] for row in c.fetchall()]
+        elif field == 'product_type':
+            c.execute("SELECT DISTINCT product_type FROM products WHERE product_type IS NOT NULL AND product_type != '' ORDER BY product_type")
+            values = [row['product_type'] for row in c.fetchall()]
+        else:
+            values = []
+        conn.close()
+        return jsonify(values)
+    
+    sql = "SELECT * FROM products WHERE 1=1"
+    params = []
+    
+    # 优先使用精确匹配
+    if exact_product_code:
+        sql += " AND product_code=?"
+        params.append(exact_product_code)
+    elif q:
+        like = "%" + q + "%"
+        sql += " AND (product_code LIKE ? OR product_name LIKE ? OR specifications LIKE ? OR description LIKE ?)"
+        params.extend([like, like, like, like])
+    
+    if category:
+        sql += " AND category=?"
+        params.append(category)
+    if status:
+        sql += " AND status=?"
+        params.append(status)
+    if product_type:
+        sql += " AND product_type=?"
+        params.append(product_type)
+    if customer:
+        sql += " AND customer=?"
+        params.append(customer)
+    
+    sql += " ORDER BY product_code"
+    result = paginate_query(sql, params, page, page_size)
+    return jsonify(result)
+
+@app.route('/api/product-definitions', methods=['POST'])
+@login_required
+def api_product_definition_create():
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        # 下载图片（如果有URL）
+        image_path = None
+        if data.get('image_url'):
+            image_path = download_product_image(data['image_url'], data['product_code'])
+        
+        c.execute("""INSERT INTO products 
+            (product_code, product_name, product_type, specifications, unit, route_code,
+             safety_stock, stock_qty, source, customer, basket_capacity, image_url, image_path, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (data['product_code'], data['product_name'], data.get('product_type', ''),
+             data.get('specifications', ''), data.get('unit', ''), data.get('route_code', ''),
+             data.get('safety_stock', 0), data.get('stock_qty', 0), data.get('source', ''),
+             data.get('customer', ''), data.get('basket_capacity', 0), data.get('image_url', ''),
+             image_path or '', data.get('description', '')))
+        conn.commit()
+        return jsonify({'id': c.lastrowid, 'ok': True, 'image_path': image_path})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+    finally:
+        conn.close()
+
+@app.route('/api/product-definitions/<int:pid>', methods=['PUT'])
+@login_required
+def api_product_definition_update(pid):
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        # 下载图片（如果有新URL且与原URL不同）
+        image_path = None
+        if data.get('image_url'):
+            c.execute("SELECT image_url FROM products WHERE id=?", (pid,))
+            old_url = c.fetchone()
+            if old_url and old_url['image_url'] != data['image_url']:
+                image_path = download_product_image(data['image_url'], data['product_code'])
+            elif not old_url or not old_url['image_url']:
+                image_path = download_product_image(data['image_url'], data['product_code'])
+        
+        if image_path:
+            c.execute("""UPDATE products SET 
+                product_name=?, product_type=?, specifications=?, unit=?, route_code=?,
+                safety_stock=?, stock_qty=?, source=?, customer=?, basket_capacity=?,
+                image_url=?, image_path=?, description=?, updated_at=datetime('now','localtime')
+                WHERE id=?""",
+                (data['product_name'], data.get('product_type', ''), data.get('specifications', ''),
+                 data.get('unit', ''), data.get('route_code', ''), data.get('safety_stock', 0),
+                 data.get('stock_qty', 0), data.get('source', ''), data.get('customer', ''),
+                 data.get('basket_capacity', 0), data.get('image_url', ''), image_path,
+                 data.get('description', ''), pid))
+        else:
+            c.execute("""UPDATE products SET 
+                product_name=?, product_type=?, specifications=?, unit=?, route_code=?,
+                safety_stock=?, stock_qty=?, source=?, customer=?, basket_capacity=?,
+                image_url=?, description=?, updated_at=datetime('now','localtime')
+                WHERE id=?""",
+                (data['product_name'], data.get('product_type', ''), data.get('specifications', ''),
+                 data.get('unit', ''), data.get('route_code', ''), data.get('safety_stock', 0),
+                 data.get('stock_qty', 0), data.get('source', ''), data.get('customer', ''),
+                 data.get('basket_capacity', 0), data.get('image_url', ''),
+                 data.get('description', ''), pid))
+        
+        conn.commit()
+        return jsonify({'ok': True, 'image_path': image_path})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+    finally:
+        conn.close()
+
+@app.route('/api/product-definitions/<int:pid>', methods=['DELETE'])
+@login_required
+def api_product_definition_delete(pid):
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        # 删除图片文件
+        c.execute("SELECT image_path FROM products WHERE id=?", (pid,))
+        result = c.fetchone()
+        if result and result['image_path']:
+            image_file = os.path.join(os.path.dirname(__file__), result['image_path'].lstrip('/'))
+            if os.path.exists(image_file):
+                os.remove(image_file)
+        
+        c.execute("DELETE FROM products WHERE id=?", (pid,))
+        conn.commit()
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+    finally:
+        conn.close()
+
+@app.route('/api/product-definitions/categories')
+@login_required
+def api_product_categories():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT DISTINCT category FROM products WHERE category IS NOT NULL AND category != '' ORDER BY category")
+    categories = [row['category'] for row in c.fetchall()]
+    conn.close()
+    return jsonify(categories)
+
+
+@app.route('/api/product-definitions/download-all-images', methods=['POST'])
+@login_required
+def api_download_all_images():
+    """批量下载所有产品图片"""
+    try:
+        import threading
+        
+        # 进度文件路径
+        progress_file = os.path.join(os.path.dirname(__file__), 'data', 'download_progress.json')
+        
+        # 初始化进度文件
+        with open(progress_file, 'w', encoding='utf-8') as f:
+            json.dump({
+                'status': 'running',
+                'total': 0,
+                'current': 0,
+                'success': 0,
+                'fail': 0,
+                'skip': 0,
+                'message': '正在准备下载...',
+                'start_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }, f, ensure_ascii=False)
+        
+        def download_task():
+            try:
+                # 导入并执行下载脚本
+                import sys
+                script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'download_all_images_progress.py')
+                
+                # 使用subprocess运行，并传入进度文件路径
+                env = os.environ.copy()
+                env['PROGRESS_FILE'] = progress_file
+                
+                result = subprocess.run(
+                    [sys.executable, script_path], 
+                    capture_output=True, text=True, timeout=1800,
+                    env=env
+                )
+                
+                # 更新进度文件为完成状态
+                with open(progress_file, 'r', encoding='utf-8') as f:
+                    progress = json.load(f)
+                
+                progress['status'] = 'completed'
+                progress['message'] = f'下载完成: 成功{progress["success"]}个, 失败{progress["fail"]}个, 跳过{progress["skip"]}个'
+                progress['end_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                
+                with open(progress_file, 'w', encoding='utf-8') as f:
+                    json.dump(progress, f, ensure_ascii=False)
+                
+                print(f"图片下载完成: {result.stdout[-500:]}")
+            except Exception as e:
+                # 更新进度文件为错误状态
+                with open(progress_file, 'r', encoding='utf-8') as f:
+                    progress = json.load(f)
+                
+                progress['status'] = 'error'
+                progress['message'] = f'下载失败: {str(e)}'
+                
+                with open(progress_file, 'w', encoding='utf-8') as f:
+                    json.dump(progress, f, ensure_ascii=False)
+                
+                print(f"图片下载失败: {e}")
+        
+        # 在后台线程执行下载
+        thread = threading.Thread(target=download_task)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({'ok': True, 'message': '图片下载任务已启动'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/product-definitions/download-progress')
+@login_required
+def api_download_progress():
+    """查询图片下载进度"""
+    try:
+        progress_file = os.path.join(os.path.dirname(__file__), 'data', 'download_progress.json')
+        
+        if os.path.exists(progress_file):
+            with open(progress_file, 'r', encoding='utf-8') as f:
+                progress = json.load(f)
+            return jsonify(progress)
+        else:
+            return jsonify({
+                'status': 'idle',
+                'total': 0,
+                'current': 0,
+                'success': 0,
+                'fail': 0,
+                'skip': 0,
+                'message': '未开始下载'
+            })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/product-definitions/download-image', methods=['POST'])
+@login_required
+def api_download_product_image():
+    """下载产品图片并保存到本地"""
+    data = request.json
+    image_url = data.get('image_url')
+    product_code = data.get('product_code')
+    
+    if not image_url or not product_code:
+        return jsonify({'error': '缺少参数'}), 400
+    
+    try:
+        image_path = download_product_image(image_url, product_code)
+        if image_path:
+            return jsonify({'ok': True, 'image_path': image_path})
+        else:
+            return jsonify({'error': '图片下载失败'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def download_product_image(image_url, product_code):
+    """下载产品图片并保存到本地"""
+    import requests
+    from urllib.parse import urlparse
+    
+    try:
+        # 创建图片目录
+        images_dir = os.path.join(os.path.dirname(__file__), 'static', 'images', 'products')
+        os.makedirs(images_dir, exist_ok=True)
+        
+        # 生成文件名
+        url_path = urlparse(image_url).path
+        ext = os.path.splitext(url_path)[1] or '.jpg'
+        filename = f"{product_code}{ext}"
+        filepath = os.path.join(images_dir, filename)
+        
+        # 下载图片
+        response = requests.get(image_url, timeout=30)
+        response.raise_for_status()
+        
+        # 保存图片
+        with open(filepath, 'wb') as f:
+            f.write(response.content)
+        
+        # 返回相对路径
+        return f"/static/images/products/{filename}"
+    except Exception as e:
+        print(f"下载图片失败: {e}")
+        return None
+
+# ========== Alert API ==========
 # ========== Alert API ==========
 @app.route('/api/alerts')
 @login_required
@@ -493,7 +889,8 @@ def api_import(data_type):
     f.save(path)
     try:
         if data_type == 'shipping':
-            count = import_shipping_plan(path)
+            plan_month = request.form.get('plan_month', '').strip()
+            count = import_shipping_plan(path, plan_month=plan_month or None)
         elif data_type == 'cycles':
             count = import_production_cycles(path)
         elif data_type == 'orders':
@@ -505,6 +902,9 @@ def api_import(data_type):
         elif data_type == 'process_routes':
             from utils.excel import import_process_routes
             count = import_process_routes(path)
+        elif data_type == 'product_definitions':
+            from utils.excel import import_product_definitions
+            count = import_product_definitions(path)
         elif data_type == 'equipment':
             from utils.excel import import_equipment
             count = import_equipment(path)
@@ -600,6 +1000,237 @@ def api_return_plan(pid):
         return jsonify({'error': '无权操作'}), 403
     return_daily_plan(pid, session['user_id'], data.get('reason', ''))
     return jsonify({'ok': True})
+# ========== Daily Plan Check API ==========
+@app.route('/api/daily-plan/<int:pid>/check')
+@login_required
+def api_check_daily_plan(pid):
+    """Auto-review: for each published requirement, check:
+    1. Work order remaining >= required_qty? If yes, requirement is covered, skip.
+    2. If not, check schedule qty on that date >= required_qty.
+    3. Also check if schedule date > required_date (late delivery).
+    """
+    conn = get_connection()
+    c = conn.cursor()
+
+    # 1. Get the plan
+    c.execute("SELECT dp.*, t.name as team_name FROM daily_plans dp LEFT JOIN teams t ON dp.team_id=t.id WHERE dp.id=?", (pid,))
+    plan_row = c.fetchone()
+    if not plan_row:
+        conn.close()
+        return jsonify({'error': 'not found'}), 404
+    plan = dict(plan_row)
+    plan_date = plan['plan_date']
+    team_id = plan['team_id']
+    team_name = plan.get('team_name', '')
+
+    # 2. Get all schedules for this plan (for gantt)
+    c.execute("""SELECT s.*, e.equipment_name, e.equipment_code
+        FROM schedules s LEFT JOIN equipments e ON s.equipment_id=e.id
+        WHERE s.daily_plan_id=? ORDER BY s.start_time""", (pid,))
+    schedules = [dict(r) for r in c.fetchall()]
+
+    # 3. Get published production requirements for this team
+    c.execute("""SELECT product_code, product_name, required_date, required_quantity, team_name
+        FROM production_requirements WHERE status='published' ORDER BY required_date""")
+    all_reqs = c.fetchall()
+    requirements = []
+    for row in all_reqs:
+        r = dict(row)
+        tn = r.get('team_name', '') or ''
+        if team_name and team_name not in tn:
+            continue
+        requirements.append(r)
+
+    # 4. Get work order remaining
+    c.execute("""SELECT product_code, product_name, SUM(COALESCE(quantity,0) - COALESCE(completed_qty,0)) as remaining
+        FROM work_orders WHERE status != 'completed' GROUP BY product_code""")
+    wo_remaining = {}
+    for row in c.fetchall():
+        pc = row[0] or ''
+        pn = row[1] or ''
+        rem = row[2] or 0
+        wo_remaining[pc] = rem
+        if pn:
+            wo_remaining[pn] = rem
+
+    conn.close()
+
+    # 5. Build schedule qty index: product_code|schedule_date -> total_qty
+    sched_qty = {}
+    for s in schedules:
+        pc = s.get('product_code', '')
+        sd = s.get('schedule_date', '')
+        if not pc:
+            continue
+        key = pc + '|' + sd
+        sched_qty[key] = sched_qty.get(key, 0) + (s.get('quantity', 0) or 0)
+
+    # 6. Run checks per requirement
+    issues = []
+    checked_products = set()
+    for req in requirements:
+        pc = req['product_code']
+        pn = req.get('product_name', '') or pc
+        req_date = req['required_date']
+        req_qty = req['required_quantity'] or 0
+        if req_qty <= 0:
+            continue
+        checked_products.add(pc)
+
+        # Step A: Check work order remaining
+        # wo_rem = remaining qty (quantity - completed_qty)
+        # wo_rem == 0 => fully done, requirement satisfied -> skip
+        # wo_rem > 0 but < req_qty => mostly done, actual need = wo_rem
+        # wo_rem >= req_qty => nothing done, actual need = req_qty
+        wo_rem = wo_remaining.get(pc, 0)
+        if wo_rem <= 0:
+            continue
+
+        actual_need = min(wo_rem, req_qty)
+
+        # Step B: Check schedule qty on required date covers actual need
+        sched_key = pc + '|' + req_date
+        scheduled = sched_qty.get(sched_key, 0)
+        gap = actual_need - scheduled
+
+        if gap > 0:
+            issues.append({
+                'type': 'qty_gap', 'level': 'error',
+                'product_code': pc, 'product_name': pn,
+                'required_date': req_date, 'required_qty': req_qty,
+                'wo_remaining': wo_rem, 'actual_need': actual_need,
+                'scheduled_qty': scheduled, 'gap': gap,
+                'message': pn + ' ' + req_date + ': 需求' + str(int(req_qty)) + '，工单未完成' + str(int(wo_rem)) + '，排班' + str(int(scheduled)) + '，缺口' + str(int(gap))
+            })
+
+        # Step C: Check late schedules (after required date)
+        for key, qty in sched_qty.items():
+            if key.startswith(pc + '|'):
+                sched_date = key.split('|')[1]
+                if sched_date > req_date and qty > 0:
+                    issues.append({
+                        'type': 'late_schedule', 'level': 'warning',
+                        'product_code': pc, 'product_name': pn,
+                        'required_date': req_date, 'schedule_date': sched_date,
+                        'scheduled_qty': qty,
+                        'message': pn + ': ' + sched_date + '排班(' + str(int(qty)) + ')晚于需求' + req_date
+                    })
+
+    # Info: products in schedule but no requirement
+    for s in schedules:
+        pc = s.get('product_code', '')
+        if pc and pc not in checked_products and pc not in [r['product_code'] for r in requirements]:
+            if not any(i['product_code'] == pc and i['type'] == 'no_requirement' for i in issues):
+                issues.append({
+                    'type': 'no_requirement', 'level': 'info',
+                    'product_code': pc, 'product_name': s.get('product_name', '') or pc,
+                    'message': pc + ': 无对应生产需求'
+                })
+
+    # Verdict
+    err = sum(1 for i in issues if i['level'] == 'error')
+    warn = sum(1 for i in issues if i['level'] == 'warning')
+    if err > 0:
+        verdict, verdict_text = 'error', str(err) + '项缺口问题，建议关注'
+    elif warn > 0:
+        verdict, verdict_text = 'warning', str(warn) + '项日期问题'
+    else:
+        verdict, verdict_text = 'pass', '审核通过'
+
+    return jsonify({
+        'plan': plan, 'schedules': schedules,
+        'requirements': requirements, 'wo_remaining': wo_remaining,
+        'issues': issues, 'verdict': verdict, 'verdict_text': verdict_text
+    })
+
+
+
+
+# ========== Requirement Check API (for schedule page) ==========
+@app.route('/api/requirement-check')
+@login_required
+def api_requirement_check():
+    """Check published requirements vs work orders + schedules for a team and date."""
+    team_id = request.args.get('team_id', type=int)
+    date = request.args.get('date', '').strip()
+    if not team_id or not date:
+        return jsonify({'error': 'team_id and date required'}), 400
+
+    conn = get_connection()
+    c = conn.cursor()
+
+    c.execute("SELECT name FROM teams WHERE id=?", (team_id,))
+    team_row = c.fetchone()
+    team_name = team_row[0] if team_row else ''
+
+    c.execute("""SELECT product_code, product_name, required_date, required_quantity, team_name
+        FROM production_requirements WHERE status='published' ORDER BY required_date""")
+    requirements = []
+    for row in c.fetchall():
+        r = dict(row)
+        tn = r.get('team_name', '') or ''
+        if team_name and team_name not in tn:
+            continue
+        requirements.append(r)
+
+    c.execute("""SELECT product_code, product_name, SUM(COALESCE(quantity,0) - COALESCE(completed_qty,0)) as remaining
+        FROM work_orders WHERE status != 'completed' GROUP BY product_code""")
+    wo_remaining = {}
+    for row in c.fetchall():
+        pc, pn, rem = row[0] or '', row[1] or '', row[2] or 0
+        wo_remaining[pc] = rem
+        if pn:
+            wo_remaining[pn] = rem
+
+    c.execute("""SELECT s.product_code, SUM(s.quantity) as total_qty
+        FROM schedules s WHERE s.team_id=? AND s.schedule_date=?
+        GROUP BY s.product_code""", (team_id, date))
+    sched_qty = {}
+    for row in c.fetchall():
+        sched_qty[row[0]] = row[1] or 0
+
+    conn.close()
+
+    issues = []
+    for req in requirements:
+        pc = req['product_code']
+        pn = req.get('product_name', '') or pc
+        req_date = req['required_date']
+        req_qty = req['required_quantity'] or 0
+        if req_qty <= 0:
+            continue
+        wo_rem = wo_remaining.get(pc, 0)
+        if wo_rem <= 0:
+            continue
+        actual_need = min(wo_rem, req_qty)
+        scheduled = sched_qty.get(pc, 0)
+        gap = actual_need - scheduled
+        if gap > 0:
+            issues.append({
+                'type': 'qty_gap', 'level': 'error',
+                'product_code': pc, 'product_name': pn,
+                'required_date': req_date, 'required_qty': req_qty,
+                'wo_remaining': wo_rem, 'actual_need': actual_need,
+                'scheduled_qty': scheduled, 'gap': gap,
+                'message': pn + ' ' + req_date + ': 需求' + str(int(req_qty)) + '，工单未完成' + str(int(wo_rem)) + '，排班' + str(int(scheduled)) + '，缺口' + str(int(gap))
+            })
+
+    for pc, qty in sched_qty.items():
+        for req in requirements:
+            if req['product_code'] == pc and date > req['required_date'] and qty > 0:
+                issues.append({
+                    'type': 'late_schedule', 'level': 'warning',
+                    'product_code': pc, 'product_name': req.get('product_name', '') or pc,
+                    'required_date': req['required_date'], 'schedule_date': date,
+                    'scheduled_qty': qty,
+                    'message': (req.get('product_name','') or pc) + ': ' + date + '排班(' + str(int(qty)) + ')晚于需求' + req['required_date']
+                })
+
+    return jsonify({
+        'requirements': requirements, 'wo_remaining': wo_remaining,
+        'sched_qty': sched_qty, 'issues': issues,
+        'team_name': team_name, 'date': date
+    })
 
 # ========== Schedule API ==========
 @app.route('/api/schedule', methods=['GET'])
@@ -1545,6 +2176,7 @@ def api_import_work_reports():
     f.save(path)
     try:
         count = import_work_reports(path)
+        _recalculate_work_report_efficiency()
         return jsonify({'ok': True, 'success': True, 'count': count})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -1689,6 +2321,7 @@ def api_sync_work_orders():
             c.execute("UPDATE sync_logs SET status='success', record_count=?, detail=? WHERE id=?", (count, output[-500:], log_id))
             conn.commit()
             conn.close()
+            _recalculate_work_report_efficiency()
             return jsonify({'ok': True, 'count': count, 'output': output[-1000:]})
         else:
             conn = get_connection()
@@ -1923,6 +2556,55 @@ def api_save_config():
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
+
+def _recalculate_work_report_efficiency():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT value FROM system_config WHERE key='capacity_baseline'")
+    row = c.fetchone()
+    baseline = int(row[0]) if row else 1
+    capacity_map = {}
+    c.execute("SELECT DISTINCT product_code, process_name FROM standard_hours WHERE process_name != '半成品入库' AND process_name NOT LIKE '%清洗%'")
+    all_combos = c.fetchall()
+    for pc, pn in all_combos:
+        cap = 0
+        if baseline == 1:
+            c.execute("SELECT DISTINCT capacity_per_hour FROM schedules WHERE product_code=? AND process_name=? AND capacity_per_hour > 0", (pc, pn))
+            caps = [r[0] for r in c.fetchall()]
+            cap = sum(caps) / len(caps) if caps else 0
+        elif baseline == 2:
+            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0", (pc, pn))
+            reports = c.fetchall()
+            if reports:
+                caps = [r[0]/r[1] for r in reports if r[1] > 0]
+                cap = sum(caps) / len(caps) if caps else 0
+        elif baseline == 3:
+            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0", (pc, pn))
+            reports = c.fetchall()
+            if reports:
+                caps = [r[0]/r[1] for r in reports if r[1] > 0]
+                cap = max(caps) if caps else 0
+        elif baseline == 4:
+            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0", (pc, pn))
+            reports = c.fetchall()
+            if reports:
+                caps = [r[0]/r[1] for r in reports if r[1] > 0]
+                cap = min(caps) if caps else 0
+        if cap > 0:
+            capacity_map[(pc, pn)] = cap
+    c.execute("SELECT id, product_code, process_name, report_qty, report_hours FROM work_reports WHERE report_hours > 0 AND report_qty > 0")
+    reports = c.fetchall()
+    updated = 0
+    for rid, pc, pn, qty, hrs in reports:
+        key = (pc, pn)
+        if key in capacity_map and capacity_map[key] > 0:
+            efficiency = round((qty / hrs) / capacity_map[key] * 100, 1)
+            c.execute("UPDATE work_reports SET efficiency=? WHERE id=?", (efficiency, rid))
+            updated += 1
+        else:
+            c.execute("UPDATE work_reports SET efficiency=0 WHERE id=?", (rid,))
+    conn.commit()
+    conn.close()
 
 @app.route('/api/recalculate-efficiency', methods=['POST'])
 @login_required
@@ -2379,6 +3061,13 @@ def api_export(data_type):
         ws.title = '物料清单'
         c.execute("SELECT parent_product_code, parent_product_name, child_product_code, child_product_name, quantity, unit, process_team FROM bom ORDER BY parent_product_code")
         ws.append(['父件编码', '父件名称', '子件编码', '子件名称', '用量', '单位', '生产班组'])
+    elif data_type == 'product_definitions':
+        ws.title = '产品定义'
+        c.execute("""SELECT product_type, product_code, product_name, specifications, unit, route_code,
+                     safety_stock, stock_qty, source, image_url, customer, basket_capacity 
+                     FROM products ORDER BY product_code""")
+        ws.append(['产品类型', '产品编号', '产品名称', '产品规格', '单位', '工艺路线', 
+                   '最小安全库存', '库存数量', '产品来源', '产品图', '客户', '每筐容量'])
     elif data_type == 'work_orders':
         ws.title = '工单数据'
         c.execute("SELECT order_no, product_code, product_name, quantity, completed_qty, due_date, priority, status, process_progress, source FROM work_orders ORDER BY order_no")
@@ -2437,16 +3126,363 @@ def api_user_reset_pwd(uid):
     reset_password(uid, data.get('new_password', '123456'))
     return jsonify({'ok': True})
 
+
+# ========== Supply Chain Management API ==========
+@app.route('/supply-chain')
+@login_required
+@planner_required
+def supply_chain_page():
+    return render_template('supply_chain.html')
+
+@app.route('/api/supply-chain/overview')
+@login_required
+@planner_required
+def api_supply_overview():
+    """Get supply chain overview: all items with their data."""
+    conn = get_connection()
+    c = conn.cursor()
+
+    # Get all supply items
+    c.execute("SELECT * FROM supply_items ORDER BY customer, product_code")
+    items = [dict(row) for row in c.fetchall()]
+
+    # Get latest snapshot data per type
+    data_types = ['local_stock', '3pl_stock', 'in_transit', 'forecast', 'shipped']
+    for item in items:
+        pc = item['product_code']
+        for dt in data_types:
+            c.execute("SELECT value FROM supply_data WHERE product_code=? AND data_type=? ORDER BY imported_at DESC LIMIT 1", (pc, dt))
+            row = c.fetchone()
+            item[dt] = row[0] if row else 0
+
+        # Get in-production from work_orders
+        c.execute("SELECT SUM(COALESCE(quantity,0) - COALESCE(completed_qty,0)) FROM work_orders WHERE product_code=? AND status != 'completed'", (pc,))
+        row = c.fetchone()
+        item['in_production'] = row[0] if row and row[0] else 0
+
+        # Get daily shipping plan (next 60 days)
+        c.execute("SELECT ship_date, quantity FROM shipping_plan WHERE product_code=? ORDER BY ship_date", (pc,))
+        item['daily_plan'] = [{'date': r[0], 'qty': r[1]} for r in c.fetchall()]
+
+        # Calculate stock total
+        item['stock_total'] = (item.get('local_stock', 0) or 0) + (item.get('3pl_stock', 0) or 0) + (item.get('in_transit', 0) or 0)
+
+        # Calculate shortage indicators
+        available = item['stock_total'] + item['in_production']
+        cumulative_demand = 0
+        item['stock_runout_date'] = None
+        item['production_runout_date'] = None
+        from datetime import date as _date, datetime as _dt
+        today_str = _date.today().strftime('%Y-%m-%d')
+        for dp in item['daily_plan']:
+            if dp['date'] < today_str:
+                continue
+            cumulative_demand += dp['qty'] or 0
+            if item['stock_runout_date'] is None and item['stock_total'] < cumulative_demand:
+                item['stock_runout_date'] = dp['date']
+            if item['production_runout_date'] is None and available < cumulative_demand:
+                item['production_runout_date'] = dp['date']
+
+    conn.close()
+    return jsonify(items)
+
+@app.route('/api/supply-chain/templates', methods=['GET'])
+@login_required
+@planner_required
+def api_get_templates():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM import_templates ORDER BY name")
+    r = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return jsonify(r)
+
+@app.route('/api/supply-chain/templates', methods=['POST'])
+@login_required
+@planner_required
+def api_create_template():
+    data = request.json
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO import_templates (name, template_type, header_keywords, column_mapping) VALUES (?, ?, ?, ?)",
+                  (data['name'], data['template_type'],
+                   json.dumps(data.get('header_keywords', {}), ensure_ascii=False),
+                   json.dumps(data.get('column_mapping', {}), ensure_ascii=False)))
+        conn.commit()
+        return jsonify({'ok': True, 'id': c.lastrowid})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+    finally:
+        conn.close()
+
+@app.route('/api/supply-chain/templates/<int:tid>', methods=['DELETE'])
+@login_required
+@planner_required
+def api_delete_template(tid):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM import_templates WHERE id=?", (tid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/supply-chain/detect-template', methods=['POST'])
+@login_required
+@planner_required
+def api_detect_template():
+    """Upload Excel and detect which template it matches."""
+    if 'file' not in request.files:
+        return jsonify({'error': 'no file'}), 400
+    f = request.files['file']
+    import os, openpyxl
+    path = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    f.save(path)
+
+    wb = openpyxl.load_workbook(path, data_only=True)
+    sheets_info = []
+    for ws in wb.worksheets:
+        headers = []
+        for r in range(1, min(4, ws.max_row + 1)):
+            row_vals = []
+            for c_idx in range(1, min(ws.max_column + 1, 30)):
+                v = ws.cell(row=r, column=c_idx).value
+                if v is not None:
+                    row_vals.append(str(v).strip())
+            headers.append(row_vals)
+        sheets_info.append({
+            'name': ws.title,
+            'max_row': ws.max_row,
+            'max_col': ws.max_column,
+            'headers': headers
+        })
+
+    # Try to match templates
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM import_templates")
+    templates = [dict(row) for row in c.fetchall()]
+    conn.close()
+
+    matches = []
+    for sheet in sheets_info:
+        all_text = ' '.join(sum(sheet['headers'], [])).lower()
+        best_match = None
+        best_score = 0
+        for tmpl in templates:
+            kw = json.loads(tmpl['header_keywords']) if tmpl['header_keywords'] else {}
+            score = 0
+            for k in kw.get('keywords', []):
+                if k.lower() in all_text:
+                    score += 1
+            if score > best_score:
+                best_score = score
+                best_match = tmpl
+        matches.append({
+            'sheet_name': sheet['name'],
+            'headers': sheet['headers'],
+            'max_row': sheet['max_row'],
+            'detected_template': best_match['name'] if best_match and best_score >= 2 else None,
+            'template_id': best_match['id'] if best_match and best_score >= 2 else None,
+            'confidence': best_score
+        })
+
+    return jsonify({'file': f.filename, 'sheets': matches, 'file_path': path})
+
+@app.route('/api/supply-chain/import', methods=['POST'])
+@login_required
+@planner_required
+def api_supply_import():
+    """Import data using a confirmed template."""
+    data = request.json
+    file_path = data.get('file_path')
+    template_id = data.get('template_id')
+    sheet_name = data.get('sheet_name')
+
+    if not file_path or not template_id:
+        return jsonify({'error': 'file_path and template_id required'}), 400
+
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM import_templates WHERE id=?", (template_id,))
+    tmpl = c.fetchone()
+    if not tmpl:
+        conn.close()
+        return jsonify({'error': 'template not found'}), 404
+    tmpl = dict(tmpl)
+    mapping = json.loads(tmpl['column_mapping']) if tmpl['column_mapping'] else {}
+
+    import openpyxl, uuid
+    from datetime import date as _date
+    wb = openpyxl.load_workbook(file_path, data_only=True)
+
+    # Find the sheet
+    ws = None
+    for s in wb.worksheets:
+        if s.title == sheet_name:
+            ws = s
+            break
+    if not ws:
+        ws = wb.active
+
+    batch_id = str(uuid.uuid4())[:8]
+    count = 0
+    header_row = mapping.get('header_row', 2)
+    data_start = mapping.get('data_start', 4)
+
+    code_col = mapping.get('code_col')  # column letter or index
+    customer_col = mapping.get('customer_col')
+    project_col = mapping.get('project_col')
+    basket_col = mapping.get('basket_col')
+
+    # Snapshot columns (single value per row)
+    snapshot_cols = mapping.get('snapshot_cols', {})
+
+    # Daily plan columns
+    plan_date_row = mapping.get('plan_date_row', 1)
+    plan_start_col = mapping.get('plan_start_col')
+    plan_end_col = mapping.get('plan_end_col')
+
+    # Helper to get column index from letter
+    def col_idx(col):
+        if col is None:
+            return None
+        if isinstance(col, int):
+            return col
+        col = col.upper()
+        result = 0
+        for ch in col:
+            result = result * 26 + (ord(ch) - ord('A') + 1)
+        return result
+
+    ci_code = col_idx(code_col)
+    ci_customer = col_idx(customer_col)
+    ci_project = col_idx(project_col)
+    ci_basket = col_idx(basket_col)
+
+    for r in range(data_start, ws.max_row + 1):
+        code_val = ws.cell(row=r, column=ci_code).value if ci_code else None
+        if not code_val:
+            continue
+        pc = str(code_val).strip()
+        if not pc:
+            continue
+
+        customer = str(ws.cell(row=r, column=ci_customer).value).strip() if ci_customer else ''
+        project = str(ws.cell(row=r, column=ci_project).value).strip() if ci_project else ''
+        basket = 0
+        if ci_basket:
+            bv = ws.cell(row=r, column=ci_basket).value
+            basket = float(bv) if bv else 0
+
+        # Upsert supply_items
+        c.execute("SELECT id FROM supply_items WHERE product_code=?", (pc,))
+        if c.fetchone():
+            c.execute("UPDATE supply_items SET customer=?, project=?, basket_capacity=?, updated_at=datetime('now','localtime') WHERE product_code=?",
+                      (customer, project, basket, pc))
+        else:
+            c.execute("INSERT INTO supply_items (product_code, customer, project, basket_capacity) VALUES (?, ?, ?, ?)",
+                      (pc, customer, project, basket))
+
+        # Import snapshot data (e.g. local_stock, 3pl_stock, in_transit)
+        for dtype, col_letter in snapshot_cols.items():
+            ci = col_idx(col_letter)
+            if ci:
+                val = ws.cell(row=r, column=ci).value
+                if val is not None:
+                    try:
+                        c.execute("INSERT INTO supply_data (product_code, data_type, value, batch_id) VALUES (?, ?, ?, ?)",
+                                  (pc, dtype, float(val), batch_id))
+                    except (ValueError, TypeError):
+                        pass
+
+        # Import daily plan data
+        if plan_start_col and plan_end_col:
+            ci_start = col_idx(plan_start_col)
+            ci_end = col_idx(plan_end_col)
+            for ci in range(ci_start, ci_end + 1):
+                # Get date from header row
+                date_val = ws.cell(row=plan_date_row, column=ci).value
+                if date_val is None:
+                    continue
+                if hasattr(date_val, 'strftime'):
+                    d_str = date_val.strftime('%Y-%m-%d')
+                else:
+                    d_str = str(date_val).strip()[:10]
+                qty_val = ws.cell(row=r, column=ci).value
+                if qty_val is not None:
+                    try:
+                        c.execute("INSERT INTO supply_data (product_code, data_type, data_date, value, batch_id) VALUES (?, ?, ?, ?, ?)",
+                                  (pc, 'daily_plan', d_str, float(qty_val), batch_id))
+                    except (ValueError, TypeError):
+                        pass
+
+        count += 1
+
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'count': count, 'batch_id': batch_id})
+
+@app.route('/api/supply-chain/items', methods=['DELETE'])
+@login_required
+@planner_required
+def api_clear_supply_data():
+    """Clear all supply data (for re-import)."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM supply_data")
+    c.execute("DELETE FROM supply_items")
+    conn.commit()
+    deleted = c.rowcount
+    conn.close()
+    return jsonify({'ok': True, 'deleted': deleted})
+
 # ========== Shipping Plan API ==========
 @app.route('/api/shipping-plan')
 @login_required
 def api_shipping_plan():
+    month = request.args.get('month', '').strip()
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT * FROM shipping_plan ORDER BY ship_date LIMIT 200")
+    if month:
+        c.execute("SELECT * FROM shipping_plan WHERE plan_month=? ORDER BY customer, product_code, ship_date", (month,))
+    else:
+        c.execute("SELECT DISTINCT plan_month FROM shipping_plan WHERE plan_month IS NOT NULL ORDER BY plan_month DESC LIMIT 1")
+        row = c.fetchone()
+        if row:
+            c.execute("SELECT * FROM shipping_plan WHERE plan_month=? ORDER BY customer, product_code, ship_date", (row[0],))
+        else:
+            c.execute("SELECT * FROM shipping_plan ORDER BY ship_date LIMIT 500")
     r = [dict(row) for row in c.fetchall()]
     conn.close()
     return jsonify(r)
+
+@app.route('/api/shipping-plan/months')
+@login_required
+def api_shipping_plan_months():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT DISTINCT plan_month FROM shipping_plan WHERE plan_month IS NOT NULL ORDER BY plan_month DESC")
+    months = [row[0] for row in c.fetchall()]
+    conn.close()
+    return jsonify(months)
+
+@app.route('/api/shipping-plan', methods=['DELETE'])
+@login_required
+@planner_required
+def api_shipping_plan_delete():
+    month = request.args.get('month', '').strip()
+    conn = get_connection()
+    c = conn.cursor()
+    if month:
+        c.execute("DELETE FROM shipping_plan WHERE plan_month=?", (month,))
+    else:
+        c.execute("DELETE FROM shipping_plan")
+    deleted = c.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({'deleted': deleted})
 
 # ========== Statistics API ==========
 @app.route('/api/statistics')
@@ -3222,7 +4258,24 @@ def api_delete_workshop_layout(lid):
 
 if __name__ == "__main__":
     init_database()
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=False, host="0.0.0.0", port=5000)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

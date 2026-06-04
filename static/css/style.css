@@ -137,6 +137,9 @@ select.form-control{appearance:auto}
 .gantt-bar.priority-P2{background:linear-gradient(135deg,#6b7280,#4b5563)}
 .gantt-bar.dragging{opacity:.7;box-shadow:0 8px 25px rgba(0,0,0,0.3)}
 .gantt-bar.conflict{border:2px solid #fbbf24;animation:pulse 1s infinite}
+
+.gantt-bar .bar-img{width:32px;height:30px;flex-shrink:0;border-radius:3px;overflow:hidden;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center}
+.gantt-bar .bar-img img{max-width:100%;max-height:100%;object-fit:cover}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(251,191,36,.4)}50%{box-shadow:0 0 0 6px rgba(251,191,36,0)}}
 
 /* Gantt Now Line */
