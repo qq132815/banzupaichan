@@ -8,7 +8,7 @@
 </head>
 <body class="{{ 'readonly' if session.get('role') == 'team' else '' }}">
 <nav class="sidebar">
-<div class="logo">📋 班组排产系统</div>
+<div class="logo">📋 班组排产系统 V2.4</div>
 <ul>
 <li><a href="/" class="nav-link"><span class="icon">🏠</span><span>工作台</span></a></li>
 <li data-perm="schedule"><a href="/schedule-page" class="nav-link"><span class="icon">📊</span><span>排班 &amp; 甘特图</span></a></li>
@@ -23,9 +23,11 @@
 <li><a href="/planner/publish-history" class="nav-link sub"><span class="icon">📜</span><span>发布记录</span></a></li>
 </ul>
 </li>
+<li data-perm="shipping_plan"><a href="/supply-chain" class="nav-link"><span class="icon">📊</span><span>产销管理</span></a></li>
 <li data-perm="plan_approval"><a href="/planner/plans" class="nav-link"><span class="icon">📋</span><span>计划记录</span></a></li>
 <li data-perm="alerts"><a href="/alerts-page" class="nav-link"><span class="icon">🔔</span><span>预警中心</span></a></li>
 <li data-perm="orders"><a href="/orders-page" class="nav-link"><span class="icon">📦</span><span>订单管理</span></a></li>
+<li data-perm="material_alerts"><a href="/material-alerts-page" class="nav-link"><span class="icon">&#128680;</span><span>&#22791;&#26009;&#25552;&#37266;</span></a></li>
 <li class="nav-item has-sub">
 <a href="javascript:void(0)" class="nav-link has-sub-link" onclick="toggleSub(this)"><span class="icon">📂</span><span>基础数据</span><span class="arrow">▸</span></a>
 <ul class="sub-menu">
@@ -33,6 +35,7 @@
 <li><a href="/products/routes" class="nav-link sub"><span class="icon">🔗</span><span>工艺路线</span></a></li>
 <li><a href="/products/cycles" class="nav-link sub"><span class="icon">⏱️</span><span>生产周期</span></a></li>
 <li><a href="/products/bom" class="nav-link sub"><span class="icon">🔩</span><span>物料清单</span></a></li>
+<li><a href="/products/definitions" class="nav-link sub"><span class="icon">📦</span><span>产品定义</span></a></li>
 <li><a href="/equipments-page" class="nav-link sub"><span class="icon">⚙️</span><span>设备管理</span></a></li>
 <li><a href="/personnel-page" class="nav-link sub"><span class="icon">👥</span><span>人员管理</span></a></li>
 <li><a href="/molds-page" class="nav-link sub"><span class="icon">🔧</span><span>模具管理</span></a></li>
@@ -118,3 +121,4 @@ if(a.getAttribute("href")===path){
 {% block scripts %}{% endblock %}
 </body>
 </html>
+

@@ -2,6 +2,7 @@
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import json
 import os
+import re
 import sys
 import threading
 import subprocess
@@ -20,9 +21,12 @@ from utils.calc import (calculate_alerts, back_calculate_semi, calculate_quantit
                        calculate_production_requirements, publish_requirements, get_published_requirements)
 
 app = Flask(__name__)
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.jinja_env.auto_reload = True
 
 # ========== MES Sync Scheduler ==========
 _sync_scheduler_running = False
+_mes_sync_lock = threading.Lock()  # 防止多个Playwright实例并发登录MES冲突
 
 def _run_attendance_sync(date_from, date_to):
     """Run attendance sync in background thread."""
@@ -35,6 +39,16 @@ def _run_attendance_sync(date_from, date_to):
 
 def _run_sync_job(sync_type):
     """Run sync job in background thread."""
+    log_id = None
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("INSERT INTO sync_logs (sync_type, status, created_at, trigger_type) VALUES (?, 'running', datetime('now','localtime'), 'auto')", (sync_type,))
+        log_id = c.lastrowid
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
     try:
         script = os.path.join(os.path.dirname(__file__), 'scripts', f'sync_{sync_type}.py')
         result = subprocess.run(
@@ -42,8 +56,61 @@ def _run_sync_job(sync_type):
             capture_output=True, text=True, timeout=300,
             cwd=os.path.dirname(__file__)
         )
-        print(f"[{sync_type}] Sync completed: {result.stdout[-200:]}")
+        output = result.stdout.strip() if result.stdout else ''
+        errors = result.stderr.strip() if result.stderr else ''
+        if result.returncode == 0:
+            count = 0
+            for line in output.split('\n'):
+                if '总计=' in line:
+                    try:
+                        count = int(line.split('总计=')[1].strip())
+                    except ValueError:
+                        pass
+                    break
+                if '新增:' in line:
+                    try:
+                        count = int(line.split('新增:')[1].split(',')[0].strip())
+                    except ValueError:
+                        pass
+                    break
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute("UPDATE sync_logs SET status='success', record_count=?, detail=? WHERE id=?", (count, output[-500:], log_id))
+            conn.commit()
+            conn.close()
+            if sync_type == 'reports':
+                _recalculate_work_report_efficiency()
+                try:
+                    _refresh_equipment_status()
+                except Exception as eq_err:
+                    print(f"[equipment_status] Error: {eq_err}")
+            print(f"[{sync_type}] Sync completed: inserted/updated={count}")
+        else:
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute("UPDATE sync_logs SET status='error', detail=? WHERE id=?", (errors[-500:], log_id))
+            conn.commit()
+            conn.close()
+            print(f"[{sync_type}] Sync error: {errors[-200:]}")
+    except subprocess.TimeoutExpired:
+        try:
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute("UPDATE sync_logs SET status='error', detail='同步超时(>300秒)' WHERE id=?", (log_id,))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+        print(f"[{sync_type}] Sync timeout")
     except Exception as e:
+        try:
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute("UPDATE sync_logs SET status='error', detail=? WHERE id=?", (str(e)[:500], log_id))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
         print(f"[{sync_type}] Sync error: {e}")
 
 def _sync_scheduler():
@@ -52,6 +119,10 @@ def _sync_scheduler():
     _sync_scheduler_running = True
     import time
     last_run = {'work_orders': 0, 'reports': 0, 'attendance': 0}
+
+    def _run_synced(sync_type):
+        with _mes_sync_lock:
+            _run_sync_job(sync_type)
     
     while _sync_scheduler_running:
         try:
@@ -67,13 +138,13 @@ def _sync_scheduler():
             
             if wo_interval > 0 and now - last_run['work_orders'] >= wo_interval:
                 last_run['work_orders'] = now
-                t = threading.Thread(target=_run_sync_job, args=('work_orders',))
+                t = threading.Thread(target=_run_synced, args=('work_orders',))
                 t.daemon = True
                 t.start()
-            
+
             if rpt_interval > 0 and now - last_run['reports'] >= rpt_interval:
                 last_run['reports'] = now
-                t = threading.Thread(target=_run_sync_job, args=('reports',))
+                t = threading.Thread(target=_run_synced, args=('reports',))
                 t.daemon = True
                 t.start()
             
@@ -102,6 +173,26 @@ def _sync_scheduler():
             except Exception as e:
                 print(f"Attendance auto-sync error: {e}")
             
+            # Equipment status auto-refresh at 08:15 and 20:30
+            try:
+                now_dt = datetime.now()
+                refresh_times = [
+                    now_dt.replace(hour=8, minute=10, second=0, microsecond=0),
+                    now_dt.replace(hour=20, minute=15, second=0, microsecond=0),
+                ]
+                last_equip = last_run.get('equipment_status', 0)
+                for rt in refresh_times:
+                    if now_dt >= rt and now_dt < rt.replace(minute=rt.minute + 5):
+                        if time.time() - last_equip > 3600:
+                            last_run['equipment_status'] = time.time()
+                            t = threading.Thread(target=_refresh_equipment_status)
+                            t.daemon = True
+                            t.start()
+                            print("[equipment-status] Auto-refresh triggered at %s" % now_dt.strftime('%H:%M'))
+                            break
+            except Exception as e:
+                print(f"Equipment status refresh error: {e}")
+
             time.sleep(60)
         except Exception as e:
             print(f"Scheduler error: {e}")
@@ -2177,6 +2268,10 @@ def api_import_work_reports():
     try:
         count = import_work_reports(path)
         _recalculate_work_report_efficiency()
+        try:
+            _refresh_equipment_status()
+        except Exception:
+            pass
         return jsonify({'ok': True, 'success': True, 'count': count})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -2295,7 +2390,7 @@ def api_sync_work_orders():
     try:
         conn = get_connection()
         c = conn.cursor()
-        c.execute("INSERT INTO sync_logs (sync_type, status) VALUES ('work_orders', 'running')")
+        c.execute("INSERT INTO sync_logs (sync_type, status, created_at, trigger_type) VALUES ('work_orders', 'running', datetime('now','localtime'), 'manual')")
         log_id = c.lastrowid
         conn.commit()
         conn.close()
@@ -2303,18 +2398,22 @@ def api_sync_work_orders():
         pass
     try:
         script = os.path.join(os.path.dirname(__file__), 'scripts', 'sync_work_orders.py')
-        result = subprocess.run(
-            [sys.executable, '-u', script],
-            capture_output=True, text=True, timeout=300,
-            cwd=os.path.dirname(__file__)
-        )
+        with _mes_sync_lock:
+            result = subprocess.run(
+                [sys.executable, '-u', script],
+                capture_output=True, text=True, timeout=300,
+                cwd=os.path.dirname(__file__)
+            )
         output = result.stdout.strip() if result.stdout else ''
         errors = result.stderr.strip() if result.stderr else ''
         if result.returncode == 0:
             count = 0
             for line in output.split('\n'):
-                if line.startswith('IMPORTED:'):
-                    count = int(line.split(':')[1])
+                if '总计=' in line:
+                    try:
+                        count = int(line.split('总计=')[1].strip())
+                    except ValueError:
+                        pass
                     break
             conn = get_connection()
             c = conn.cursor()
@@ -2322,6 +2421,14 @@ def api_sync_work_orders():
             conn.commit()
             conn.close()
             _recalculate_work_report_efficiency()
+            try:
+                _check_material_alerts()
+            except Exception:
+                pass
+            try:
+                _refresh_equipment_status()
+            except Exception:
+                pass
             return jsonify({'ok': True, 'count': count, 'output': output[-1000:]})
         else:
             conn = get_connection()
@@ -2354,7 +2461,7 @@ def api_sync_reports():
     try:
         conn = get_connection()
         c = conn.cursor()
-        c.execute("INSERT INTO sync_logs (sync_type, status) VALUES ('reports', 'running')")
+        c.execute("INSERT INTO sync_logs (sync_type, status, created_at, trigger_type) VALUES ('reports', 'running', datetime('now','localtime'), 'manual')")
         log_id = c.lastrowid
         conn.commit()
         conn.close()
@@ -2362,19 +2469,28 @@ def api_sync_reports():
         pass
     try:
         script = os.path.join(os.path.dirname(__file__), 'scripts', 'sync_reports.py')
-        result = subprocess.run(
-            [sys.executable, '-u', script],
-            capture_output=True, text=True, timeout=300,
-            cwd=os.path.dirname(__file__)
-        )
+        with _mes_sync_lock:
+            result = subprocess.run(
+                [sys.executable, '-u', script],
+                capture_output=True, text=True, timeout=300,
+                cwd=os.path.dirname(__file__)
+            )
         output = result.stdout.strip() if result.stdout else ''
         errors = result.stderr.strip() if result.stderr else ''
         if result.returncode == 0:
             count = 0
             for line in output.split('\n'):
-                if line.startswith('IMPORTED:'):
-                    count = int(line.split(':')[1])
+                if '总计=' in line:
+                    try:
+                        count = int(line.split('总计=')[1].strip())
+                    except ValueError:
+                        pass
                     break
+                if '插入=' in line:
+                    try:
+                        count += int(line.split('插入=')[1].split(',')[0].strip())
+                    except ValueError:
+                        pass
             conn = get_connection()
             c = conn.cursor()
             c.execute("UPDATE sync_logs SET status='success', record_count=?, detail=? WHERE id=?", (count, output[-500:], log_id))
@@ -2409,10 +2525,10 @@ def api_sync_reports():
 def api_get_sync_logs():
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT id, sync_type, status, record_count, detail, created_at FROM sync_logs ORDER BY id DESC LIMIT 50")
+    c.execute("SELECT id, sync_type, status, record_count, detail, created_at, trigger_type FROM sync_logs ORDER BY id DESC LIMIT 50")
     rows = c.fetchall()
     conn.close()
-    return jsonify([{'id':r[0],'sync_type':r[1],'status':r[2],'record_count':r[3],'detail':r[4],'created_at':r[5]} for r in rows])
+    return jsonify([{'id':r[0],'sync_type':r[1],'status':r[2],'record_count':r[3],'detail':r[4],'created_at':r[5],'trigger_type':r[6]} for r in rows])
 
 # ========== Schedules Lookup API ==========
 @app.route('/api/schedules')
@@ -2557,6 +2673,104 @@ def api_save_config():
     conn.close()
     return jsonify({'ok': True})
 
+
+def _refresh_equipment_status():
+    """Refresh equipment status from today's reports only.
+    Matches report equipment to equipments table with team validation."""
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("UPDATE equipments SET status='normal'")
+        c.execute("SELECT id, equipment_name, equipment_code, team_id FROM equipments")
+        eq_list = []
+        for row in c.fetchall():
+            eq_list.append({'id': row[0], 'name': row[1], 'code': row[2], 'team_id': row[3]})
+        c.execute("SELECT id, name FROM teams")
+        team_name_map = {r[0]: r[1] for r in c.fetchall()}
+        c.execute("SELECT process_name, team_name FROM processes WHERE team_name IS NOT NULL AND team_name != ''")
+        process_team_map = {}
+        for r in c.fetchall():
+            process_team_map[r[0]] = [t.strip() for t in r[1].split(',') if t.strip()]
+        c.execute("""
+            SELECT wr.equipment, wr.order_no, wr.process_name
+            FROM work_reports wr
+            INNER JOIN (
+                SELECT equipment, MAX(create_time) as max_time
+                FROM work_reports
+                WHERE equipment IS NOT NULL AND equipment != ''
+                  AND date(create_time) = date('now','localtime')
+                GROUP BY equipment
+            ) latest ON wr.equipment = latest.equipment AND wr.create_time = latest.max_time
+            WHERE wr.equipment IS NOT NULL AND wr.equipment != ''
+              AND wr.order_no IS NOT NULL AND wr.order_no != ''
+        """)
+        latest_reports = c.fetchall()
+        import unicodedata as _ud
+        def _norm(s):
+            if not s: return ''
+            s = _ud.normalize('NFKC', s).strip().lower()
+            s = re.split(r'[\uff0c\u3002\uff1b\uff1a\uff08(]', s)[0]
+            s = s.replace('/', '-').replace('.', '-').replace('_', '-')
+            s = s.replace('\u53f7', '').replace('\u53f0', '').replace('\u7ebf', '')
+            while '--' in s: s = s.replace('--', '-')
+            return s.replace(' ', '')
+        def _strip(s):
+            return re.sub(r'[^a-z0-9]', '', _norm(s)) if s else ''
+        updated = 0
+        for equip_raw, order_no, process_name in latest_reports:
+            if not order_no or not process_name:
+                continue
+            matched_eq = None
+            for eq in eq_list:
+                if eq['name'] == equip_raw or eq['code'] == equip_raw:
+                    matched_eq = eq
+                    break
+            if not matched_eq:
+                nk = _norm(equip_raw)
+                for eq in eq_list:
+                    if _norm(eq['name']) == nk or _norm(eq['code']) == nk:
+                        matched_eq = eq
+                        break
+            if not matched_eq:
+                sk = _strip(equip_raw)
+                if sk:
+                    for eq in eq_list:
+                        if _strip(eq['name']) == sk or _strip(eq['code']) == sk:
+                            matched_eq = eq
+                            break
+            if not matched_eq:
+                continue
+            eq_team_name = team_name_map.get(matched_eq['team_id'], '')
+            process_teams = process_team_map.get(process_name, [])
+            if process_teams and eq_team_name and eq_team_name not in process_teams:
+                continue
+            c.execute("SELECT process_progress FROM work_orders WHERE order_no=?", (order_no,))
+            row = c.fetchone()
+            if not row or not row[0]:
+                continue
+            progress_str = row[0]
+            process_completed = False
+            if process_name:
+                pattern = re.escape(process_name) + r'.*?[\u3010(\d+)/(\d+)\u3011]'
+                match = re.search(pattern, progress_str)
+                if match:
+                    done = int(match.group(1))
+                    total = int(match.group(2))
+                    if total > 0 and done >= total:
+                        process_completed = True
+                else:
+                    process_completed = False
+            if not process_completed:
+                c.execute("UPDATE equipments SET status='running' WHERE id=?", (matched_eq['id'],))
+                updated += 1
+        conn.commit()
+        conn.close()
+        print(f"[equipment-status] Refreshed: {updated} equipment set to running")
+        return updated
+    except Exception as e:
+        print(f"[equipment-status] Refresh error: {e}")
+        return 0
+
 def _recalculate_work_report_efficiency():
     conn = get_connection()
     c = conn.cursor()
@@ -2685,29 +2899,133 @@ def _get_standard_capacity_map():
     # Average for each combo
     return {k: sum(v)/len(v) for k, v in mapping.items()}
 
+def _parse_attendance_names(note):
+    """Parse attendance_note into a list of person names, filtering out non-name annotations."""
+    if not note or not note.strip():
+        return []
+    note = note.strip()
+    parts = re.split(r'[,\uff0c\u3001\u3002.\s]+', note)
+    names = []
+    skip_keywords = ['H)', '\u62a5\u5e9f', '\u8c03\u673a', '\u5f85\u6599', '\u5f02\u5e38', '\u81ea\u52a8\u710a', '\u64cd\u4f5c', '\u8bbe\u5907', '\u5355\u6a21', '\u8fb9\u5f2f', '\u5b66\u4e60', '\u4e2d\u9014', '\u5206\u949f', '\u5c0f\u65f6']
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if any(kw in p for kw in skip_keywords):
+            continue
+        if re.search(r'\d+[Hh]', p):
+            continue
+        p = re.sub(r'[()\uff08\uff09\d]+$', '', p).strip()
+        if not p:
+            continue
+        if len(p) >= 2 and len(p) <= 10:
+            names.append(p)
+    return names
+
+def _expand_reports_with_attendance_note(date_from, date_to):
+    """Load work reports in date range, expand via attendance_note.
+    Returns dict: {person_name: {'qty': N, 'hours': N, 'good_qty': N, 'efficiency': N, 'report_count': N}}
+    """
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""SELECT operator, attendance_note, report_qty, report_hours, good_qty, efficiency, create_time
+        FROM work_reports WHERE create_time BETWEEN ? AND ? AND report_hours > 0""",
+        (date_from + ' 00:00:00', date_to + ' 23:59:59'))
+    rows = c.fetchall()
+    conn.close()
+    per_person = {}
+    for operator, note, qty, hours, good_qty, eff, create_time in rows:
+        qty = qty or 0
+        hours = hours or 0
+        good_qty = good_qty or 0
+        eff = eff or 0
+        names = set()
+        if operator:
+            names.add(operator)
+        if note:
+            extra = _parse_attendance_names(note)
+            names.update(extra)
+        for nm in names:
+            if nm not in per_person:
+                per_person[nm] = {'qty': [], 'hours': [], 'good_qty': [], 'efficiency': []}
+            per_person[nm]['qty'].append(qty)
+            per_person[nm]['hours'].append(hours)
+            per_person[nm]['good_qty'].append(good_qty)
+            if eff > 0:
+                per_person[nm]['efficiency'].append(eff)
+    result = {}
+    for nm, data in per_person.items():
+        total_qty = sum(data['qty'])
+        total_hours = sum(data['hours'])
+        total_good = sum(data['good_qty'])
+        effs = data['efficiency']
+        avg_eff = round(sum(effs) / len(effs), 1) if effs else 0
+        result[nm] = {
+            'qty': total_qty, 'hours': total_hours, 'good_qty': total_good,
+            'efficiency': avg_eff, 'report_count': len(data['qty'])
+        }
+    return result
+
+def _expand_personal_report_by_date(name, date_from, date_to):
+    """For a specific person, get daily report data including attendance_note expansion."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""SELECT operator, attendance_note, report_qty, report_hours, good_qty, efficiency, create_time
+        FROM work_reports WHERE create_time BETWEEN ? AND ? AND report_hours > 0""",
+        (date_from + ' 00:00:00', date_to + ' 23:59:59'))
+    rows = c.fetchall()
+    conn.close()
+    daily = {}
+    for operator, note, qty, hours, good_qty, eff, create_time in rows:
+        qty = qty or 0
+        hours = hours or 0
+        good_qty = good_qty or 0
+        eff = eff or 0
+        is_match = False
+        if operator == name:
+            is_match = True
+        elif note:
+            extra = _parse_attendance_names(note)
+            if name in extra:
+                is_match = True
+        if not is_match:
+            continue
+        dt = create_time[:10]
+        if dt not in daily:
+            daily[dt] = {'qty': [], 'hours': [], 'good_qty': [], 'efficiency': []}
+        daily[dt]['qty'].append(qty)
+        daily[dt]['hours'].append(hours)
+        daily[dt]['good_qty'].append(good_qty)
+        if eff > 0:
+            daily[dt]['efficiency'].append(eff)
+    result = {}
+    for dt, data in daily.items():
+        result[dt] = {
+            'qty': sum(data['qty']),
+            'hours': round(sum(data['hours']), 1),
+            'good_qty': sum(data['good_qty']),
+            'efficiency': round(sum(data['efficiency']) / len(data['efficiency']), 1) if data['efficiency'] else 0
+        }
+    return result
+
 @app.route('/api/reports/daily')
 @login_required
 def api_report_daily():
     date = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
     team_id = request.args.get('team_id', type=int)
     
-    conn = get_connection()
-    c = conn.cursor()
     personnel_map = _get_personnel_map()
     
-    # Get work reports for the date - 使用效率字段的平均值(排除0)
-    c.execute("""SELECT operator, SUM(report_qty), SUM(report_hours), SUM(good_qty),
-        AVG(CASE WHEN efficiency > 0 THEN efficiency END) as avg_efficiency
-        FROM work_reports WHERE create_time LIKE ? AND report_hours > 0
-        GROUP BY operator""", (date + '%',))
-    report_data = {r[0]: {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'efficiency': round(r[4] or 0, 1)} for r in c.fetchall()}
+    # Get work reports expanded via attendance_note
+    report_data = _expand_reports_with_attendance_note(date, date)
     
+    conn = get_connection()
+    c = conn.cursor()
     # Get attendance for the date (join by user_id via personnel)
     c.execute("""SELECT p.name, a.work_hours, a.is_overtime, a.leave_type, a.normal_hours, a.overtime_hours 
         FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id 
         WHERE a.work_date=?""", (date,))
     attend_data = {r[0]: {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or '', 'normal': r[4] or 0, 'ot': r[5] or 0} for r in c.fetchall()}
-    
     conn.close()
     
     rows = []
@@ -2820,27 +3138,23 @@ def api_report_weekly():
     week_start = monday.strftime('%Y-%m-%d')
     week_end = (monday + timedelta(days=6)).strftime('%Y-%m-%d')
     
-    conn = get_connection()
-    c = conn.cursor()
     personnel_map = _get_personnel_map()
     std_cap = _get_standard_capacity_map()
     
-    # Work reports for the week - 使用效率字段
-    c.execute("""SELECT operator, SUM(report_qty), SUM(report_hours), SUM(good_qty), COUNT(DISTINCT SUBSTR(create_time,1,10)),
-        AVG(CASE WHEN efficiency > 0 THEN efficiency END) as avg_efficiency
-        FROM work_reports WHERE create_time BETWEEN ? AND ? AND report_hours > 0
-        GROUP BY operator""", (week_start + ' 00:00:00', week_end + ' 23:59:59'))
+    # Work reports for the week expanded via attendance_note
+    expanded = _expand_reports_with_attendance_note(week_start, week_end)
     report_data = {}
-    for r in c.fetchall():
-        report_data[r[0]] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'days': r[4] or 0, 'efficiency': round(r[5] or 0, 1)}
+    for nm, rd in expanded.items():
+        report_data[nm] = {'qty': rd['qty'], 'hours': rd['hours'], 'good_qty': rd['good_qty'], 'days': rd['report_count'], 'efficiency': rd['efficiency']}
     
+    conn = get_connection()
+    c = conn.cursor()
     # Attendance for the week
     c.execute("""SELECT p.name, SUM(a.work_hours), SUM(a.is_overtime), COUNT(*), SUM(a.normal_hours), SUM(a.overtime_hours) FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id WHERE a.work_date BETWEEN ? AND ? GROUP BY p.name""",
               (week_start, week_end))
     attend_data = {}
     for r in c.fetchall():
         attend_data[r[0]] = {'total_hours': r[1] or 0, 'overtime_days': r[2] or 0, 'work_days': r[3] or 0, 'normal': r[4] or 0, 'ot': r[5] or 0}
-    
     conn.close()
     
     rows = []
@@ -2887,20 +3201,17 @@ def api_report_monthly():
     last_day = calendar.monthrange(y, m)[1]
     date_to = f"{month}-{last_day:02d}"
     
-    conn = get_connection()
-    c = conn.cursor()
     personnel_map = _get_personnel_map()
     std_cap = _get_standard_capacity_map()
     
-    # Work reports - 使用效率字段
-    c.execute("""SELECT operator, SUM(report_qty), SUM(report_hours), SUM(good_qty), COUNT(DISTINCT SUBSTR(create_time,1,10)),
-        AVG(CASE WHEN efficiency > 0 THEN efficiency END) as avg_efficiency
-        FROM work_reports WHERE create_time BETWEEN ? AND ? AND report_hours > 0
-        GROUP BY operator""", (date_from + ' 00:00:00', date_to + ' 23:59:59'))
+    # Work reports expanded via attendance_note
+    expanded = _expand_reports_with_attendance_note(date_from, date_to)
     report_data = {}
-    for r in c.fetchall():
-        report_data[r[0]] = {'qty': r[1] or 0, 'hours': r[2] or 0, 'good_qty': r[3] or 0, 'days': r[4] or 0, 'efficiency': round(r[5] or 0, 1)}
+    for nm, rd in expanded.items():
+        report_data[nm] = {'qty': rd['qty'], 'hours': rd['hours'], 'good_qty': rd['good_qty'], 'days': rd['report_count'], 'efficiency': rd['efficiency']}
     
+    conn = get_connection()
+    c = conn.cursor()
     # Attendance
     c.execute("""SELECT p.name, SUM(a.work_hours), SUM(a.is_overtime), COUNT(*), SUM(CASE WHEN a.leave_type != '' AND a.leave_type IS NOT NULL THEN 1 ELSE 0 END), SUM(a.normal_hours), SUM(a.overtime_hours) FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id WHERE a.work_date BETWEEN ? AND ? GROUP BY p.name""",
               (date_from, date_to))
@@ -3020,9 +3331,9 @@ def api_attendance_settings_get():
     config = {row[0]: row[1] for row in c.fetchall()}
     conn.close()
     return jsonify({
-        'api_url': config.get('attendance_api_url', 'http://10.6.201.10:7777/ddkq/api/third-party/attendance'),
-        'api_key': config.get('attendance_api_key', 'tk_cs_20260601'),
-        'auto_sync': config.get('attendance_auto_sync', '0'),
+        'api_url': config.get('attendance_api_url') or 'http://10.6.201.10:7777/ddkq/api/third-party/attendance',
+        'api_key': config.get('attendance_api_key') or 'tk_cs_20260601',
+        'auto_sync': config.get('attendance_auto_sync') or '0',
     })
 
 @app.route('/api/attendance/settings', methods=['POST'])
@@ -3585,7 +3896,7 @@ def api_statistics():
 @login_required
 def api_plan_today_progress():
     """Real-time daily plan progress for all teams."""
-    today = datetime.now().strftime('%Y-%m-%d')
+    today = request.args.get('date', '') or datetime.now().strftime('%Y-%m-%d')
     conn = get_connection()
     c = conn.cursor()
 
@@ -3698,8 +4009,8 @@ def api_plan_gantt(plan_id):
 @app.route('/api/plan/today-gantt/<int:team_id>')
 @login_required
 def api_plan_today_gantt(team_id):
-    """Get today's Gantt data for a team: planned schedules + in-progress reports."""
-    today = datetime.now().strftime('%Y-%m-%d')
+    """Get Gantt data for a team on a given date: planned schedules + actual reports."""
+    today = request.args.get('date', '') or datetime.now().strftime('%Y-%m-%d')
     conn = get_connection()
     c = conn.cursor()
 
@@ -3711,15 +4022,14 @@ def api_plan_today_gantt(team_id):
         ORDER BY s.start_time""", (team_id, today))
     schedules = [dict(row) for row in c.fetchall()]
 
-    # Get actual reports today
-    c.execute("""SELECT wr.process_name, wr.equipment, wr.order_no,
-        SUM(wr.report_qty) as qty, SUM(wr.report_hours) as hours,
-        MIN(wr.start_time) as first_start, MAX(wr.end_time) as last_end
+    # Get actual reports today (individual rows for time-based overlay)
+    c.execute("""SELECT wr.process_name, wr.equipment, wr.order_no, wr.product_name,
+        wr.report_qty as qty, wr.start_time, wr.end_time
         FROM work_reports wr
         INNER JOIN processes pr ON wr.process_name=pr.process_name
         INNER JOIN teams t ON pr.team_name LIKE '%' || t.name || '%'
-        WHERE t.id=? AND wr.create_time LIKE ? AND wr.report_hours > 0
-        GROUP BY wr.process_name, wr.equipment, wr.order_no""",
+        WHERE t.id=? AND wr.create_time LIKE ?
+        ORDER BY wr.start_time""",
               (team_id, today + '%'))
     reports = [dict(row) for row in c.fetchall()]
 
@@ -4166,14 +4476,108 @@ def api_workshop_3d_status():
                 'code': row[1],
                 'name': row[2],
                 'team_id': row[3],
-                'status': row[4],
+                'team_name': '',  # will be filled later
+                'status': row[4] or 'normal',
                 'position': {'x': row[5], 'y': row[6], 'z': row[7]},
                 'rotation': row[8],
                 'model': row[9]
             }
             equipments.append(eq)
+
+        # Get teams for team name lookup
+        cursor.execute("SELECT id, name FROM teams")
+        teams_map = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # Get latest work report for each equipment (qty + efficiency)
+        cursor.execute("""
+            SELECT wr.equipment, wr.report_qty, wr.efficiency, wr.order_no, wr.process_name, wr.create_time, wr.product_name
+            FROM work_reports wr
+            INNER JOIN (
+                SELECT equipment, MAX(create_time) as max_time
+                FROM work_reports
+                WHERE equipment IS NOT NULL AND equipment != ''
+                GROUP BY equipment
+            ) latest ON wr.equipment = latest.equipment AND wr.create_time = latest.max_time
+            WHERE wr.equipment IS NOT NULL AND wr.equipment != ''
+        """)
+        report_map = {}
+        for row in cursor.fetchall():
+            report_map[row[0]] = {
+                'report_qty': row[1],
+                'efficiency': row[2],
+                'order_no': row[3],
+                'process_name': row[4],
+                'report_time': row[5],
+                'product_name': row[6]
+            }
         conn.close()
+
+        # Build normalized index for fuzzy matching (handles Chinese full-width, mixed separators, etc.)
+        import unicodedata as _ud
+
+        def _norm_eq(s):
+            """Normalize equipment name: NFKC, lowercase, strip annotations, unify separators"""
+            if not s: return ''
+            s = _ud.normalize('NFKC', s).strip().lower()
+            # Strip Chinese annotations like "???8:00-9:10"
+            s = re.split(r'[?,??;?:?(]', s)[0]
+            s = s.replace('/', '-').replace('.', '-').replace('_', '-')
+            s = s.replace('?', '').replace('?', '').replace('?', '')
+            while '--' in s: s = s.replace('--', '-')
+            return s.replace(' ', '')
+
+        def _strip_non_alnum(s):
+            """Keep only a-z and 0-9 for maximum fuzzy matching"""
+            return re.sub(r'[^a-z0-9]', '', _norm_eq(s)) if s else ''
+
+        # Build multi-level indexes from report_map
+        norm_report_map = {}     # normalized -> report data
+        stripped_report_map = {} # alphanumeric-only -> report data
+        for key, val in report_map.items():
+            nk = _norm_eq(key)
+            if nk and nk not in norm_report_map:
+                norm_report_map[nk] = val
+            sk = _strip_non_alnum(key)
+            if sk and sk not in stripped_report_map:
+                stripped_report_map[sk] = val
+
+        # Attach report data to equipments with 3-level fuzzy matching
+        for eq in equipments:
+            rpt = None
+            # Level 1: Exact match by name or code
+            rpt = report_map.get(eq['name']) or report_map.get(eq['code'])
+            if not rpt:
+                # Level 2: Normalized match (handles ?/?, full-width, separators)
+                n_name = _norm_eq(eq['name'])
+                n_code = _norm_eq(eq['code'])
+                rpt = norm_report_map.get(n_name) or norm_report_map.get(n_code)
+            if not rpt:
+                # Level 3: Alphanumeric-only match (handles DJ?Dw8?2 -> djxdw82)
+                s_name = _strip_non_alnum(eq['name'])
+                s_code = _strip_non_alnum(eq['code'])
+                rpt = stripped_report_map.get(s_name) or stripped_report_map.get(s_code)
+            if rpt:
+                eq['report_qty'] = rpt['report_qty']
+                eq['efficiency'] = rpt['efficiency']
+                eq['order_no'] = rpt['order_no']
+                eq['process_name'] = rpt['process_name']
+                eq['report_time'] = rpt['report_time']
+
+                eq['team_name'] = teams_map.get(eq['team_id'], '')
+                eq['product_name'] = rpt.get('product_name', '')
+
         return jsonify({'success': True, 'data': equipments})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/workshop/refresh-equipment-status', methods=['POST'])
+@login_required
+@planner_required
+def api_refresh_equipment_status():
+    """手动触发设备状态刷新（根据报工数据）"""
+    try:
+        updated = _refresh_equipment_status()
+        return jsonify({'success': True, 'updated': updated})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -4256,9 +4660,660 @@ def api_delete_workshop_layout(lid):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+
+# ========== Report Export APIs ==========
+@app.route('/api/reports/daily/export')
+@login_required
+def api_report_daily_export():
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from flask import send_file
+    import io
+    
+    date = request.args.get('date', datetime.now().strftime('%Y-%m-%d'))
+    team_id = request.args.get('team_id', type=int)
+    
+    personnel_map = _get_personnel_map()
+    report_data = _expand_reports_with_attendance_note(date, date)
+    
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT p.name, a.work_hours, a.is_overtime, a.leave_type, a.normal_hours, a.overtime_hours FROM attendance a INNER JOIN personnel p ON a.user_id = p.user_id WHERE a.work_date=?", (date,))
+    attend_data = {r[0]: {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or '', 'normal': r[4] or 0, 'ot': r[5] or 0} for r in c.fetchall()}
+    conn.close()
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = u'\u65e5\u62a5\u8868'
+    
+    headers = [u'\u59d3\u540d', u'\u73ed\u7ec4', u'\u6253\u5361\u5de5\u65f6', u'\u5e38\u89c4\u5de5\u65f6', u'\u52a0\u73ed\u5de5\u65f6', u'\u751f\u4ea7\u5de5\u65f6', u'\u603b\u4ea7\u91cf', u'\u826f\u54c1\u7387', u'\u751f\u4ea7\u6548\u7387', u'\u5de5\u65f6\u5229\u7528\u7387', u'\u52a0\u73ed']
+    hfill = PatternFill(start_color='1F4E79', end_color='1F4E79', fill_type='solid')
+    hfont = Font(color='FFFFFF', bold=True, size=11)
+    bdr = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.fill = hfill; cell.font = hfont; cell.alignment = Alignment(horizontal='center'); cell.border = bdr
+    
+    row_num = 2
+    for name, info in personnel_map.items():
+        if team_id and info['team_id'] != team_id: continue
+        rd = report_data.get(name, {'qty': 0, 'hours': 0, 'good_qty': 0, 'efficiency': 0})
+        ad = attend_data.get(name, {'hours': 0, 'overtime': 0, 'leave': '', 'normal': 0, 'ot': 0})
+        if name not in report_data and name not in attend_data: continue
+        good_rate = round(rd['good_qty'] / rd['qty'] * 100, 1) if rd['qty'] > 0 else 0
+        att_hrs = ad['hours']; prod_hrs = round(rd['hours'], 1)
+        util_rate = round(prod_hrs / att_hrs * 100, 1) if att_hrs > 0 else 0
+        vals = [name, info['department'], att_hrs, ad['normal'], ad['ot'], prod_hrs, rd['qty'],
+                str(good_rate)+'%' if good_rate > 0 else '-',
+                str(rd['efficiency'])+'%' if rd['efficiency'] > 0 else '-',
+                str(util_rate)+'%' if util_rate > 0 else '-',
+                u'\u52a0\u73ed' if ad['overtime'] else '-']
+        for col, v in enumerate(vals, 1):
+            cell = ws.cell(row=row_num, column=col, value=v)
+            cell.border = bdr; cell.alignment = Alignment(horizontal='center')
+        row_num += 1
+    
+    for col in range(1, len(headers)+1): ws.column_dimensions[chr(64+col)].width = 14
+    output = io.BytesIO(); wb.save(output); output.seek(0)
+    return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=u'\u65e5\u62a5\u8868_'+date+'.xlsx')
+
+
+@app.route('/api/reports/personal/export')
+@login_required
+def api_report_personal_export():
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from flask import send_file
+    import io
+    from datetime import timedelta
+    
+    name = request.args.get('name', '')
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+    if not name: return jsonify({'error': '请输入员工姓名'}), 400
+    
+    report_by_date = _expand_personal_report_by_date(name, date_from, date_to)
+
+    conn = get_connection(); c = conn.cursor()
+    c.execute("SELECT a.work_date, a.work_hours, a.is_overtime, a.leave_type, a.normal_hours, a.overtime_hours FROM attendance a INNER JOIN personnel p ON a.user_id=p.user_id WHERE p.name=? AND a.work_date BETWEEN ? AND ? ORDER BY a.work_date",
+              (name, date_from, date_to))
+    attend_by_date = {r[0]: {'hours': r[1] or 0, 'overtime': r[2], 'leave': r[3] or '', 'normal': r[4] or 0, 'ot': r[5] or 0} for r in c.fetchall()}
+    conn.close()
+    
+    days = []
+    d = datetime.strptime(date_from, '%Y-%m-%d'); end = datetime.strptime(date_to, '%Y-%m-%d')
+    while d <= end:
+        ds = d.strftime('%Y-%m-%d')
+        rd = report_by_date.get(ds, {'qty': 0, 'hours': 0, 'good_qty': 0, 'efficiency': 0})
+        ad = attend_by_date.get(ds, {'hours': 0, 'overtime': 0, 'leave': '', 'normal': 0, 'ot': 0})
+        att_hrs = ad['hours']; prod_hrs = rd['hours']
+        good_rate = round(rd['good_qty']/rd['qty']*100, 1) if rd['qty'] > 0 else 0
+        util_rate = round(prod_hrs/att_hrs*100, 1) if att_hrs > 0 else 0
+        status = ad['leave'] if ad['leave'] else ('加班' if ad['overtime'] else ('正常' if att_hrs > 0 else ('休息' if ds in attend_by_date else '-')))
+        days.append({'date': ds, 'attendance_hours': att_hrs, 'normal_hours': ad['normal'], 'overtime_hours': ad['ot'],
+                     'hours': prod_hrs, 'qty': rd['qty'], 'good_rate': good_rate, 'efficiency': rd['efficiency'],
+                     'utilization_rate': util_rate, 'status': status})
+        d += timedelta(days=1)
+    
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = name + '效率查询'
+    hfill = PatternFill(start_color='1F4E79', end_color='1F4E79', fill_type='solid')
+    hfont = Font(color='FFFFFF', bold=True, size=11)
+    bdr = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    
+    headers = ['指标'] + [day['date'][5:] for day in days]
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.fill = hfill; cell.font = hfont; cell.alignment = Alignment(horizontal='center'); cell.border = bdr
+    
+    fields = [('attendance_hours','打卡工时'),('normal_hours','常规工时'),('overtime_hours','加班工时'),
+              ('hours','生产工时'),('qty','总产量'),('good_rate','良品率'),('efficiency','生产效率'),
+              ('utilization_rate','工时利用率'),('status','出勤状态')]
+    for row_idx, (key, label) in enumerate(fields, 2):
+        ws.cell(row=row_idx, column=1, value=label).border = bdr
+        ws.cell(row=row_idx, column=1).font = Font(bold=True)
+        for col_idx, day in enumerate(days, 2):
+            val = day[key]
+            if key in ('good_rate','efficiency','utilization_rate'): val = str(val)+'%' if val > 0 else '-'
+            elif key in ('attendance_hours','normal_hours','overtime_hours','hours'): val = str(val)+'h' if val > 0 else '-'
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell.border = bdr; cell.alignment = Alignment(horizontal='center')
+    
+    ws.column_dimensions['A'].width = 14
+    for col in range(2, len(days)+2):
+        c_letter = chr(64+col) if col <= 26 else chr(64+col//26)+chr(64+col%26)
+        ws.column_dimensions[c_letter].width = 12
+    
+    output = io.BytesIO(); wb.save(output); output.seek(0)
+    return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=name+'效率查询_'+date_from+'_'+date_to+'.xlsx')
+
+@app.route('/api/reports/weekly/export')
+@login_required
+def api_report_weekly_export():
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from flask import send_file
+    import io
+    from datetime import timedelta
+    
+    week_start = request.args.get('week_start', '')
+    team_id = request.args.get('team_id', type=int)
+    if not week_start: return jsonify({'error': u'\u8bf7\u9009\u62e9\u5468'}), 400
+    
+    start = datetime.strptime(week_start, '%Y-%m-%d')
+    dates = [(start+timedelta(days=i)).strftime('%Y-%m-%d') for i in range(7)]
+    ph = ','.join(['?' for _ in dates])
+    
+    personnel_map = _get_personnel_map()
+    week_end = (start + timedelta(days=6)).strftime('%Y-%m-%d')
+    expanded = _expand_reports_with_attendance_note(week_start, week_end)
+    report_data = {}
+    for nm, rd in expanded.items():
+        report_data[nm] = {'qty': rd['qty'], 'hours': rd['hours'], 'good_qty': rd['good_qty'], 'efficiency': rd['efficiency'], 'days': rd['report_count']}
+    
+    conn = get_connection(); c = conn.cursor()
+    c.execute("SELECT p.name, SUM(a.work_hours), SUM(a.normal_hours), SUM(a.overtime_hours), COUNT(*) FROM attendance a INNER JOIN personnel p ON a.user_id=p.user_id WHERE a.work_date IN ("+ph+") GROUP BY p.name", dates)
+    attend_data = {}
+    for r in c.fetchall(): attend_data[r[0]] = {'hours': r[1] or 0, 'normal': r[2] or 0, 'ot': r[3] or 0, 'days': r[4] or 0}
+    conn.close()
+    
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = u'\u5468\u62a5\u8868'
+    headers = [u'\u59d3\u540d',u'\u73ed\u7ec4',u'\u51fa\u52e4\u5929\u6570',u'\u6253\u5361\u5de5\u65f6',u'\u5e38\u89c4\u5de5\u65f6',u'\u52a0\u73ed\u5de5\u65f6',u'\u751f\u4ea7\u5de5\u65f6',u'\u603b\u4ea7\u91cf',u'\u826f\u54c1\u7387',u'\u5e73\u5747\u6548\u7387',u'\u52a0\u73ed\u5929\u6570',u'\u5de5\u65f6\u5229\u7528\u7387',u'\u65e5\u5747\u4ea7\u91cf']
+    hfill = PatternFill(start_color='1F4E79', end_color='1F4E79', fill_type='solid')
+    hfont = Font(color='FFFFFF', bold=True, size=11)
+    bdr = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.fill = hfill; cell.font = hfont; cell.alignment = Alignment(horizontal='center'); cell.border = bdr
+    
+    row_num = 2
+    for name, info in personnel_map.items():
+        if team_id and info['team_id'] != team_id: continue
+        rd = report_data.get(name, {'qty': 0, 'hours': 0, 'good_qty': 0, 'efficiency': 0, 'days': 0})
+        ad = attend_data.get(name, {'hours': 0, 'normal': 0, 'ot': 0, 'days': 0})
+        if rd['qty'] == 0 and ad['hours'] == 0: continue
+        good_rate = round(rd['good_qty']/rd['qty']*100, 1) if rd['qty'] > 0 else 0
+        att_hrs = ad['hours']; prod_hrs = round(rd['hours'], 1)
+        util_rate = round(prod_hrs/att_hrs*100, 1) if att_hrs > 0 else 0
+        daily_avg = round(rd['qty']/rd['days'], 1) if rd['days'] > 0 else 0
+        vals = [name, info['department'], ad['days'], att_hrs, ad['normal'], ad['ot'], prod_hrs, rd['qty'],
+                str(good_rate)+'%' if good_rate > 0 else '-',
+                str(rd['efficiency'])+'%' if rd['efficiency'] > 0 else '-',
+                rd['days'], str(util_rate)+'%' if util_rate > 0 else '-', daily_avg]
+        for col, v in enumerate(vals, 1):
+            cell = ws.cell(row=row_num, column=col, value=v)
+            cell.border = bdr; cell.alignment = Alignment(horizontal='center')
+        row_num += 1
+    
+    for col in range(1, len(headers)+1): ws.column_dimensions[chr(64+col)].width = 14
+    output = io.BytesIO(); wb.save(output); output.seek(0)
+    return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=u'\u5468\u62a5\u8868_'+week_start+'.xlsx')
+
+
+@app.route('/api/reports/monthly/export')
+@login_required
+def api_report_monthly_export():
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from flask import send_file
+    import io
+    import calendar as cal
+    
+    month = request.args.get('month', '')
+    team_id = request.args.get('team_id', type=int)
+    if not month: return jsonify({'error': u'\u8bf7\u9009\u62e9\u6708\u4efd'}), 400
+    
+    date_from = month + '-01'
+    y, m = int(month.split('-')[0]), int(month.split('-')[1])
+    last_day = cal.monthrange(y, m)[1]
+    date_to = month + '-' + str(last_day).zfill(2)
+    
+    conn = get_connection(); c = conn.cursor()
+    personnel_map = _get_personnel_map()
+    personnel_map = _get_personnel_map()
+    expanded = _expand_reports_with_attendance_note(date_from, date_to)
+    report_data = {}
+    for nm, rd in expanded.items():
+        report_data[nm] = {'qty': rd['qty'], 'hours': rd['hours'], 'good_qty': rd['good_qty'], 'efficiency': rd['efficiency'], 'days': rd['report_count']}
+    
+    conn = get_connection(); c = conn.cursor()
+    c.execute("SELECT p.name, SUM(a.work_hours), SUM(a.normal_hours), SUM(a.overtime_hours), COUNT(*), SUM(CASE WHEN a.leave_type IS NOT NULL AND a.leave_type != '' THEN 1 ELSE 0 END) FROM attendance a INNER JOIN personnel p ON a.user_id=p.user_id WHERE a.work_date BETWEEN ? AND ? GROUP BY p.name", (date_from, date_to))
+    attend_data = {}
+    for r in c.fetchall(): attend_data[r[0]] = {'hours': r[1] or 0, 'normal': r[2] or 0, 'ot': r[3] or 0, 'days': r[4] or 0, 'leave': r[5] or 0}
+    conn.close()
+    hfont = Font(color='FFFFFF', bold=True, size=11)
+    bdr = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.fill = hfill; cell.font = hfont; cell.alignment = Alignment(horizontal='center'); cell.border = bdr
+    
+    row_num = 2
+    for name, info in personnel_map.items():
+        if team_id and info['team_id'] != team_id: continue
+        rd = report_data.get(name, {'qty': 0, 'hours': 0, 'good_qty': 0, 'efficiency': 0, 'days': 0})
+        ad = attend_data.get(name, {'hours': 0, 'normal': 0, 'ot': 0, 'days': 0, 'leave': 0})
+        if rd['qty'] == 0 and ad['hours'] == 0: continue
+        good_rate = round(rd['good_qty']/rd['qty']*100, 1) if rd['qty'] > 0 else 0
+        att_hrs = ad['hours']; prod_hrs = round(rd['hours'], 1)
+        util_rate = round(prod_hrs/att_hrs*100, 1) if att_hrs > 0 else 0
+        daily_avg = round(rd['qty']/rd['days'], 1) if rd['days'] > 0 else 0
+        vals = [name, info['department'], ad['days'], att_hrs, ad['normal'], ad['ot'], prod_hrs, rd['qty'],
+                str(good_rate)+'%' if good_rate > 0 else '-',
+                str(rd['efficiency'])+'%' if rd['efficiency'] > 0 else '-',
+                rd['days'], str(util_rate)+'%' if util_rate > 0 else '-', daily_avg, '0%', ad['leave']]
+        for col, v in enumerate(vals, 1):
+            cell = ws.cell(row=row_num, column=col, value=v)
+            cell.border = bdr; cell.alignment = Alignment(horizontal='center')
+        row_num += 1
+    
+    for col in range(1, len(headers)+1): ws.column_dimensions[chr(64+col)].width = 14
+    output = io.BytesIO(); wb.save(output); output.seek(0)
+    return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=u'\u6708\u62a5\u8868_'+month+'.xlsx')
+
+
+
+
+
+
+@app.route('/material-alerts-page')
+@login_required
+def material_alerts_page():
+    return render_template('material_alerts.html')
+
+# ========== Material Alerts API ==========
+
+def _check_material_alerts():
+    """Scan for material alerts using BOM product hierarchy.
+
+    Algorithm:
+    1. Auto-close alerts for parent orders that already have progress > 0%.
+    2. For each in_progress order, find the last substantive process (excluding 清洗/入库).
+    3. Check if that last process has work reports (has started being reported).
+    4. Use BOM to find parent product: bom.child_product_code = order's product_code -> bom.parent_product_code
+    5. Find work orders with that parent product_code (status in_progress or pending).
+       That work order IS the parent - no task-number filtering needed.
+    6. Insert alert.
+    """
+    import re as _re
+
+    conn = get_connection()
+    c = conn.cursor()
+    skip_kw = ['清洗', '入库']
+
+    # Step 1: Auto-close alerts for parent orders that already started production
+    c.execute("SELECT order_no, process_progress FROM work_orders "
+              "WHERE process_progress IS NOT NULL AND process_progress != '' "
+              "AND status IN ('in_progress','pending')")
+    parent_started = set()
+    for order_no, prog in c.fetchall():
+        for step in prog.split('->'):
+            step = step.strip()
+            if not step:
+                continue
+            m = _re.match(r'^(.+?)[【（]', step)
+            name = m.group(1).strip() if m else step
+            if any(kw in name for kw in skip_kw):
+                continue
+            m2 = _re.search(r'【(\d+\.?\d*)/(\d+\.?\d*)】', step)
+            if m2 and float(m2.group(1)) > 0:
+                parent_started.add(order_no)
+            break
+    auto_closed = 0
+    if parent_started:
+        ph = ','.join(['?' for _ in parent_started])
+        c.execute(
+            "UPDATE material_alerts SET status='auto_closed', closed_at=datetime('now','localtime'), "
+            "closed_by='system' WHERE status='pending' AND parent_order_no IN (" + ph + ")",
+            list(parent_started)
+        )
+        auto_closed = c.rowcount
+
+    # Step 2: Build work_reports index
+    c.execute("SELECT order_no, process_name, COUNT(*), MAX(create_time), MAX(good_qty) "
+              "FROM work_reports GROUP BY order_no, process_name")
+    report_map = {}
+    for r in c.fetchall():
+        report_map[(r[0], r[1])] = {"count": r[2], "latest_time": r[3], "qty": r[4]}
+
+    # Step 3: Find child trigger candidates
+    c.execute("SELECT order_no, product_code, product_name, process_progress, status "
+              "FROM work_orders WHERE process_progress IS NOT NULL AND process_progress != '' "
+              "AND status = 'in_progress'")
+    order_rows = c.fetchall()
+
+    candidates = []
+    for order_no, child_pc, child_pn, prog, st in order_rows:
+        # Parse processes from progress string, exclude 清洗/入库
+        last_sub = None
+        for step in prog.split('->'):
+            step = step.strip()
+            if not step:
+                continue
+            m = _re.match(r'^(.+?)[【（]', step)
+            name = m.group(1).strip() if m else step
+            if any(kw in name for kw in skip_kw):
+                continue
+            last_sub = name
+        if not last_sub:
+            continue
+        # Check if last substantive process has reports
+        matched_info = None
+        for rp_key, rp_info in report_map.items():
+            if rp_key[0] == order_no and last_sub in rp_key[1]:
+                matched_info = rp_info
+                break
+        if not matched_info or matched_info["count"] <= 0:
+            continue
+        candidates.append({
+            'order_no': order_no,
+            'product_code': child_pc,
+            'product_name': child_pn,
+            'trigger_process': last_sub,
+            'trigger_qty': matched_info["qty"] or 0,
+            'trigger_time': matched_info["latest_time"] or ''
+        })
+
+    if not candidates:
+        conn.commit()
+        conn.close()
+        return auto_closed
+
+    # Step 4: Build BOM child_product -> parent_product map
+    c.execute("SELECT DISTINCT parent_product_code, child_product_code FROM bom")
+    bom_child_to_parent = {}
+    for parent_pc, child_pc in c.fetchall():
+        if child_pc not in bom_child_to_parent:
+            bom_child_to_parent[child_pc] = []
+        bom_child_to_parent[child_pc].append(parent_pc)
+
+    # Step 5: Build product_code -> work_orders index
+    c.execute("SELECT order_no, product_code, product_name FROM work_orders "
+              "WHERE status IN ('in_progress','pending')")
+    pc_to_orders = {}
+    for o_no, o_pc, o_pn in c.fetchall():
+        if o_pc not in pc_to_orders:
+            pc_to_orders[o_pc] = []
+        pc_to_orders[o_pc].append((o_no, o_pn))
+
+    # Step 6: Build order prefix -> order list index
+    # Order prefix is the part before the first '-' (e.g. MO000489 from MO000489-005)
+    def _order_prefix(on):
+        idx = on.find('-')
+        return on[:idx] if idx > 0 else on
+
+    c.execute("SELECT order_no, product_code, product_name FROM work_orders "
+              "WHERE status IN ('in_progress','pending')")
+    all_active_orders = {}
+    for o_no, o_pc, o_pn in c.fetchall():
+        all_active_orders[o_no] = (o_pc, o_pn)
+
+    # Step 7: Insert alerts - BOM product hierarchy + same order family
+    c.execute("SELECT child_order_no, parent_order_no, trigger_process FROM material_alerts "
+              "WHERE status NOT IN ('auto_closed')")
+    existing = set((r[0], r[1], r[2]) for r in c.fetchall())
+
+    new_count = 0
+    for cand in candidates:
+        child_order = cand['order_no']
+        child_pc = cand['product_code']
+        trigger_proc = cand['trigger_process']
+        child_pfx = _order_prefix(child_order)
+
+        # Find parent product codes from BOM
+        parent_products = bom_child_to_parent.get(child_pc, [])
+        if not parent_products:
+            continue
+
+        # Find parent orders: must share the same order prefix family
+        for p_order_no, (p_pc, p_pn) in all_active_orders.items():
+            if p_order_no == child_order:
+                continue
+            if p_order_no in parent_started:
+                continue
+            # Must be same order family (same prefix before '-')
+            if _order_prefix(p_order_no) != child_pfx:
+                continue
+            # Must match a BOM parent product
+            if p_pc not in parent_products:
+                continue
+            if (child_order, p_order_no, trigger_proc) in existing:
+                continue
+            try:
+                c.execute(
+                    """INSERT OR IGNORE INTO material_alerts
+                        (child_order_no, child_product_code, child_product_name,
+                         parent_order_no, parent_product_code, parent_product_name,
+                         trigger_process, bom_qty, trigger_qty, trigger_time, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
+                    (
+                        child_order, child_pc, cand['product_name'],
+                        p_order_no, p_pc, p_pn,
+                        trigger_proc, 0, cand['trigger_qty'], cand['trigger_time']
+                    )
+                )
+                if c.rowcount > 0:
+                    new_count += 1
+                    existing.add((child_order, p_order_no, trigger_proc))
+            except Exception:
+                pass
+
+    conn.commit()
+    conn.close()
+    return new_count + auto_closed
+@app.route('/api/material-alerts/refresh', methods=['POST'])
+@login_required
+@planner_required
+def api_material_alerts_refresh():
+    """Trigger material alert scan."""
+    new_count = _check_material_alerts()
+    return jsonify({'ok': True, 'new_alerts': new_count})
+
+@app.route('/api/material-alerts')
+@login_required
+def api_material_alerts():
+    """Get material alerts with optional filters: status, team, date_from, date_to."""
+    import re as _alert_re
+
+    def _task_base(order_no):
+        if not order_no:
+            return ''
+        s = str(order_no)
+        m = _alert_re.match(r'^([A-Za-z]+0*)(\d+)(?:-\d+)?$', s)
+        return m.group(1) + m.group(2) if m else s.split('-')[0]
+
+    status = request.args.get('status', '')
+    team = request.args.get('team', '')
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+    conn = get_connection()
+    c = conn.cursor()
+
+    # Build query with filters
+    conditions = []
+    params = []
+    if status == 'closed':
+        conditions.append("ma.status='closed'")
+    elif status == 'all':
+        pass  # no filter
+    else:
+        conditions.append("ma.status='pending'")
+        conditions.append("ma.child_order_no NOT IN (SELECT order_no FROM work_orders WHERE status='completed')")
+        conditions.append("ma.parent_order_no NOT IN (SELECT order_no FROM work_orders WHERE status='completed')")
+
+    if date_from:
+        conditions.append("ma.created_at >= ?")
+        params.append(date_from + ' 00:00:00')
+    if date_to:
+        conditions.append("ma.created_at <= ?")
+        params.append(date_to + ' 23:59:59')
+
+    where = (' WHERE ' + ' AND '.join(conditions)) if conditions else ''
+
+    c.execute("""SELECT ma.id, ma.child_order_no, ma.child_product_code, ma.child_product_name,
+        ma.parent_order_no, ma.parent_product_code, ma.parent_product_name,
+        ma.trigger_process, ma.bom_qty, ma.trigger_qty, ma.trigger_time, ma.status, ma.closed_by, ma.closed_at, ma.created_at
+        FROM material_alerts ma""" + where + " ORDER BY ma.created_at DESC", params)
+
+    alerts = []
+    for r in c.fetchall():
+        alerts.append({
+            'id': r[0], 'child_order_no': r[1], 'child_product_code': r[2],
+            'child_product_name': r[3], 'parent_order_no': r[4],
+            'parent_product_code': r[5], 'parent_product_name': r[6],
+            'trigger_process': r[7], 'bom_qty': r[8], 'trigger_qty': r[9], 'trigger_time': r[10], 'status': r[11],
+            'closed_by': r[12], 'closed_at': r[13], 'created_at': r[14],
+            'team_name': '', 'parent_progress': '', 'child_progress': ''
+        })
+
+    # Build process->team map
+    process_team_map = {}
+    c.execute("SELECT process_name, team_name FROM processes WHERE team_name IS NOT NULL AND team_name != ''")
+    for r in c.fetchall():
+        process_team_map[r[0]] = r[1]
+
+    # Resolve team from PARENT order's first substantive process (exclude 清洗/入库)
+    skip_kw = ['清洗', '入库']
+    parent_team_cache = {}
+    for alert in alerts:
+        p_order = alert['parent_order_no']
+        if p_order not in parent_team_cache:
+            team_name = ''
+            p_code = alert['parent_product_code']
+            c.execute("SELECT process_list FROM process_routes WHERE product_code=? LIMIT 1", (p_code,))
+            pr = c.fetchone()
+            if pr and pr[0]:
+                steps = [s.strip() for s in pr[0].split(',') if s.strip()]
+                for step in steps:
+                    skip = False
+                    for kw in skip_kw:
+                        if kw in step:
+                            skip = True
+                            break
+                    if not skip:
+                        team_name = process_team_map.get(step, '')
+                        if not team_name:
+                            for pn, tn in process_team_map.items():
+                                if pn in step or step in pn:
+                                    team_name = tn
+                                    break
+                        if not team_name:
+                            # try stripping parenthetical suffix e.g. 焊接开关座（手动）-> 焊接开关座
+                            base = re.sub(r'[（(].*?[）)]', '', step).strip()
+                            if base:
+                                team_name = process_team_map.get(base, '')
+                                if not team_name:
+                                    for pn, tn in process_team_map.items():
+                                        if pn in base or base in pn:
+                                            team_name = tn
+                                            break
+                        if team_name:
+                            break
+            parent_team_cache[p_order] = team_name
+        alert['team_name'] = parent_team_cache[p_order]
+
+    # Add parent order progress
+    parent_progress_cache = {}
+    for alert in alerts:
+        p_order = alert['parent_order_no']
+        if p_order not in parent_progress_cache:
+            c.execute("SELECT process_progress FROM work_orders WHERE order_no=?", (p_order,))
+            row = c.fetchone()
+            parent_progress_cache[p_order] = row[0] if row and row[0] else ''
+        alert['parent_progress'] = parent_progress_cache[p_order]
+
+    # Add child order progress
+    child_progress_cache = {}
+    for alert in alerts:
+        c_order = alert['child_order_no']
+        if c_order not in child_progress_cache:
+            c.execute('SELECT process_progress FROM work_orders WHERE order_no=?',(c_order,))
+            row = c.fetchone()
+            child_progress_cache[c_order] = row[0] if row and row[0] else ''
+        alert['child_progress'] = child_progress_cache[c_order]
+
+    # Filter by team if specified
+    if team:
+        alerts = [a for a in alerts if a['team_name'] == team]
+
+    # Get BOM details for each parent order
+    bom_details = {}
+    for alert in alerts:
+        parent_order = alert['parent_order_no']
+        if parent_order not in bom_details:
+            parent_code = alert['parent_product_code']
+            c.execute("""SELECT child_product_code, child_product_name, quantity, process_team
+                FROM bom WHERE parent_product_code=?""", (parent_code,))
+            children = []
+            for br in c.fetchall():
+                c2 = conn.cursor()
+                c2.execute("SELECT order_no, status, process_progress FROM work_orders WHERE product_code=? AND status IN ('in_progress','pending') LIMIT 1", (br[0],))
+                wo = c2.fetchone()
+                children.append({
+                    'product_code': br[0], 'product_name': br[1],
+                    'quantity': br[2], 'process_team': br[3],
+                    'work_order_no': wo[0] if wo else None,
+                    'work_order_status': wo[1] if wo else None,
+                    'work_order_progress': wo[2] if wo else None,
+                })
+            bom_details[parent_order] = children
+        alert['bom_children'] = bom_details.get(parent_order, [])
+
+    conn.close()
+    return jsonify({'data': alerts})
+@app.route('/api/material-alerts/<int:alert_id>/close', methods=['POST'])
+@login_required
+def api_material_alert_close(alert_id):
+    """Mark all alerts for the same parent order as closed."""
+    user = session.get('user', {})
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT parent_order_no FROM material_alerts WHERE id=?", (alert_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'not found'}), 404
+    parent_order_no = row[0]
+    c.execute("UPDATE material_alerts SET status='closed', closed_by=?, closed_at=datetime('now','localtime') WHERE parent_order_no=? AND status='pending'",
+              (user.get('display_name', ''), parent_order_no))
+    closed = c.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'closed': closed})
+
+@app.route('/api/material-alerts/close-batch', methods=['POST'])
+@login_required
+def api_material_alerts_close_batch():
+    """Close all alerts for the parent orders of selected alerts."""
+    data = request.json
+    ids = data.get('ids', [])
+    if not ids:
+        return jsonify({'error': 'No IDs provided'}), 400
+    user = session.get('user', {})
+    conn = get_connection()
+    c = conn.cursor()
+    placeholders = ','.join(['?' for _ in ids])
+    c.execute('SELECT DISTINCT parent_order_no FROM material_alerts WHERE id IN (' + placeholders + ')', ids)
+    parent_orders = [r[0] for r in c.fetchall() if r[0]]
+    closed = 0
+    if parent_orders:
+        ph2 = ','.join(['?' for _ in parent_orders])
+        c.execute('UPDATE material_alerts SET status=\'closed\', closed_by=?, closed_at=datetime(\'now\',\'localtime\') WHERE parent_order_no IN (' + ph2 + ') AND status=\'pending\'',
+                  [user.get('display_name', '')] + parent_orders)
+        closed = c.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'closed': closed})
 if __name__ == "__main__":
     init_database()
-    app.run(debug=False, host="0.0.0.0", port=5000)
+    # Initialize equipment status on server start (reset all to normal, then refresh from today's reports)
+    try:
+        _refresh_equipment_status()
+        print("[equipment-status] Initial refresh on server start")
+    except Exception as e:
+        print(f"[equipment-status] Initial refresh error: {e}")
+    app.run(debug=False, host="0.0.0.0", port=6002)
+
 
 
 

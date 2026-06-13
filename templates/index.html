@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -35,6 +35,10 @@
 }
 
 /* Left: Floor Plan */
+
+.wm-panel label { display:flex; align-items:center; gap:5px; color:#b0bec5; font-size:12px; cursor:pointer; padding:2px 0; }
+.wm-panel label:hover { color:#4fc3f7; }
+.wm-panel input[type="checkbox"] { accent-color:#4fc3f7; }
 .plan-area {
     flex: 1; position: relative; border-right: 1px solid #1e3a5f;
     min-width: 0;
@@ -70,6 +74,7 @@
 .eq-hover-card .hc-row { display: flex; justify-content: space-between; padding: 2px 0; }
 .eq-hover-card .hc-label { color: #8eafc4; }
 .eq-hover-card .hc-val { color: #fff; font-weight: 500; }
+.hc-status { font-size: 11px; padding: 1px 6px; border-radius: 3px; font-weight: normal; }
 
 /* Right: Charts */
 .charts-area {
@@ -150,6 +155,7 @@
     <!-- Main -->
     <div class="main-content">
         <!-- Left: Floor Plan -->
+        
         <div class="plan-area">
             <div class="plan-header">
                 <span class="plan-title">| 车间实时监控</span>
@@ -158,6 +164,17 @@
                     <button onclick="zoomIn()">+</button>
                     <button onclick="zoomOut()">-</button>
                     <button onclick="resetView()">重置</button>
+                    <div class="wm-dropdown" style="position:relative;display:inline-block;">
+                        <button onclick="toggleWmPanel()" style="background:#0d2137;color:#8eafc4;border:1px solid #1e3a5f;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:12px;">水印设置</button>
+                        <div class="wm-panel" id="wm-panel" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;background:rgba(13,33,55,0.95);border:1px solid #1e3a5f;border-radius:6px;padding:10px 14px;z-index:100;white-space:nowrap;">
+                            <label><input type="checkbox" id="wm-today_output" onchange="saveWmSettings()" checked> 今日产量</label>
+                            <label><input type="checkbox" id="wm-efficiency" onchange="saveWmSettings()" checked> 效率</label>
+                            <label><input type="checkbox" id="wm-quality_rate" onchange="saveWmSettings()"> 良品率</label>
+                            <label><input type="checkbox" id="wm-team_name" onchange="saveWmSettings()"> 班组</label>
+                            <label><input type="checkbox" id="wm-current_order" onchange="saveWmSettings()"> 工单号</label>
+                            <label><input type="checkbox" id="wm-health_score" onchange="saveWmSettings()"> 健康评分</label>
+                        </div>
+                    </div>
                     <span style="color:#546e7a;font-size:10px;" id="plan-status">未加载布局</span>
                 </div>
             </div>
@@ -255,6 +272,19 @@ function loadLatestLayout() {
                     idx++;
                 });
                 planCanvas.renderAll();
+                planCanvas.forEachObject(function(obj){
+                    if(!obj.customEqId) return;
+                    var label = obj.customName || obj.customCode || "";
+                    if(!label) return;
+                    if(obj.type==="group"){
+                        obj.forEachObject(function(ch){
+                            if(ch.type==="text") ch.set("text", label);
+                        });
+                    } else if(obj.type==="text"){
+                        obj.set("text", label);
+                    }
+                });
+                planCanvas.renderAll();
                 layoutData = layout;
                 document.getElementById("plan-status").textContent = "布局: " + (layout.name||"默认");
                 toggleLive(); // Auto-start live mode
@@ -289,20 +319,21 @@ function fetchLiveData() {
         updatePlanVisuals();
         updateCharts(d.data);
         updateAlerts(d.data);
+        renderWatermarks(d.data);
     }).catch(function(){});
 }
 
 function updateKPIs(list) {
     var total = list.length;
     var running = list.filter(function(e){return e.status==="running";}).length;
-    var idle = list.filter(function(e){return e.status==="idle";}).length;
     var down = list.filter(function(e){return e.status==="down";}).length;
+    var standby = total - running - down;
     var eff = total > 0 ? Math.round(running/total*100) : 0;
 
     document.getElementById("kpi-total").textContent = total;
     document.getElementById("kpi-running").textContent = running;
     document.getElementById("kpi-running-pct").textContent = total > 0 ? Math.round(running/total*100)+"%" : "";
-    document.getElementById("kpi-idle").textContent = idle;
+    document.getElementById("kpi-idle").textContent = standby;
     document.getElementById("kpi-down").textContent = down;
     document.getElementById("kpi-eff").textContent = eff + "%";
 }
@@ -311,7 +342,7 @@ var statusColors = {
     running: {fill:"#1b5e20",stroke:"#00e676"},
     idle: {fill:"#4a4100",stroke:"#ffd740"},
     down: {fill:"#4a1a1a",stroke:"#ff5252"},
-    normal: {fill:"#263238",stroke:"#546e7a"}
+    normal: {fill:"#4a4100",stroke:"#ffd740"}
 };
 
 function updatePlanVisuals() {
@@ -329,6 +360,12 @@ function updatePlanVisuals() {
             obj.set("fill",sc.fill); obj.set("stroke",sc.stroke);
         }
         obj._liveEq = eq;
+        // Update text labels to show device name
+        if(obj.type==="group"){
+            obj.forEachObject(function(ch){
+                if(ch.type==="text") ch.set("text", eq.name || eq.code || "");
+            });
+        }
     });
     planCanvas.renderAll();
 }
@@ -352,14 +389,19 @@ planCanvas.on("mouse:over", function(opt) {
     var obj = opt.target;
     if(!obj || !obj._liveEq) return;
     var eq = obj._liveEq;
-    var st = {running:"运行中",idle:"待机",down:"故障",normal:"未排班"};
-    var sc = {running:"#00e676",idle:"#ffd740",down:"#ff5252",normal:"#546e7a"};
+    var st = {running:"运行中",idle:"待机",down:"故障",normal:"待机"};
+    var sc = {running:"#00e676",idle:"#ffd740",down:"#ff5252",normal:"#ffd740"};
     var card = document.getElementById("hover-card");
-    card.innerHTML = '<div class="hc-title">'+(eq.code||"")+'</div>' +
-        '<div class="hc-row"><span class="hc-label">名称</span><span class="hc-val">'+(eq.name||"--")+'</span></div>' +
-        '<div class="hc-row"><span class="hc-label">状态</span><span class="hc-val" style="color:'+(sc[eq.status]||"#fff")+'">'+(st[eq.status]||eq.status)+'</span></div>' +
-        '<div class="hc-row"><span class="hc-label">班组</span><span class="hc-val">'+(eq.team_id||"--")+'</span></div>' +
-        '<div class="hc-row"><span class="hc-label">类型</span><span class="hc-val">'+(eq.model||"--")+'</span></div>';
+    var sColor = sc[eq.status]||"#546e7a";
+    var sLabel = st[eq.status]||eq.status;
+    card.innerHTML = '<div class="hc-title">'+(eq.name||eq.code||"")+' <span class="hc-status" style="background:'+sColor+'22;color:'+sColor+';border:1px solid '+sColor+';">'+sLabel+'</span></div>' +
+        '<div class="hc-row"><span class="hc-label">班组</span><span class="hc-val">'+(eq.team_name||"--")+'</span></div>' +
+        '<div class="hc-row"><span class="hc-label">产量</span><span class="hc-val">'+(eq.report_qty!=null?eq.report_qty:"--")+'</span></div>' +
+        '<div class="hc-row"><span class="hc-label">效率</span><span class="hc-val">'+(eq.efficiency!=null?eq.efficiency+"%":"--")+'</span></div>' +
+        '<div class="hc-row"><span class="hc-label">订单</span><span class="hc-val">'+(eq.order_no||"--")+'</span></div>' +
+        '<div class="hc-row"><span class="hc-label">工序</span><span class="hc-val">'+(eq.process_name||"--")+'</span></div>' +
+        '<div class="hc-row"><span class="hc-label">产品</span><span class="hc-val">'+(eq.product_name||"--")+'</span></div>' +
+        '<div class="hc-row"><span class="hc-label">报工时间</span><span class="hc-val">'+(eq.report_time||"--")+'</span></div>';
     card.style.display = "block";
 });
 planCanvas.on("mouse:move", function(opt) {
@@ -387,9 +429,9 @@ chartStatus.setOption({
         emphasis: { label: { show: true, fontSize: 14, color: "#fff" } },
         data: [
             { value: 0, name: "运行中", itemStyle: { color: "#00e676" } },
-            { value: 0, name: "待机", itemStyle: { color: "#ffd740" } },
+            
             { value: 0, name: "故障", itemStyle: { color: "#ff5252" } },
-            { value: 0, name: "未排班", itemStyle: { color: "#546e7a" } }
+            { value: 0, name: "待机", itemStyle: { color: "#ffd740" } }
         ]
     }]
 });
@@ -401,7 +443,7 @@ chartTeam.setOption({
     yAxis: { type: "value", axisLabel: { color: "#8eafc4", fontSize: 10 }, splitLine: { lineStyle: { color: "#0d2137" } }, axisLine: { lineStyle: { color: "#1e3a5f" } } },
     series: [
         { name: "运行", type: "bar", stack: "total", data: [], itemStyle: { color: "#00e676" } },
-        { name: "待机", type: "bar", stack: "total", data: [], itemStyle: { color: "#ffd740" } },
+        
         { name: "故障", type: "bar", stack: "total", data: [], itemStyle: { color: "#ff5252" } }
     ]
 });
@@ -414,9 +456,9 @@ function updateCharts(list) {
     var normal = list.length - running - idle - down;
     chartStatus.setOption({ series: [{ data: [
         { value: running, name: "运行中", itemStyle: { color: "#00e676" } },
-        { value: idle, name: "待机", itemStyle: { color: "#ffd740" } },
+        
         { value: down, name: "故障", itemStyle: { color: "#ff5252" } },
-        { value: normal, name: "未排班", itemStyle: { color: "#546e7a" } }
+        { value: normal + idle, name: "待机", itemStyle: { color: "#ffd740" } }
     ] }] });
 
     // Team bar
@@ -425,7 +467,7 @@ function updateCharts(list) {
         var tid = eq.team_id || "unknown";
         if(!teams[tid]) teams[tid] = {running:0,idle:0,down:0};
         if(eq.status==="running") teams[tid].running++;
-        else if(eq.status==="idle") teams[tid].idle++;
+        else if(eq.status==="idle") teams[tid].idle++; // kept for team bars
         else if(eq.status==="down") teams[tid].down++;
     });
     var teamNames = [], tRun=[], tIdle=[], tDown=[];
@@ -465,6 +507,94 @@ function updateAlerts(list) {
 window.addEventListener("resize", function() { chartStatus.resize(); chartTeam.resize(); });
 
 // Load
+/* ========== Watermark Display Settings ========== */
+var wmSettings = {
+    today_output: true,
+    efficiency: true,
+    quality_rate: false,
+    team_name: false,
+    current_order: false,
+    health_score: false
+};
+
+function loadWmSettings() {
+    try {
+        var saved = localStorage.getItem('wm_settings');
+        if(saved) wmSettings = JSON.parse(saved);
+    } catch(e){}
+    // Apply to checkboxes
+    for(var k in wmSettings) {
+        var el = document.getElementById('wm-' + k);
+        if(el) el.checked = wmSettings[k];
+    }
+}
+
+function saveWmSettings() {
+    for(var k in wmSettings) {
+        var el = document.getElementById('wm-' + k);
+        if(el) wmSettings[k] = el.checked;
+    }
+    localStorage.setItem('wm_settings', JSON.stringify(wmSettings));
+}
+
+function renderWatermarks(list) {
+    if(!liveMode) return;
+    planCanvas.forEachObject(function(obj) {
+        if(!obj._liveEq) return;
+        var eq = null;
+        for(var i=0;i<list.length;i++){if(list[i].id===obj._liveEq.id){eq=list[i];break;}}
+        if(!eq) return;
+
+        // Remove old watermark texts
+        var toRemove = [];
+        planCanvas.forEachObject(function(o) {
+            if(o._wmParent === obj._liveEq.id) toRemove.push(o);
+        });
+        toRemove.forEach(function(o){planCanvas.remove(o);});
+
+        // Build watermark lines
+        var lines = [];
+        if(wmSettings.today_output) lines.push("\u4ea7\u91cf:" + (eq.report_qty != null ? eq.report_qty : "--"));
+        if(wmSettings.efficiency) lines.push("\u6548\u7387:" + (eq.efficiency != null ? eq.efficiency + "%" : "--"));
+        if(wmSettings.quality_rate) lines.push("\u826f\u54c1\u7387:" + (eq.good_rate != null ? eq.good_rate + "%" : "--"));
+        if(wmSettings.team_name && eq.team_name) lines.push(eq.team_name);
+        if(wmSettings.current_order && eq.order_no) lines.push(eq.order_no);
+        if(wmSettings.health_score && eq.report_time) lines.push("\u62a5\u5de5:" + eq.report_time.substring(5, 16));
+
+        if(lines.length === 0) return;
+
+        var bounds = obj.getBoundingRect();
+        var baseY = obj.top + obj.height + 4;
+        for(var j=0;j<lines.length;j++) {
+            var txt = new fabric.Text(lines[j], {
+                left: obj.left,
+                top: baseY + j * 14,
+                fontSize: 10,
+                fill: "#8eafc4",
+                fontFamily: "Microsoft YaHei",
+                selectable: false,
+                evented: false,
+                _wmParent: obj._liveEq.id
+            });
+            planCanvas.add(txt);
+            planCanvas.moveTo(txt, 1);
+        }
+    });
+    planCanvas.renderAll();
+}
+
+function toggleWmPanel() {
+    var p = document.getElementById('wm-panel');
+    p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', function(e) {
+    var dd = document.querySelector('.wm-dropdown');
+    if(dd && !dd.contains(e.target)) {
+        var p = document.getElementById('wm-panel');
+        if(p) p.style.display = 'none';
+    }
+});
+loadWmSettings();
 loadLatestLayout();
 </script>
 {% endblock %}

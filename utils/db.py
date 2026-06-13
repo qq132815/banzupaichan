@@ -56,7 +56,7 @@ def init_database():
 
     c.execute("CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, work_order_no TEXT, process_code TEXT, equipment_id INTEGER, team_id INTEGER, report_date TEXT, planned_qty REAL, actual_qty REAL, operator TEXT)")
 
-    c.execute("CREATE TABLE IF NOT EXISTS shipping_plan (id INTEGER PRIMARY KEY AUTOINCREMENT, product_code TEXT NOT NULL, quantity REAL, ship_date TEXT, k3_order_no TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS shipping_plan (id INTEGER PRIMARY KEY AUTOINCREMENT, product_code TEXT NOT NULL, quantity REAL, ship_date TEXT, k3_order_no TEXT, plan_month TEXT, customer TEXT, project TEXT, customer_part_no TEXT, gs_part_no TEXT, product_name TEXT)")
 
     c.execute("CREATE TABLE IF NOT EXISTS production_cycles (id INTEGER PRIMARY KEY AUTOINCREMENT, product_code TEXT NOT NULL, production_days REAL, lead_days REAL)")
 
@@ -144,6 +144,26 @@ def init_database():
     c.execute("CREATE INDEX IF NOT EXISTS idx_schedule_plan ON schedules(daily_plan_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_daily_plan ON daily_plans(team_id, plan_date)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)")
+
+    c.execute("CREATE TABLE IF NOT EXISTS import_templates (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, template_type TEXT NOT NULL, header_keywords TEXT, column_mapping TEXT, created_at TEXT DEFAULT (datetime('now','localtime')), UNIQUE(name))")
+    c.execute("CREATE TABLE IF NOT EXISTS supply_items (id INTEGER PRIMARY KEY AUTOINCREMENT, product_code TEXT NOT NULL UNIQUE, customer TEXT, project TEXT, basket_capacity REAL DEFAULT 0, updated_at TEXT DEFAULT (datetime('now','localtime')))")
+    c.execute("CREATE TABLE IF NOT EXISTS supply_data (id INTEGER PRIMARY KEY AUTOINCREMENT, product_code TEXT NOT NULL, data_type TEXT NOT NULL, data_date TEXT, value REAL DEFAULT 0, batch_id TEXT, imported_at TEXT DEFAULT (datetime('now','localtime')))")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_supply_data_code ON supply_data(product_code)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_supply_data_type ON supply_data(data_type)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_supply_data_date ON supply_data(data_date)")
+
+
+    c.execute("""CREATE TABLE IF NOT EXISTS material_alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        child_order_no TEXT, child_product_code TEXT, child_product_name TEXT,
+        parent_order_no TEXT, parent_product_code TEXT, parent_product_name TEXT,
+        trigger_process TEXT, bom_qty REAL DEFAULT 1, trigger_qty REAL DEFAULT 0, trigger_time TEXT,
+        status TEXT DEFAULT 'pending',
+        closed_by TEXT, closed_at TEXT,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        UNIQUE(child_order_no, parent_order_no, trigger_process))""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_ma_status ON material_alerts(status)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_ma_parent ON material_alerts(parent_order_no)")
 
     conn.commit()
     conn.close()
