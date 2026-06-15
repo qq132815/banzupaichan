@@ -170,6 +170,67 @@ def init_database():
     c.execute("CREATE INDEX IF NOT EXISTS idx_ma_status ON material_alerts(status)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_ma_parent ON material_alerts(parent_order_no)")
 
+    # ---- AI assistant tables ----
+    c.execute("""CREATE TABLE IF NOT EXISTS ai_chat_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        role TEXT,
+        team_id INTEGER,
+        channel TEXT,
+        question TEXT,
+        answer TEXT,
+        tools_used TEXT,
+        knowledge_sources TEXT,
+        model TEXT,
+        success INTEGER DEFAULT 1,
+        error TEXT,
+        latency_ms INTEGER,
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS ai_knowledge_docs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_path TEXT NOT NULL UNIQUE,
+        title TEXT,
+        content_hash TEXT,
+        updated_at TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS ai_knowledge_chunks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        doc_id INTEGER NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        title TEXT,
+        content TEXT NOT NULL,
+        chroma_collection TEXT,
+        chroma_id TEXT,
+        content_hash TEXT,
+        updated_at TEXT DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (doc_id) REFERENCES ai_knowledge_docs(id)
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS ai_bot_bindings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        platform TEXT NOT NULL,
+        external_user_id TEXT NOT NULL,
+        system_user_id INTEGER NOT NULL,
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        UNIQUE(platform, external_user_id)
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_ai_logs_created ON ai_chat_logs(created_at)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_ai_logs_user ON ai_chat_logs(user_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_ai_chunks_doc ON ai_knowledge_chunks(doc_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_ai_bot_bindings_platform_user ON ai_bot_bindings(platform, external_user_id)")
+
+    c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('perm_ai_assistant', ?)",
+              (str({'admin': True, 'planner': True, 'team': True}),))
+    c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('ai_enabled', '1')")
+    c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('ai_vector_store', 'chroma')")
+    c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('ai_chroma_mode', 'local')")
+    c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('ai_chroma_persist_dir', 'data/chroma')")
+    c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('ai_chroma_collection', 'production_ai_knowledge')")
+    c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('ai_request_timeout_seconds', '60')")
+    c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('ai_max_context_chunks', '5')")
+    c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('ai_max_tool_rows', '50')")
+
     conn.commit()
     conn.close()
     print("Database initialized")

@@ -19,6 +19,9 @@ from utils.excel import (import_shipping_plan, import_production_cycles,
                           import_work_orders, import_processes, import_bom)
 from utils.calc import (calculate_alerts, back_calculate_semi, calculate_quantity,
                        calculate_production_requirements, publish_requirements, get_published_requirements)
+from utils.ai_agent import (build_context as build_ai_context, get_chat_logs,
+                            load_ai_settings, rebuild_index as rebuild_ai_index,
+                            run_chat as run_ai_chat, save_ai_settings)
 
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
@@ -2285,6 +2288,49 @@ def api_import_work_reports():
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
+# ========== AI Assistant API ==========
+@app.route('/api/ai/chat', methods=['POST'])
+@login_required
+def api_ai_chat():
+    data = request.json or {}
+    ctx = build_ai_context(session)
+    result = run_ai_chat(data.get('question', ''), ctx, channel='web')
+    status = 200 if result.get('ok') else 400
+    return jsonify(result), status
+
+@app.route('/api/ai/settings', methods=['GET'])
+@login_required
+@admin_required
+def api_ai_settings_get():
+    return jsonify(load_ai_settings(include_secrets=False))
+
+@app.route('/api/ai/settings', methods=['POST'])
+@login_required
+@admin_required
+def api_ai_settings_save():
+    save_ai_settings(request.json or {})
+    return jsonify({'ok': True})
+
+@app.route('/api/ai/knowledge/rebuild', methods=['POST'])
+@login_required
+@admin_required
+def api_ai_knowledge_rebuild():
+    try:
+        result = rebuild_ai_index()
+        return jsonify({'ok': True, 'result': result})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 400
+
+@app.route('/api/ai/logs')
+@login_required
+@planner_required
+def api_ai_logs():
+    try:
+        limit = int(request.args.get('limit') or 100)
+    except Exception:
+        limit = 100
+    return jsonify({'data': get_chat_logs(limit=limit)})
+
 # ========== System Settings API ==========
 @app.route('/api/settings', methods=['GET'])
 @login_required
@@ -2338,7 +2384,8 @@ def api_get_permissions():
         'basic_data': {'admin': True, 'planner': True, 'team': True},
         'basic_data_edit': {'admin': True, 'planner': True, 'team': False},
         'production_reports': {'admin': True, 'planner': False, 'team': False},
-        'system_management': {'admin': True, 'planner': False, 'team': False}
+        'system_management': {'admin': True, 'planner': False, 'team': False},
+        'ai_assistant': {'admin': True, 'planner': True, 'team': True}
     }
     
     for key, default in defaults.items():
@@ -5055,6 +5102,11 @@ def api_report_monthly_export():
 @login_required
 def material_alerts_page():
     return render_template('material_alerts.html')
+
+@app.route('/ai-assistant')
+@login_required
+def ai_assistant_page():
+    return render_template('ai_assistant.html')
 
 # ========== Material Alerts API ==========
 

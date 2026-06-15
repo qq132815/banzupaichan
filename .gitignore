@@ -13,6 +13,7 @@ downloads/*.xlsx
 
 # Database
 data/production.db
+data/chroma/
 
 # IDE
 .vscode/
