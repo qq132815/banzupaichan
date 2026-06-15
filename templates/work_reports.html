@@ -1,13 +1,15 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <div class="page-header">
 <h1>📋 报工数据</h1>
 </div>
 <div class="toolbar">
 <input type="text" id="search" placeholder="搜索工单号/产品编号/工序/人员..." oninput="window._page=1;loadData()" style="width:260px">
+<input type="date" id="date-from" onchange="window._page=1;loadData()" title="开始日期">
+<input type="date" id="date-to" onchange="window._page=1;loadData()" title="结束日期">
 <div style="margin-left:auto;display:flex;gap:8px">
 <button class="btn btn-outline readonly-hide" onclick="doExport()">📤 导出</button>
-<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/work-reports', function(){setTimeout(function(){loadData();}, 500);})">📥 导入</button>
+<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/work-reports', function(){setTimeout(function(){loadData();api('/api/recalculate-efficiency',{method:'POST'}).then(function(d){toast('已重新计算效率，更新 '+d.updated+' 条记录','success');}).catch(function(){});}, 500);})">📥 导入</button>
 <button class="btn btn-danger readonly-hide" onclick="clearData()">🗑️ 清空</button>
 </div>
 </div>
@@ -29,8 +31,12 @@ window._page=1;window._pageSize=50;window._total=0;
 
 function loadData(){
     var q=document.getElementById("search").value;
+    var dateFrom=document.getElementById("date-from").value;
+    var dateTo=document.getElementById("date-to").value;
     var url="/api/work-reports?page="+window._page+"&page_size="+window._pageSize;
     if(q)url+="&q="+encodeURIComponent(q);
+    if(dateFrom)url+="&date_from="+encodeURIComponent(dateFrom);
+    if(dateTo)url+="&date_to="+encodeURIComponent(dateTo);
     fetch(url).then(function(r){return r.json()}).then(function(resp){
         var d=resp.data||resp;window._total=resp.total||d.length;
         renderPagination('wr-pagination',resp.page||1,resp.total_pages||1,'loadData');
@@ -57,13 +63,21 @@ function loadData(){
 }
 
 function doExport(){
-    fetch("/api/work-reports?page=1&page_size=99999").then(function(r){return r.json()}).then(function(resp){
+    var q=document.getElementById("search").value;
+    var dateFrom=document.getElementById("date-from").value;
+    var dateTo=document.getElementById("date-to").value;
+    var url="/api/work-reports?page=1&page_size=99999";
+    if(q)url+="&q="+encodeURIComponent(q);
+    if(dateFrom)url+="&date_from="+encodeURIComponent(dateFrom);
+    if(dateTo)url+="&date_to="+encodeURIComponent(dateTo);
+    fetch(url).then(function(r){return r.json()}).then(function(resp){
         var d=resp.data||resp;
         if(!d.length){toast("无数据","warning");return;}
-        var headers=["工单编号","产品编号","工序","报工数","良品数","不良数","良品率","生产人员","设备","开始时间","结束时间","时长","状态"];
+        var headers=["工单编号","产品编号","工序","报工数","良品数","不良数","良品率","生产人员","设备","开始时间","结束时间","时长","生产效率","状态"];
         var csv=headers.join(",")+"\n";
         d.forEach(function(r){
-            var row=['"'+(r.order_no||'')+'"','"'+(r.product_code||'')+'"','"'+(r.process_name||'')+'"',r.report_qty||0,r.good_qty||0,r.bad_qty||0,'"'+(r.good_rate||'')+'"','"'+(r.operator||'')+'"','"'+(r.equipment||'')+'"','"'+(r.start_time||'')+'"','"'+(r.end_time||'')+'"',r.report_hours||0,'"'+(r.approve_status||'')+'"'];
+            var eff = r.efficiency > 0 ? r.efficiency + '%' : '-';
+            var row=['"'+(r.order_no||'')+'"','"'+(r.product_code||'')+'"','"'+(r.process_name||'')+'"',r.report_qty||0,r.good_qty||0,r.bad_qty||0,'"'+(r.good_rate||'')+'"','"'+(r.operator||'')+'"','"'+(r.equipment||'')+'"','"'+(r.start_time||'')+'"','"'+(r.end_time||'')+'"',r.report_hours||0,'"'+eff+'"','"'+(r.approve_status||'')+'"'];
             csv+=row.join(",")+"\n";
         });
         var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
@@ -79,3 +93,4 @@ function clearData(){
 loadData();
 </script>
 {% endblock %}
+

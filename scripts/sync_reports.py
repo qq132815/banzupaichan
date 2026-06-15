@@ -52,12 +52,7 @@ def get_connection():
 
 
 def screenshot(page, name):
-    os.makedirs(SCREENSHOT_DIR, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filepath = os.path.join(SCREENSHOT_DIR, "%s_%s.png" % (name, ts))
-    page.screenshot(path=filepath)
-    print("  [screenshot] %s" % name)
-    return filepath
+    return None
 
 
 def login(page):
@@ -98,9 +93,12 @@ def login(page):
 
     screenshot(page, "02_filled_form")
 
-    page.locator("button").filter(has_text="登录").first.click()
-    time.sleep(5)
-    page.wait_for_load_state("networkidle", timeout=30000)
+    pi.press("Enter")
+    try:
+        page.wait_for_url(lambda url: "login" not in url, timeout=15000)
+    except Exception:
+        pass
+    time.sleep(3)
     screenshot(page, "03_after_login")
 
     if "login" in page.url.lower():
@@ -280,9 +278,10 @@ def main():
     print("=" * 60)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        ctx = browser.new_context(accept_downloads=True)
+        browser = p.chromium.launch(headless=True, args=['--disable-blink-features=AutomationControlled', '--no-sandbox'])
+        ctx = browser.new_context(accept_downloads=True, user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
         page = ctx.new_page()
+        page.add_init_script('Object.defineProperty(navigator, "webdriver", {get: () => undefined})')
 
         try:
             if not login(page):

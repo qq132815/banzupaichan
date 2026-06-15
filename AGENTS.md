@@ -122,3 +122,35 @@
 2. 中文字符在PowerShell控制台可能显示乱码，但文件内容是正确的
 3. 数据库路径是data/production.db，不是data/mes.db
 4. rebuild_all.py会重建整个数据库，包括自动创建缺失的工序
+
+### 5. MES工单/报工同步 — 严禁修改项 (MES Sync — DO NOT MODIFY)
+
+**工单同步和报工同步是通过 Playwright 模拟浏览器登录 MES 网站实现的，以下是严格约束：**
+
+#### 5.1 Flask 启动配置
+- `app.py` 最后一行必须是：`app.run(debug=False, host="0.0.0.0", port=5000)`
+- **严禁将 `debug` 改为 `True`**，否则 Flask 的 reloader 会在同步脚本执行期间（1-2分钟）重启服务器，导致前端 `Failed to fetch` / `ConnectionResetError`。
+- 如果需要调试，手动在终端运行 `python scripts/sync_work_orders.py` 测试，不要动 `app.py` 的 debug 参数。
+
+#### 5.2 同步脚本文件
+- 工单同步：`scripts/sync_work_orders.py` — 通过 Playwright 登录 MES 导出工单 Excel 并入库
+- 报工同步：`scripts/sync_reports.py` — 通过 Playwright 登录 MES 导出报工 Excel 并入库
+- 这两个脚本**不会丢失**（已在 git 中），除非你手动删除。
+
+#### 5.3 同步 API 路由
+- 工单：`POST /api/mes-sync/work-orders`（需 planner/admin 角色）
+- 报工：`POST /api/mes-sync/reports`（需 planner/admin 角色）
+- 路由会用 `subprocess.run` 调用脚本，最长等待 300 秒。
+
+#### 5.4 前端页面
+- `templates/mes_sync.html` — MES 数据同步页面
+- `fetch` 调用必须带 `credentials: "same-origin"` 以传递登录 session cookie
+
+#### 5.5 常见故障排查
+| 症状 | 原因 | 解决 |
+|------|------|------|
+| `Failed to fetch` | Flask 服务器未启动或已崩溃 | 重启服务器 |
+| `ConnectionResetError 10054` | `debug=True` 导致 reloader 重启 | 确认 `debug=False` |
+| `database is locked` | 多个 Python 进程同时访问 DB | 关闭多余进程 |
+| `playwright not installed` | 环境缺失 | 运行 `pip install playwright && playwright install chromium` |
+| 登录 MES 失败 | MES 网站加了验证码 | 修改 `scripts/sync_work_orders.py` 的 `login()` 函数处理验证码 |

@@ -1,0 +1,588 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>📦 产品定义</h1>
+</div>
+<div class="toolbar">
+<input type="text" id="search" placeholder="搜索产品编号/名称/规格..." oninput="window._page=1;loadProducts()" style="width:260px">
+<select id="type-filter" onchange="window._page=1;loadProducts()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<option value="">全部类型</option>
+<option value="成品">成品</option>
+<option value="半成品">半成品</option>
+<option value="物料">物料</option>
+</select>
+<select id="customer-filter" onchange="window._page=1;loadProducts()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<option value="">全部客户</option>
+</select>
+<div style="margin-left:auto;display:flex;gap:8px">
+<button class="btn btn-danger readonly-hide" onclick="downloadProductTpl()">📄 模板</button>
+<button class="btn btn-outline readonly-hide" onclick="doExport()">📥 导出</button>
+<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/product_definitions', function(){setTimeout(function(){loadProducts();}, 500);})">📤 导入</button>
+<button class="btn btn-warning readonly-hide" onclick="startImageDownload()">🖼️ 下载全部图片</button>
+<button class="btn btn-info readonly-hide" onclick="testDownload()">测试下载</button>
+<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>
+</div>
+</div>
+<div class="card">
+<div class="card-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>产品类型</th><th>产品编号</th><th>产品名称</th><th>产品规格</th><th>单位</th><th>工艺路线</th><th>安全库存</th><th>库存数量</th><th>产品来源</th><th>产品图</th><th>客户</th><th>每筐容量</th><th>操作</th></tr></thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+</div>
+</div>
+<div id="pagination"></div>
+
+<div class="modal-overlay" id="modal">
+<div class="modal" style="max-width:800px">
+<div class="modal-header"><h3 id="m-title">新增产品</h3><button class="modal-close" onclick="closeM()">&times;</button></div>
+<div class="modal-body">
+<div class="form-row">
+<div class="form-group"><label>产品编号 *</label><input class="form-control" id="m-code" placeholder="如：VF009001-铝管-包装"></div>
+<div class="form-group"><label>产品名称 *</label><input class="form-control" id="m-name" placeholder="产品名称"></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>产品类型</label><select class="form-control" id="m-type">
+<option value="成品">成品</option>
+<option value="半成品">半成品</option>
+<option value="物料">物料</option>
+</select></div>
+<div class="form-group"><label>单位</label><input class="form-control" id="m-unit" placeholder="如：件、个、套"></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>产品规格</label><input class="form-control" id="m-spec" placeholder="规格型号"></div>
+<div class="form-group"><label>工艺路线</label><input class="form-control" id="m-route" placeholder="工艺路线名称"></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>安全库存</label><input type="number" class="form-control" id="m-safety-stock" placeholder="最小安全库存"></div>
+<div class="form-group"><label>库存数量</label><input type="number" class="form-control" id="m-stock-qty" placeholder="当前库存数量"></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>产品来源</label><select class="form-control" id="m-source">
+<option value="自产">自产</option>
+<option value="外购">外购</option>
+<option value="委外">委外</option>
+</select></div>
+<div class="form-group"><label>客户</label><input class="form-control" id="m-customer" placeholder="客户名称"></div>
+</div>
+<div class="form-row">
+<div class="form-group"><label>每筐容量</label><input type="number" class="form-control" id="m-basket-capacity" placeholder="每筐容量"></div>
+<div class="form-group"><label>产品图片URL</label><input class="form-control" id="m-image-url" placeholder="https://example.com/image.jpg" oninput="previewImage()"></div>
+</div>
+<div class="form-group" id="image-preview-container" style="display:none">
+<label>图片预览</label>
+<div id="image-preview" style="max-width:200px;max-height:200px;border:1px solid #ddd;padding:5px"></div>
+<input type="hidden" id="m-image-path">
+</div>
+<div class="form-group">
+<label>产品描述</label>
+<textarea class="form-control" id="m-description" rows="3" placeholder="产品描述"></textarea>
+</div>
+</div>
+<div class="modal-footer">
+<button class="btn btn-secondary" onclick="closeM()">取消</button>
+<button class="btn btn-primary" onclick="save()">保存</button>
+</div>
+</div>
+</div>
+
+<style>
+.product-img-thumb {
+    max-width: 50px;
+    max-height: 50px;
+    object-fit: cover;
+    border-radius: 4px;
+    cursor: pointer;
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+    if(USER_ROLE === "team"){
+        document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});
+    }
+    loadCustomers();
+    loadProducts();
+});
+</script>
+{% endblock %}
+{% block scripts %}
+<script>var USER_ROLE="{{ session.get('role','') }}";</script>
+<script>
+window._page=1;
+window._pageSize=50;
+window._total=0;
+var editId=null;
+
+function loadCustomers(){
+    fetch("/api/product-definitions?field=customer").then(function(r){return r.json()}).then(function(d){
+        var sel=document.getElementById("customer-filter");
+        d.forEach(function(customer){
+            if(customer){
+                var opt=document.createElement("option");
+                opt.value=customer;
+                opt.textContent=customer;
+                sel.appendChild(opt);
+            }
+        });
+    });
+}
+
+function loadProducts(){
+    var q=document.getElementById("search").value;
+    var type=document.getElementById("type-filter").value;
+    var customer=document.getElementById("customer-filter").value;
+    var url="/api/product-definitions?page="+window._page+"&page_size="+window._pageSize;
+    if(q)url+="&q="+encodeURIComponent(q);
+    if(type)url+="&product_type="+encodeURIComponent(type);
+    if(customer)url+="&customer="+encodeURIComponent(customer);
+    
+    fetch(url).then(function(r){return r.json()}).then(function(resp){
+        var d=resp.data||resp;
+        window._total=resp.total||d.length;
+        renderPagination('pagination', resp.page||1, resp.total_pages||1, 'loadProducts');
+        renderProducts(d);
+    });
+}
+
+function renderProducts(d){
+    var tb=document.getElementById("tbody");
+    tb.innerHTML="";
+    d.forEach(function(p){
+        var tr=document.createElement("tr");
+        var imgHtml = p.image_path ? '<img src="'+p.image_path+'" class="product-img-thumb" onclick="showImagePreview(this.src)">' : (p.image_url ? '<a href="'+p.image_url+'" target="_blank">查看</a>' : '<span style="color:#9ca3af">无图片</span>');
+        var typeBadge = '';
+        if(p.product_type === '成品') typeBadge = '<span class="badge badge-blue">成品</span>';
+        else if(p.product_type === '半成品') typeBadge = '<span class="badge badge-yellow">半成品</span>';
+        else if(p.product_type === '物料') typeBadge = '<span class="badge badge-green">物料</span>';
+        else typeBadge = '<span class="badge badge-gray">'+(p.product_type||'未分类')+'</span>';
+        
+        tr.innerHTML = "<td>"+typeBadge+"</td>"+
+            "<td>"+(p.product_code||"")+"</td>"+
+            "<td>"+(p.product_name||"")+"</td>"+
+            "<td>"+(p.specifications||"")+"</td>"+
+            "<td>"+(p.unit||"")+"</td>"+
+            "<td>"+(p.route_code||"")+"</td>"+
+            "<td>"+(p.safety_stock||"0")+"</td>"+
+            "<td>"+(p.stock_qty||"0")+"</td>"+
+            "<td>"+(p.source||"")+"</td>"+
+            "<td>"+imgHtml+"</td>"+
+            "<td>"+(p.customer||"")+"</td>"+
+            "<td>"+(p.basket_capacity||"0")+"</td>"+
+            "<td><div class='btn-group'>"+
+            "<button class='btn btn-outline btn-sm' onclick='edit("+p.id+")'>编辑</button>"+
+            "<button class='btn btn-danger btn-sm' onclick='deleteProduct("+p.id+")'>删除</button>"+
+            "</div></td>";
+        tb.appendChild(tr);
+    });
+}
+
+function showAdd(){
+    editId=null;
+    document.getElementById("m-title").textContent="新增产品";
+    ["m-code","m-name","m-spec","m-route","m-safety-stock","m-stock-qty","m-customer","m-basket-capacity","m-image-url","m-description"].forEach(function(id){
+        document.getElementById(id).value="";
+    });
+    document.getElementById("m-type").value="成品";
+    document.getElementById("m-unit").value="件";
+    document.getElementById("m-source").value="自产";
+    document.getElementById("image-preview-container").style.display="none";
+    document.getElementById("m-image-path").value="";
+    document.getElementById("modal").classList.add("show");
+}
+
+function closeM(){
+    document.getElementById("modal").classList.remove("show");
+}
+
+function edit(id){
+    fetch("/api/product-definitions").then(function(r){return r.json()}).then(function(resp){
+        var d=resp.data||resp;
+        var p=d.find(function(x){return x.id===id});
+        if(!p)return;
+        
+        editId=id;
+        document.getElementById("m-title").textContent="编辑产品";
+        document.getElementById("m-code").value=p.product_code||"";
+        document.getElementById("m-name").value=p.product_name||"";
+        document.getElementById("m-type").value=p.product_type||"成品";
+        document.getElementById("m-unit").value=p.unit||"件";
+        document.getElementById("m-spec").value=p.specifications||"";
+        document.getElementById("m-route").value=p.route_code||"";
+        document.getElementById("m-safety-stock").value=p.safety_stock||"";
+        document.getElementById("m-stock-qty").value=p.stock_qty||"";
+        document.getElementById("m-source").value=p.source||"自产";
+        document.getElementById("m-customer").value=p.customer||"";
+        document.getElementById("m-basket-capacity").value=p.basket_capacity||"";
+        document.getElementById("m-image-url").value=p.image_url||"";
+        document.getElementById("m-description").value=p.description||"";
+        document.getElementById("m-image-path").value=p.image_path||"";
+        
+        if(p.image_path){
+            document.getElementById("image-preview-container").style.display="block";
+            document.getElementById("image-preview").innerHTML='<img src="'+p.image_path+'" style="max-width:100%;max-height:200px">';
+        } else {
+            document.getElementById("image-preview-container").style.display="none";
+        }
+        
+        document.getElementById("modal").classList.add("show");
+    });
+}
+
+function save(){
+    var data={
+        product_code: document.getElementById("m-code").value,
+        product_name: document.getElementById("m-name").value,
+        product_type: document.getElementById("m-type").value,
+        unit: document.getElementById("m-unit").value,
+        specifications: document.getElementById("m-spec").value,
+        route_code: document.getElementById("m-route").value,
+        safety_stock: parseFloat(document.getElementById("m-safety-stock").value) || 0,
+        stock_qty: parseFloat(document.getElementById("m-stock-qty").value) || 0,
+        source: document.getElementById("m-source").value,
+        customer: document.getElementById("m-customer").value,
+        basket_capacity: parseFloat(document.getElementById("m-basket-capacity").value) || 0,
+        image_url: document.getElementById("m-image-url").value,
+        description: document.getElementById("m-description").value
+    };
+    
+    if(!data.product_code || !data.product_name){
+        toast("产品编号和名称必填","warning");
+        return;
+    }
+    
+    var url = editId ? "/api/product-definitions/"+editId : "/api/product-definitions";
+    api(url, {
+        method: editId ? "PUT" : "POST",
+        body: data
+    }).then(function(resp){
+        toast("保存成功","success");
+        closeM();
+        loadProducts();
+    }).catch(function(err){
+        toast("保存失败: "+err,"error");
+    });
+}
+
+function deleteProduct(id){
+    if(!confirm("确定删除此产品？"))return;
+    api("/api/product-definitions/"+id, {method:"DELETE"}).then(function(){
+        toast("已删除","success");
+        loadProducts();
+    });
+}
+
+function previewImage(){
+    var url=document.getElementById("m-image-url").value;
+    if(url){
+        document.getElementById("image-preview-container").style.display="block";
+        document.getElementById("image-preview").innerHTML='<img src="'+url+'" style="max-width:100%;max-height:200px" onerror="this.parentElement.innerHTML=\'图片加载失败\'">';
+    } else {
+        document.getElementById("image-preview-container").style.display="none";
+    }
+}
+
+function showImagePreview(src){
+    // 检查是否已存在预览模态框
+    var existingModal = document.getElementById('image-preview-modal');
+    if(existingModal){
+        existingModal.remove();
+    }
+    
+    // 创建模态框HTML - 使用内联样式完全覆盖全局CSS
+    var modalHtml = '<div id="image-preview-modal" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="closeImagePreview()">' +
+        '<div style="cursor:default;position:relative;max-width:90vw;max-height:90vh" onclick="event.stopPropagation()">' +
+        '<img src="' + src + '" style="max-width:100%;max-height:85vh;object-fit:contain;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3)">' +
+        '<div style="text-align:center;margin-top:15px">' +
+        '<button class="btn btn-secondary" onclick="closeImagePreview()" style="padding:8px 24px;font-size:14px">关闭</button>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+    
+    // 添加到页面
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+function closeImagePreview(){
+    var modal = document.getElementById('image-preview-modal');
+    if(modal){
+        modal.remove();
+    }
+}
+
+function doExport(){
+    window.location.href="/api/export/product_definitions";
+}
+
+function downloadProductTpl(){
+    var headers=["产品类型","产品编号","产品名称","产品规格","单位","工艺路线","最小安全库存","最大安全库存","库存数量","产品来源","产品图","客户","每筐容量"];
+    var rows=[
+        "成品,VF009001-铝管-包装,VF009001,,件,VF009001-铝管-包装工艺路线,100,500,0,自产,https://example.com/image1.jpg,,50",
+        "半成品,VF009001-铝管-前段,VF009001-铝管-前段,,件,VF009001-铝管-前段工艺路线,50,200,0,自产,https://example.com/image2.jpg,,30",
+        "物料,01.AAAAJ03994,AAJ-94三态压力开关,,个,,,,0,外购,,马勒,"
+    ];
+    var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";
+    var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+    var a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download="产品定义导入模板.csv";
+    a.click();
+}
+
+// 图片下载进度弹窗相关变量
+var downloadProgressInterval = null;
+
+function startImageDownload(){
+    // 调试信息
+    console.log("startImageDownload 函数开始执行");
+    
+    // 显示确认弹窗
+    if(!confirm("确定要下载所有产品图片吗？\n\n这将下载1,667个图片，预计需要10-20分钟。\n\n下载过程中可以继续使用系统。")){
+        console.log("用户取消了下载");
+        return;
+    }
+    
+    console.log("用户确认下载，准备显示弹窗");
+    
+    try {
+        // 显示进度弹窗
+        showDownloadProgressModal();
+        console.log("进度弹窗已显示");
+        
+        // 检查是否已有任务在运行
+        fetch("/api/product-definitions/download-progress").then(function(r){return r.json()}).then(function(progress){
+            if(progress.status === 'running'){
+                console.log("检测到已有下载任务在运行，直接开始轮询");
+                startProgressPolling();
+            } else {
+                // 启动下载任务
+                console.log("正在发送下载请求...");
+                fetch("/api/product-definitions/download-all-images", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {"Content-Type": "application/json"}
+                }).then(function(r){
+                    console.log("收到响应:", r.status);
+                    return r.json();
+                }).then(function(resp){
+                    console.log("响应数据:", resp);
+                    if(resp.ok){
+                        console.log("下载任务启动成功，开始轮询进度");
+                        // 开始轮询进度
+                        startProgressPolling();
+                    } else {
+                        console.error("下载任务启动失败:", resp.error);
+                        updateProgressMessage("启动失败: "+resp.error, true);
+                    }
+                }).catch(function(err){
+                    console.error("请求失败:", err);
+                    updateProgressMessage("请求失败: "+err, true);
+                });
+            }
+        });
+    } catch (e) {
+        console.error("执行错误:", e);
+        alert("发生错误: " + e.message);
+    }
+}
+
+function testDownload(){
+    console.log("测试下载按钮被点击");
+    alert("测试下载按钮被点击");
+    
+    // 测试显示进度弹窗
+    showDownloadProgressModal();
+    
+    // 模拟进度更新
+    var current = 0;
+    var total = 100;
+    var interval = setInterval(function() {
+        current += 5;
+        if (current > total) {
+            clearInterval(interval);
+            document.getElementById('download-progress-message').textContent = '测试完成!';
+            return;
+        }
+        
+        var percent = Math.round((current / total) * 100);
+        document.getElementById('download-progress-bar').style.width = percent + '%';
+        document.getElementById('download-progress-text').textContent = percent + '% (' + current + '/' + total + ')';
+        document.getElementById('stat-total').textContent = total;
+        document.getElementById('stat-current').textContent = current;
+        document.getElementById('stat-success').textContent = Math.round(current * 0.9);
+        document.getElementById('download-progress-message').textContent = '正在测试... ' + current + '/' + total;
+    }, 200);
+}
+
+function showDownloadProgressModal(){
+    // 创建进度弹窗HTML
+    var modalHtml = '<div class="modal-overlay" id="download-progress-modal" style="display:flex">' +
+        '<div class="modal" style="max-width:500px">' +
+        '<div class="modal-header">' +
+        '<h3>📷 图片下载进度</h3>' +
+        '<button class="modal-close" onclick="closeDownloadProgressModal()">&times;</button>' +
+        '</div>' +
+        '<div class="modal-body">' +
+        '<div class="progress-container">' +
+        '<div class="progress-bar-container">' +
+        '<div class="progress-bar" id="download-progress-bar" style="width:0%"></div>' +
+        '</div>' +
+        '<div class="progress-text" id="download-progress-text">准备开始下载...</div>' +
+        '</div>' +
+        '<div class="progress-stats" id="download-progress-stats">' +
+        '<div class="stat-item">' +
+        '<span class="stat-label">总数:</span>' +
+        '<span class="stat-value" id="stat-total">0</span>' +
+        '</div>' +
+        '<div class="stat-item">' +
+        '<span class="stat-label">已完成:</span>' +
+        '<span class="stat-value" id="stat-current">0</span>' +
+        '</div>' +
+        '<div class="stat-item">' +
+        '<span class="stat-label">成功:</span>' +
+        '<span class="stat-value" id="stat-success">0</span>' +
+        '</div>' +
+        '<div class="stat-item">' +
+        '<span class="stat-label">失败:</span>' +
+        '<span class="stat-value" id="stat-fail">0</span>' +
+        '</div>' +
+        '<div class="stat-item">' +
+        '<span class="stat-label">跳过:</span>' +
+        '<span class="stat-value" id="stat-skip">0</span>' +
+        '</div>' +
+        '</div>' +
+        '<div class="progress-message" id="download-progress-message"></div>' +
+        '</div>' +
+        '<div class="modal-footer">' +
+        '<button class="btn btn-secondary" onclick="closeDownloadProgressModal()">关闭</button>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+    
+    // 添加到页面
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    
+    // 显示弹窗（添加 .show 类）
+    var modal = document.getElementById('download-progress-modal');
+    if(modal){
+        // 强制重绘
+        modal.offsetHeight; 
+        modal.classList.add('show');
+    }
+    
+    // 添加样式
+    var style = document.createElement('style');
+    style.textContent = '.progress-container{margin:20px 0;}' +
+        '.progress-bar-container{background:#e5e7eb;border-radius:8px;height:20px;overflow:hidden;margin-bottom:10px;}' +
+        '.progress-bar{background:linear-gradient(90deg,#3b82f6,#60a5fa);height:100%;transition:width 0.3s ease;border-radius:8px;}' +
+        '.progress-text{text-align:center;font-size:14px;color:#6b7280;margin-bottom:15px;}' +
+        '.progress-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:15px;}' +
+        '.stat-item{background:#f3f4f6;padding:8px 12px;border-radius:6px;flex:1;min-width:80px;}' +
+        '.stat-label{font-size:12px;color:#6b7280;display:block;}' +
+        '.stat-value{font-size:18px;font-weight:bold;color:#1f2937;display:block;}' +
+        '.progress-message{background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:10px;font-size:13px;color:#92400e;min-height:40px;}';
+    document.head.appendChild(style);
+}
+
+function startProgressPolling(){
+    // 每2秒查询一次进度
+    downloadProgressInterval = setInterval(function(){
+        fetch("/api/product-definitions/download-progress").then(function(r){return r.json()}).then(function(progress){
+            updateProgressDisplay(progress);
+            
+            // 如果下载完成或出错，停止轮询
+            if(progress.status === 'completed' || progress.status === 'error'){
+                clearInterval(downloadProgressInterval);
+                downloadProgressInterval = null;
+                
+                if(progress.status === 'completed'){
+                    // 刷新产品列表
+                    setTimeout(function(){
+                        loadProducts();
+                    }, 1000);
+                }
+            }
+        }).catch(function(err){
+            console.error("查询进度失败:", err);
+        });
+    }, 2000);
+}
+
+function updateProgressDisplay(progress){
+    // 更新进度条
+    var percent = 0;
+    if(progress.total > 0){
+        percent = Math.round((progress.current / progress.total) * 100);
+    }
+    
+    var progressBar = document.getElementById('download-progress-bar');
+    if(progressBar){
+        progressBar.style.width = percent + '%';
+    }
+    
+    // 更新进度文本
+    var progressText = document.getElementById('download-progress-text');
+    if(progressText){
+        progressText.textContent = percent + '% (' + progress.current + '/' + progress.total + ')';
+    }
+    
+    // 更新统计数字
+    var elements = {
+        'stat-total': progress.total,
+        'stat-current': progress.current,
+        'stat-success': progress.success,
+        'stat-fail': progress.fail,
+        'stat-skip': progress.skip
+    };
+    
+    for(var id in elements){
+        var el = document.getElementById(id);
+        if(el){
+            el.textContent = elements[id];
+        }
+    }
+    
+    // 更新消息
+    var messageEl = document.getElementById('download-progress-message');
+    if(messageEl && progress.message){
+        messageEl.textContent = progress.message;
+    }
+}
+
+function updateProgressMessage(message, isError){
+    var messageEl = document.getElementById('download-progress-message');
+    if(messageEl){
+        messageEl.textContent = message;
+        if(isError){
+            messageEl.style.background = '#fef2f2';
+            messageEl.style.borderColor = '#fca5a5';
+            messageEl.style.color = '#991b1b';
+        }
+    }
+}
+
+function closeDownloadProgressModal(){
+    // 停止轮询
+    if(downloadProgressInterval){
+        clearInterval(downloadProgressInterval);
+        downloadProgressInterval = null;
+    }
+    
+    // 移除弹窗
+    var modal = document.getElementById('download-progress-modal');
+    if(modal){
+        modal.remove();
+    }
+}
+
+loadProducts();
+</script>
+{% endblock %}
+
+
+
+
+
+

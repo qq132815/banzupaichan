@@ -1,0 +1,71 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>弹窗测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 500px;
+            width: 90%;
+        }
+    </style>
+</head>
+<body>
+    <h1>弹窗测试</h1>
+    <p>点击下面的按钮测试弹窗功能：</p>
+    <button onclick="showModal()">显示弹窗</button>
+    <button onclick="hideModal()">隐藏弹窗</button>
+    <button onclick="testAPI()">测试API</button>
+    
+    <div id="result"></div>
+    
+    <div class="modal-overlay" id="test-modal">
+        <div class="modal">
+            <h3>测试弹窗</h3>
+            <p>这是一个测试弹窗</p>
+            <button onclick="hideModal()">关闭</button>
+        </div>
+    </div>
+    
+    <script>
+        function showModal() {
+            document.getElementById('test-modal').style.display = 'flex';
+            document.getElementById('result').innerHTML = '弹窗已显示';
+        }
+        
+        function hideModal() {
+            document.getElementById('test-modal').style.display = 'none';
+            document.getElementById('result').innerHTML = '弹窗已隐藏';
+        }
+        
+        function testAPI() {
+            document.getElementById('result').innerHTML = '正在测试API...';
+            fetch('http://localhost:5000/api/product-definitions/download-progress')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    document.getElementById('result').innerHTML = 'API响应: ' + JSON.stringify(data, null, 2);
+                })
+                .catch(function(err) {
+                    document.getElementById('result').innerHTML = 'API错误: ' + err;
+                });
+        }
+    </script>
+</body>
+</html>

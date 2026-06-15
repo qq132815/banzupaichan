@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+<h1>📊 产销协同管理</h1>
+<div class="page-actions">
+<button class="btn btn-outline" onclick="openImportDialog()">📥 导入数据</button>
+<button class="btn btn-outline" onclick="openTemplateDialog()">⚙️ 模板管理</button>
+<button class="btn btn-outline" onclick="loadOverview()">🔄 刷新</button>
+</div>
+</div>
+
+<div id="summary-cards" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap"></div>
+
+<div class="toolbar" style="margin-bottom:12px">
+<input type="text" id="sc-search" placeholder="搜索编码/客户/项目..." oninput="filterTable()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;min-width:200px;font-size:13px">
+<select id="sc-status-filter" onchange="filterTable()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<option value="">全部状态</option>
+<option value="red">🔴 危险</option>
+<option value="yellow">🟡 警告</option>
+<option value="green">🟢 正常</option>
+</select>
+<select id="sc-customer-filter" onchange="filterTable()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+<option value="">全部客户</option>
+</select>
+</div>
+
+<div class="card">
+<div class="card-body" style="padding:0;overflow-x:auto">
+<div id="sc-table-container"></div>
+<div id="sc-empty" class="table-empty" style="display:none">暂无数据，请先导入</div>
+</div>
+</div>
+
+<!-- Import Dialog -->
+<div class="modal-overlay" id="import-dialog">
+<div class="modal" style="max-width:700px;width:90vw">
+<div class="modal-header">
+<h3>📥 导入供应链数据</h3>
+<button class="modal-close" onclick="closeImportDialog()">&times;</button>
+</div>
+<div class="modal-body">
+<div id="import-step1">
+<p style="color:#6b7280;font-size:13px;margin-bottom:12px">上传 Excel 文件，系统自动识别模板</p>
+<input type="file" id="import-file" accept=".xlsx,.xls" style="margin-bottom:12px">
+<button class="btn btn-primary" onclick="detectTemplate()">下一步：识别模板</button>
+</div>
+<div id="import-step2" style="display:none">
+<p style="font-size:13px;color:#374151;margin-bottom:8px">文件: <strong id="import-filename"></strong></p>
+<div id="import-sheets" style="margin-bottom:16px"></div>
+<button class="btn btn-primary" onclick="confirmImport()">确认导入</button>
+<button class="btn btn-outline" onclick="document.getElementById('import-step2').style.display='none';document.getElementById('import-step1').style.display=''">返回</button>
+</div>
+<div id="import-step3" style="display:none"><div id="import-result"></div></div>
+</div>
+</div>
+</div>
+
+<!-- Template Dialog -->
+<div class="modal-overlay" id="template-dialog">
+<div class="modal" style="max-width:1200px;width:95vw;height:85vh;display:flex;flex-direction:column">
+<div class="modal-header" style="flex-shrink:0">
+<h3 id="tmpl-dialog-title">⚙️ 模板管理</h3>
+<button class="modal-close" onclick="closeTemplateDialog()">&times;</button>
+</div>
+<div class="modal-body" style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:12px">
+<!-- Steps -->
+<div style="flex-shrink:0;display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #e5e7eb">
+<span class="tmpl-step active" id="ts1">① 上传文件</span><span style="color:#d1d5db">→</span>
+<span class="tmpl-step" id="ts2">② 预览&映射列</span><span style="color:#d1d5db">→</span>
+<span class="tmpl-step" id="ts3">③ 保存模板</span>
+</div>
+<!-- Page 1 -->
+<div id="tmpl-page1" style="flex:1;overflow:auto">
+<div style="max-width:500px;margin:30px auto;text-align:center">
+<p style="font-size:14px;color:#374151;margin-bottom:16px">上传一个 Excel 文件作为模板参考</p>
+<p style="font-size:12px;color:#6b7280;margin-bottom:16px">系统会读取前几行数据用于预览，方便您选择列映射</p>
+<input type="file" id="tmpl-file" accept=".xlsx,.xls" style="margin-bottom:16px"><br>
+<button class="btn btn-primary" onclick="tmplUpload()">上传并预览</button>
+</div>
+<div style="margin-top:32px;border-top:1px solid #e5e7eb;padding-top:16px">
+<h4 style="margin-bottom:8px">已有模板</h4>
+<div id="template-list"></div>
+</div>
+</div>
+<!-- Page 2 -->
+<div id="tmpl-page2" style="flex:1;overflow:auto;display:none">
+<div style="margin-bottom:12px">
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap">
+<input type="text" id="tmpl-name" placeholder="模板名称（如：奇瑞模板）" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;min-width:200px">
+<input type="text" id="tmpl-keywords" placeholder="识别关键词（逗号分隔）" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;flex:1">
+</div>
+<p style="font-size:11px;color:#6b7280">💡 点击表头下拉菜单，为每一列选择对应的字段类型。装车数量的日期列请选择"装车日期"。</p>
+</div>
+<div id="tmpl-preview" style="overflow:auto;border:1px solid #e5e7eb;border-radius:8px;flex:1"></div>
+<div style="margin-top:12px;display:flex;gap:8px;flex-shrink:0">
+<button class="btn btn-outline" onclick="tmplGoStep(1)">← 返回</button>
+<button class="btn btn-primary" onclick="tmplSave()">💾 保存模板</button>
+</div>
+</div>
+<!-- Page 3 -->
+<div id="tmpl-page3" style="flex:1;overflow:auto;display:none;text-align:center;padding:40px">
+<div style="font-size:48px;margin-bottom:16px">✅</div>
+<h3>模板保存成功！</h3>
+<button class="btn btn-primary" style="margin-top:16px" onclick="tmplGoStep(1)">继续创建</button>
+</div>
+</div>
+</div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+var scData=[],scFiltered=[];
+var _tmplFilePath="",_tmplSheet="",_tmplHeaders=[],_tmplColMap={};
+
+(function(){loadOverview();loadTemplates();})();
+
+function loadOverview(){fetch("/api/supply-chain/overview").then(function(r){return r.json()}).then(function(d){scData=d||[];buildCustomerFilter();filterTable();});}
+function buildCustomerFilter(){var cust={};scData.forEach(function(i){if(i.customer)cust[i.customer]=true;});var sel=document.getElementById("sc-customer-filter"),cur=sel.value;sel.innerHTML='<option value="">\u5168\u90e8\u5ba2\u6237</option>';Object.keys(cust).sort().forEach(function(c){var o=document.createElement("option");o.value=c;o.textContent=c;if(c===cur)o.selected=true;sel.appendChild(o);});}
+function filterTable(){var q=document.getElementById("sc-search").value.toLowerCase(),sf=document.getElementById("sc-status-filter").value,cf=document.getElementById("sc-customer-filter").value;scFiltered=scData.filter(function(i){if(q&&(i.product_code||"").toLowerCase().indexOf(q)<0&&(i.customer||"").toLowerCase().indexOf(q)<0&&(i.project||"").toLowerCase().indexOf(q)<0)return false;if(cf&&i.customer!==cf)return false;if(sf&&getItemStatus(i)!==sf)return false;return true;});renderSummary();renderTable();}
+function getItemStatus(item){var today=new Date().toISOString().split("T")[0],avail=(item.stock_total||0)+(item.in_production||0),cum=0;var plans=item.daily_plan||[];for(var i=0;i<plans.length;i++){if(plans[i].date<today)continue;cum+=plans[i].qty||0;if(avail<cum){var days=Math.round((new Date(plans[i].date)-new Date(today))/86400000);if(days<=3)return"red";if(days<=7)return"yellow";return"green";}}return"green";}
+function renderSummary(){var r=0,y=0,g=0;scData.forEach(function(i){var s=getItemStatus(i);if(s==="red")r++;else if(s==="yellow")y++;else g++;});document.getElementById("summary-cards").innerHTML='<div style="flex:1;min-width:120px;padding:16px;background:#f0fdf4;border-radius:10px;text-align:center"><div style="font-size:28px;font-weight:700;color:#059669">'+g+'</div><div style="font-size:12px;color:#6b7280">\U0001f7e2 \u6b63\u5e38</div></div><div style="flex:1;min-width:120px;padding:16px;background:#fffbeb;border-radius:10px;text-align:center"><div style="font-size:28px;font-weight:700;color:#d97706">'+y+'</div><div style="font-size:12px;color:#6b7280">\U0001f7e1 \u8b66\u544a</div></div><div style="flex:1;min-width:120px;padding:16px;background:#fef2f2;border-radius:10px;text-align:center"><div style="font-size:28px;font-weight:700;color:#dc2626">'+r+'</div><div style="font-size:12px;color:#6b7280">\U0001f534 \u5371\u9669</div></div><div style="flex:1;min-width:120px;padding:16px;background:#f3f4f6;border-radius:10px;text-align:center"><div style="font-size:28px;font-weight:700;color:#374151">'+scData.length+'</div><div style="font-size:12px;color:#6b7280">\U0001f4cb \u603b\u4ef6\u53f7</div></div>';}
+function renderTable(){var c=document.getElementById("sc-table-container"),e=document.getElementById("sc-empty");if(!scFiltered.length){c.innerHTML="";e.style.display="";return;}e.style.display="none";var today=new Date().toISOString().split("T")[0];var h='<table class="sc-table"><thead><tr><th class="sticky-col">\u72b6\u6001</th><th class="sticky-col2">\u5ba2\u6237</th><th class="sticky-col3">\u7f16\u7801</th><th>\u9879\u76ee</th><th>\u6bcf\u7b50</th><th>\u5e7f\u5347\u5e93\u5b58</th><th>3PL</th><th>\u5728\u9014</th><th>\u5e93\u5b58\u6c47\u603b</th><th>\u5728\u5236</th><th>\u53ef\u7528\u91cf</th><th>\u53d1\u8d27\u7f3a\u4ef6\u5230</th><th>\u4e0b\u5355\u7f3a\u4ef6\u5230</th></tr></thead><tbody>';scFiltered.forEach(function(i){var s=getItemStatus(i),sc=s==="red"?"#dc2626":s==="yellow"?"#d97706":"#059669",sb=s==="red"?"#fef2f2":s==="yellow"?"#fffbeb":"#f0fdf4",si=s==="red"?"\U0001f534":s==="yellow"?"\U0001f7e1":"\U0001f7e2",stn=s==="red"?"\u5371\u9669":s==="yellow"?"\u8b66\u544a":"\u6b63\u5e38",tot=i.stock_total||0,ip=i.in_production||0,av=tot+ip,so="-",po="-",cs=0,cp=0;(i.daily_plan||[]).forEach(function(p){if(p.date<today)return;cs+=p.qty||0;cp+=p.qty||0;if(so==="-"&&tot<cs)so=p.date;if(po==="-"&&av<cp)po=p.date;});h+='<tr style="background:'+sb+'"><td class="sticky-col" style="font-weight:600;color:'+sc+'">'+si+' '+stn+'</td><td class="sticky-col2">'+(i.customer||"-")+'</td><td class="sticky-col3"><strong>'+i.product_code+'</strong></td><td style="font-size:11px">'+(i.project||"-")+'</td><td style="text-align:center">'+(i.basket_capacity||"-")+'</td><td style="text-align:center">'+(i.local_stock||0)+'</td><td style="text-align:center">'+(i["3pl_stock"]||0)+'</td><td style="text-align:center">'+(i.in_transit||0)+'</td><td style="text-align:center;font-weight:600">'+tot+'</td><td style="text-align:center">'+ip+'</td><td style="text-align:center;font-weight:600;color:'+(av>0?"#059669":"#dc2626")+'">'+av+'</td><td style="text-align:center;color:'+(so!=="-"?"#dc2626":"#059669")+';font-weight:600">'+(so!=="-"?so.substring(5):"\u221e")+'</td><td style="text-align:center;color:'+(po!=="-"?"#d97706":"#059669")+';font-weight:600">'+(po!=="-"?po.substring(5):"\u221e")+'</td></tr>';});h+='</tbody></table>';c.innerHTML=h;}
+
+// IMPORT
+var _impPath="",_impSheets=[];
+function openImportDialog(){document.getElementById("import-step1").style.display="";document.getElementById("import-step2").style.display="none";document.getElementById("import-step3").style.display="none";document.getElementById("import-file").value="";document.getElementById("import-dialog").classList.add("show");}
+function closeImportDialog(){document.getElementById("import-dialog").classList.remove("show");}
+function detectTemplate(){var fi=document.getElementById("import-file");if(!fi.files.length){toast("\u8bf7\u9009\u62e9\u6587\u4ef6","warning");return;}var fd=new FormData();fd.append("file",fi.files[0]);toast("\u6b63\u5728\u8bc6\u522b...","info");fetch("/api/supply-chain/detect-template",{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){return r.json()}).then(function(d){if(d.error){toast(d.error,"error");return;}_impPath=d.file_path;_impSheets=d.sheets;document.getElementById("import-filename").textContent=d.file;renderImpSheets(d.sheets);document.getElementById("import-step1").style.display="none";document.getElementById("import-step2").style.display="";}).catch(function(){toast("\u8bc6\u522b\u5931\u8d25","error");});}
+function renderImpSheets(sheets){var html="";sheets.forEach(function(s,i){html+='<div style="padding:10px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:8px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><strong>Sheet: '+s.sheet_name+'</strong> ('+s.max_row+'\u884c)';if(s.detected_template)html+=' <span style="color:#059669;font-size:12px">\u2705 \u8bc6\u522b\u4e3a: '+s.detected_template+'</span>';else html+=' <span style="color:#d97706;font-size:12px">\u26a0\ufe0f \u672a\u8bc6\u522b</span>';html+='</div><div style="font-size:11px;color:#6b7280">\u8868\u5934: '+s.headers[0].join(", ").substring(0,100)+'...</div><select id="sheet-tmpl-'+i+'" style="margin-top:4px;padding:4px;border:1px solid #d1d5db;border-radius:4px;font-size:12px"><option value="">\u8bf7\u9009\u62e9\u6a21\u677f</option></select></div>';});document.getElementById("import-sheets").innerHTML=html;fetch("/api/supply-chain/templates").then(function(r){return r.json()}).then(function(tmpls){sheets.forEach(function(s,i){var sel=document.getElementById("sheet-tmpl-"+i);tmpls.forEach(function(t){var o=document.createElement("option");o.value=t.id;o.textContent=t.name+" ("+t.template_type+")";if(s.template_id==t.id)o.selected=true;sel.appendChild(o);});});});}
+function confirmImport(){var results=[],pending=0;_impSheets.forEach(function(s,i){var sel=document.getElementById("sheet-tmpl-"+i),tid=sel.value;if(!tid)return;pending++;fetch("/api/supply-chain/import",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({file_path:_impPath,template_id:parseInt(tid),sheet_name:s.sheet_name})}).then(function(r){return r.json()}).then(function(d){results.push({sheet:s.sheet_name,ok:d.ok||false,count:d.count||0,error:d.error});pending--;if(pending<=0)showImpRes(results);}).catch(function(){results.push({sheet:s.sheet_name,ok:false,error:"\u5bfc\u5165\u5931\u8d25"});pending--;if(pending<=0)showImpRes(results);});});if(!pending)showImpRes([]);}
+function showImpRes(results){document.getElementById("import-step2").style.display="none";document.getElementById("import-step3").style.display="";var html="<h4>\u5bfc\u5165\u7ed3\u679c</h4>";results.forEach(function(r){html+='<div style="padding:8px;margin-bottom:4px;border-radius:6px;background:'+(r.ok?"#f0fdf4":"#fef2f2")+'">'+r.sheet+": "+(r.ok?"\u2705 \u6210\u529f "+r.count+"\u6761":"\u274c "+r.error)+'</div>';});html+='<button class="btn btn-primary" style="margin-top:12px" onclick="closeImportDialog();loadOverview()">\u5b8c\u6210</button>';document.getElementById("import-result").innerHTML=html;}
+
+// TEMPLATE
+function openTemplateDialog(){document.getElementById("template-dialog").classList.add("show");tmplGoStep(1);loadTemplates();}
+function closeTemplateDialog(){document.getElementById("template-dialog").classList.remove("show");}
+function tmplGoStep(n){[1,2,3].forEach(function(i){var p=document.getElementById("tmpl-page"+i);if(p)p.style.display=i===n?"":"none";});["ts1","ts2","ts3"].forEach(function(id,i){var el=document.getElementById(id);if(el){el.style.fontWeight=(i+1)===n?"700":"400";el.style.color=(i+1)<=n?"#3b82f6":"#9ca3af";}});}
+
+var _tmplAllSheets=[];
+function tmplUpload(){var fi=document.getElementById("tmpl-file");if(!fi.files.length){toast("\u8bf7\u9009\u62e9\u6587\u4ef6","warning");return;}var fd=new FormData();fd.append("file",fi.files[0]);toast("\u6b63\u5728\u8bfb\u53d6...","info");fetch("/api/supply-chain/detect-template",{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){return r.json()}).then(function(d){if(d.error){toast(d.error,"error");return;}if(!d.sheets.length){toast("\u6587\u4ef6\u65e0\u6570\u636e","error");return;}_tmplFilePath=d.file_path;_tmplAllSheets=d.sheets;_tmplColMap={};renderTmplPreview(d.sheets);tmplGoStep(2);}).catch(function(){toast("\u8bfb\u53d6\u5931\u8d25","error");});}
+
+function renderTmplPreview(sheets){var html="";if(sheets.length>1){html+='<div style="margin-bottom:8px"><label style="font-size:12px;color:#6b7280">\u9009\u62e9Sheet\uff1a</label><select id="tmpl-sheet-sel" onchange="tmplSwitchSheet()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px">';sheets.forEach(function(s,i){html+='<option value="'+i+'">'+s.sheet_name+' ('+s.max_row+'\u884c)</option>';});html+='</select></div>';}html+='<div id="tmpl-preview-table"></div>';document.getElementById("tmpl-preview").innerHTML=html;renderTmplTable(0);}
+
+function tmplSwitchSheet(){var idx=parseInt(document.getElementById("tmpl-sheet-sel").value);_tmplColMap={};renderTmplTable(idx);}
+
+function renderTmplTable(sheetIdx){
+    var s=_tmplAllSheets[sheetIdx],headers=s.headers||[];
+    if(!headers.length){document.getElementById("tmpl-preview-table").innerHTML='<p style="color:#9ca3af;padding:20px">\u65e0\u6570\u636e</p>';return;}
+    var fields=[{v:"",l:"-- \u4e0d\u6620\u5c04 --"},{v:"code",l:"\u4ea7\u54c1\u7f16\u7801"},{v:"customer",l:"\u5ba2\u6237"},{v:"project",l:"\u9879\u76ee"},{v:"basket",l:"\u6bcf\u7b50\u5bb9\u91cf"},{v:"local_stock",l:"\u5e7f\u5347\u5e93\u5b58"},{v:"3pl_stock",l:"3PL\u5e93\u5b58"},{v:"in_transit",l:"\u5728\u9014\u6570\u91cf"},{v:"forecast",l:"\u9884\u6d4b\u6570\u91cf"},{v:"shipped",l:"\u5df2\u51fa\u5e93"},{v:"plan_date",l:"\u88c5\u8f66\u65e5\u671f"},{v:"ignore",l:"\u5ffd\u7565\u6b64\u5217"}];
+    var hdr=headers[1]&&headers[1].length>0?headers[1]:headers[0]||[];
+    var dateRow=headers[0]||[];
+    var numCols=Math.max(hdr.length,dateRow.length);
+    // Auto-detect
+    _tmplColMap={};
+    hdr.forEach(function(h,ci){if(!h)return;var hl=String(h).toLowerCase();if(hl.indexOf("\u7f16\u7801")>=0||hl.indexOf("\u4ef6\u53f7")>=0||hl.indexOf("code")>=0)_tmplColMap[ci]="code";else if(hl.indexOf("\u5ba2\u6237")>=0&&hl.indexOf("\u4ef6")<0)_tmplColMap[ci]="customer";else if(hl.indexOf("\u9879\u76ee")>=0)_tmplColMap[ci]="project";else if(hl.indexOf("\u7b50")>=0||hl.indexOf("\u5bb9\u91cf")>=0)_tmplColMap[ci]="basket";else if(hl.indexOf("\u5e7f\u5347")>=0)_tmplColMap[ci]="local_stock";else if(hl.indexOf("3pl")>=0)_tmplColMap[ci]="3pl_stock";else if(hl.indexOf("\u5728\u9014")>=0)_tmplColMap[ci]="in_transit";else if(hl.indexOf("\u9884\u6d4b")>=0)_tmplColMap[ci]="forecast";else if(hl.indexOf("\u51fa\u5e93")>=0||hl.indexOf("\u53d1\u51fa")>=0)_tmplColMap[ci]="shipped";else if(hl.indexOf("\u5728\u5236")>=0)_tmplColMap[ci]="in_production";});
+    dateRow.forEach(function(h,ci){if(h&&(h instanceof Date||String(h).match(/^\d{4}[-\/]/))){if(!_tmplColMap[ci])_tmplColMap[ci]="plan_date";}});
+
+    var html='<table class="sc-table" style="font-size:11px"><thead><tr>';
+    for(var ci=0;ci<numCols;ci++){var cl=String.fromCharCode(65+ci),ht=hdr[ci]||"";html+='<th style="padding:4px;text-align:center;min-width:80px"><div style="font-size:10px;color:#6b7280;margin-bottom:2px">'+cl+'</div><div style="font-size:11px;margin-bottom:4px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+ht+'">'+ht+'</div><select data-col="'+ci+'" onchange="tmplColChg('+ci+',this.value)" style="width:100%;font-size:10px;padding:2px;border:1px solid #d1d5db;border-radius:3px">';fields.forEach(function(f){var sel=(_tmplColMap[ci]===f.v)?"selected":"";html+='<option value="'+f.v+'" '+sel+'>'+f.l+'</option>';});html+='</select></th>';}
+    html+='</tr></thead><tbody>';
+    var sr=headers.length>=2?2:1;
+    for(var ri=sr;ri<Math.min(headers.length,sr+8);ri++){html+='<tr>';var row=headers[ri]||[];for(var ci=0;ci<numCols;ci++){var val=row[ci]||"";if(typeof val==="object")val=String(val);html+='<td style="padding:3px 6px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+val+'">'+val+'</td>';}html+='</tr>';}
+    html+='</tbody></table>';
+    document.getElementById("tmpl-preview-table").innerHTML=html;
+}
+
+function tmplColChg(ci,val){if(val)_tmplColMap[ci]=val;else delete _tmplColMap[ci];}
+
+function tmplSave(){
+    var name=document.getElementById("tmpl-name").value.trim();
+    var kw=document.getElementById("tmpl-keywords").value.trim();
+    if(!name){toast("\u8bf7\u8f93\u5165\u6a21\u677f\u540d\u79f0","warning");return;}
+    var hasCode=false;for(var k in _tmplColMap){if(_tmplColMap[k]==="code")hasCode=true;}
+    if(!hasCode){toast("\u8bf7\u81f3\u5c11\u6620\u5c04\u4e00\u4e2a\u201c\u4ea7\u54c1\u7f16\u7801\u201d\u5217","warning");return;}
+    var mapping={header_row:1,data_start:3,snapshot_cols:{}};
+    for(var ci in _tmplColMap){var cl=String.fromCharCode(65+parseInt(ci)),f=_tmplColMap[ci];if(f==="code")mapping.code_col=cl;else if(f==="customer")mapping.customer_col=cl;else if(f==="project")mapping.project_col=cl;else if(f==="basket")mapping.basket_col=cl;else if(f==="plan_date"){if(!mapping.plan_start_col)mapping.plan_start_col=cl;mapping.plan_end_col=cl;mapping.plan_date_row=1;}else if(f&&f!=="ignore"&&f!=="in_production"){mapping.snapshot_cols[f]=cl;}}
+    var body={name:name,template_type:mapping.plan_start_col?"mixed":"forecast",header_keywords:{keywords:kw.split(",").map(function(s){return s.trim()}).filter(function(s){return s})},column_mapping:mapping};
+    fetch("/api/supply-chain/templates",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify(body)}).then(function(r){return r.json()}).then(function(d){if(d.error){toast(d.error,"error");return;}toast("\u6a21\u677f\u521b\u5efa\u6210\u529f","success");document.getElementById("tmpl-name").value="";document.getElementById("tmpl-keywords").value="";tmplGoStep(3);loadTemplates();}).catch(function(){toast("\u4fdd\u5b58\u5931\u8d25","error");});}
+
+function loadTemplates(){fetch("/api/supply-chain/templates").then(function(r){return r.json()}).then(function(d){var html="";if(!d.length)html='<div style="color:#9ca3af;text-align:center;padding:12px">\u6682\u65e0\u6a21\u677f</div>';d.forEach(function(t){html+='<div style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:6px"><strong>'+t.name+'</strong> <span style="color:#6b7280;font-size:12px">('+t.template_type+')</span><span style="flex:1"></span><button class="btn btn-danger btn-sm" onclick="delTmpl('+t.id+')">\u5220\u9664</button></div>';});document.getElementById("template-list").innerHTML=html;});}
+function delTmpl(id){if(!confirm("\u786e\u5b9a\u5220\u9664\u6b64\u6a21\u677f\uff1f"))return;fetch("/api/supply-chain/templates/"+id,{method:"DELETE",credentials:"same-origin"}).then(function(){toast("\u5df2\u5220\u9664","success");loadTemplates();});}
+</script>
+<style>
+.sc-table{border-collapse:collapse;font-size:12px;white-space:nowrap;width:100%}
+.sc-table th,.sc-table td{padding:6px 10px;border:1px solid #e5e7eb;text-align:left}
+.sc-table th{background:#f9fafb;font-weight:600;position:sticky;top:0;z-index:10;font-size:11px}
+.sticky-col{position:sticky;left:0;background:#fff;z-index:5;min-width:70px;text-align:center}
+.sticky-col2{position:sticky;left:70px;background:#fff;z-index:5;min-width:120px}
+.sticky-col3{position:sticky;left:190px;background:#fff;z-index:5;min-width:160px}
+.sc-table tr:hover{background:#f0f9ff!important}
+.tmpl-step{font-size:13px;padding:4px 8px}
+</style>
+{% endblock %}

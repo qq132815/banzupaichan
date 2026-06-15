@@ -1,0 +1,200 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>排班图片功能测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        #console-output { background: #1e1e1e; color: #00ff00; padding: 10px; font-family: monospace; height: 300px; overflow-y: auto; }
+        .image-container { border: 1px solid #ddd; border-radius: 8px; height: 300px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #f9f9f9; }
+    </style>
+</head>
+<body>
+    <h1>排班图片功能测试</h1>
+    
+    <div class="test-section">
+        <h2>测试1: loadProductImage 函数</h2>
+        <input type="text" id="product-code" placeholder="输入产品编码" value="F26-8108010HV" style="width: 300px; padding: 8px;">
+        <button onclick="testLoadImage()">测试加载图片</button>
+        <button onclick="testResetImage()">测试重置图片</button>
+        <div id="test1-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试2: 模拟 selectOrder</h2>
+        <button onclick="testSelectOrder()">模拟选择工单</button>
+        <div id="test2-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试3: API 调用</h2>
+        <button onclick="testApiCall()">测试 API 调用</button>
+        <div id="test3-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>产品图片区域</h2>
+        <div class="image-container">
+            <div id="product-image-placeholder" style="text-align: center; color: #9ca3af; font-size: 13px;">
+                <div style="font-size: 48px; margin-bottom: 10px;">📦</div>
+                <div>选择工单后显示产品图片</div>
+            </div>
+            <img id="product-image" src="" style="max-width: 100%; max-height: 100%; object-fit: contain; display: none;">
+        </div>
+    </div>
+    
+    <h3>控制台输出</h3>
+    <div id="console-output"></div>
+    
+    <script>
+        // 重写 console.log 显示到页面
+        var originalLog = console.log;
+        var originalError = console.error;
+        
+        function addToConsole(message, type) {
+            var output = document.getElementById('console-output');
+            var div = document.createElement('div');
+            div.style.color = type === 'error' ? '#ff4444' : type === 'info' ? '#4488ff' : '#00ff00';
+            div.textContent = new Date().toLocaleTimeString() + ': ' + message;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
+        }
+        
+        console.log = function() {
+            var args = Array.prototype.slice.call(arguments);
+            var message = args.map(function(a) { return typeof a === 'object' ? JSON.stringify(a) : a; }).join(' ');
+            addToConsole(message, 'log');
+            originalLog.apply(console, arguments);
+        };
+        
+        console.error = function() {
+            var args = Array.prototype.slice.call(arguments);
+            var message = args.map(function(a) { return typeof a === 'object' ? JSON.stringify(a) : a; }).join(' ');
+            addToConsole(message, 'error');
+            originalError.apply(console, arguments);
+        };
+        
+        // loadProductImage 函数
+        function loadProductImage(productCode) {
+            console.log('loadProductImage called with:', productCode);
+            var img = document.getElementById('product-image');
+            var placeholder = document.getElementById('product-image-placeholder');
+            
+            if (!productCode) {
+                console.log('No product code, showing placeholder');
+                if (img) img.style.display = 'none';
+                if (placeholder) {
+                    placeholder.style.display = 'block';
+                    placeholder.innerHTML = '<div style="font-size: 48px; margin-bottom: 10px;">📦</div><div>选择工单后显示产品图片</div>';
+                }
+                return;
+            }
+            
+            console.log('Fetching product image for:', productCode);
+            
+            // 尝试精确匹配
+            fetch('/api/product-definitions?exact_product_code=' + encodeURIComponent(productCode) + '&page_size=1')
+                .then(function(r) {
+                    console.log('API response status:', r.status);
+                    if (!r.ok) {
+                        throw new Error('API returned ' + r.status);
+                    }
+                    return r.json();
+                })
+                .then(function(resp) {
+                    console.log('API response:', resp);
+                    var data = resp.data || resp;
+                    
+                    if (data.length > 0) {
+                        console.log('Found product:', data[0]);
+                        if (data[0].image_path) {
+                            console.log('Setting image path:', data[0].image_path);
+                            img.src = data[0].image_path;
+                            img.style.display = 'block';
+                            placeholder.style.display = 'none';
+                            document.getElementById('test1-result').innerHTML = '<span class="success">✓ 图片加载成功</span>';
+                        } else if (data[0].image_url) {
+                            console.log('Setting image URL:', data[0].image_url);
+                            img.src = data[0].image_url;
+                            img.style.display = 'block';
+                            placeholder.style.display = 'none';
+                            document.getElementById('test1-result').innerHTML = '<span class="success">✓ 图片加载成功 (URL)</span>';
+                        } else {
+                            console.log('Product found but no image');
+                            img.style.display = 'none';
+                            placeholder.style.display = 'block';
+                            placeholder.innerHTML = '<div style="font-size: 48px; margin-bottom: 10px;">❌</div><div>产品没有图片</div>';
+                            document.getElementById('test1-result').innerHTML = '<span class="error">✗ 产品没有图片</span>';
+                        }
+                    } else {
+                        console.log('No exact match found');
+                        document.getElementById('test1-result').innerHTML = '<span class="error">✗ 未找到产品</span>';
+                    }
+                })
+                .catch(function(err) {
+                    console.error('Error:', err);
+                    document.getElementById('test1-result').innerHTML = '<span class="error">✗ 错误: ' + err.message + '</span>';
+                });
+        }
+        
+        // 测试函数
+        function testLoadImage() {
+            var code = document.getElementById('product-code').value;
+            console.log('Testing loadProductImage with:', code);
+            document.getElementById('test1-result').innerHTML = '<span class="info">测试中...</span>';
+            loadProductImage(code);
+        }
+        
+        function testResetImage() {
+            console.log('Testing reset image');
+            loadProductImage(null);
+            document.getElementById('test1-result').innerHTML = '<span class="success">✓ 图片已重置</span>';
+        }
+        
+        function testSelectOrder() {
+            console.log('Testing selectOrder simulation');
+            var testOrder = {
+                order_no: 'TEST001',
+                product_code: 'F26-8108010HV',
+                product_name: '测试产品',
+                quantity: 100,
+                completed_qty: 50
+            };
+            console.log('Simulated order:', testOrder);
+            console.log('Calling loadProductImage with product_code:', testOrder.product_code);
+            loadProductImage(testOrder.product_code);
+            document.getElementById('test2-result').innerHTML = '<span class="success">✓ selectOrder 模拟完成</span>';
+        }
+        
+        function testApiCall() {
+            console.log('Testing API call directly');
+            document.getElementById('test3-result').innerHTML = '<span class="info">测试中...</span>';
+            
+            fetch('/api/product-definitions?exact_product_code=F26-8108010HV&page_size=1')
+                .then(function(r) {
+                    console.log('API response status:', r.status);
+                    if (!r.ok) {
+                        throw new Error('API returned ' + r.status + ' - ' + r.statusText);
+                    }
+                    return r.json();
+                })
+                .then(function(data) {
+                    console.log('API response data:', data);
+                    document.getElementById('test3-result').innerHTML = '<span class="success">✓ API 调用成功</span><br>数据: ' + JSON.stringify(data).substring(0, 200);
+                })
+                .catch(function(err) {
+                    console.error('API error:', err);
+                    document.getElementById('test3-result').innerHTML = '<span class="error">✗ API 错误: ' + err.message + '</span>';
+                });
+        }
+        
+        console.log('测试页面加载完成');
+        console.log('请在浏览器中打开此页面并登录后测试');
+    </script>
+</body>
+</html>

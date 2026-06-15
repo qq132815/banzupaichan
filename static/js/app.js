@@ -11,6 +11,7 @@ function toast(msg, type) {
 
 function api(url, options) {
     options = options || {};
+    options.credentials = options.credentials || 'same-origin';
     if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
         options.headers = options.headers || {};
         options.headers['Content-Type'] = 'application/json';
@@ -18,9 +19,17 @@ function api(url, options) {
     }
     return fetch(url, options).then(function(r) {
         if (!r.ok) {
-            return r.json().then(function(e) { throw e; });
+            var ct = r.headers.get('content-type') || '';
+            if (ct.indexOf('json') >= 0) {
+                return r.json().then(function(e) { throw e; });
+            }
+            throw new Error('HTTP ' + r.status + ' ' + r.statusText);
         }
-        return r.json();
+        var ct = r.headers.get('content-type') || '';
+        if (ct.indexOf('json') >= 0) {
+            return r.json();
+        }
+        throw new Error('\u670d\u52a1\u5668\u8fd4\u56de\u4e86\u975eJSON\u6570\u636e');
     });
 }
 

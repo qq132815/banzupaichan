@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import openpyxl
 import os
 import sys
@@ -46,33 +46,157 @@ def _match_headers(ws, field_map):
 
 
 
-def import_shipping_plan(file_path):
-    wb = openpyxl.load_workbook(file_path)
-    ws = wb.active
+def import_shipping_plan(file_path, plan_month=None):
+    """Import shipping plan from Excel.
+    Supports two formats:
+    1. New template: 客户/项目/客户件号/广升件号/名称 + 1号~31号
+    2. Legacy: product_code + date columns with datetime headers
+    """
+    import re as _re
+    from datetime import date
+    wb = openpyxl.load_workbook(file_path, data_only=True)
     conn = get_connection()
     c = conn.cursor()
-    c.execute("DELETE FROM shipping_plan")
-    headers = [cell.value for cell in ws[1]]
-    dates = []
-    for i, h in enumerate(headers):
-        if hasattr(h, 'strftime'):
-            dates.append((i, h))
+    # Clear existing data for the month to allow re-import
+    if plan_month:
+        c.execute("DELETE FROM shipping_plan WHERE plan_month=?", (plan_month,))
+    else:
+        c.execute("DELETE FROM shipping_plan WHERE plan_month IS NULL")
+
     count = 0
-    for row in ws.iter_rows(min_row=getattr(ws, '_import_header_row', 1) + 1, values_only=True):
-        if not row or not row[0]:
+    for ws in wb.worksheets:
+        all_rows = []
+        for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 5), values_only=True):
+            all_rows.append(list(row))
+        if not all_rows:
             continue
-        product_code = str(row[0]).strip()
-        for col_idx, ship_date in dates:
-            qty = row[col_idx] if col_idx < len(row) else None
-            if qty and str(qty).isdigit() and int(qty) > 0:
-                date_str = ship_date.strftime('%Y-%m-%d')
-                c.execute("INSERT INTO shipping_plan (product_code, quantity, ship_date) VALUES (?, ?, ?)",
-                          (product_code, int(qty), date_str))
-                count += 1
+
+        # Detect format: check if row 2 has "客户" in col A
+        header_row = None
+        for ri in range(min(3, len(all_rows))):
+            row_vals = all_rows[ri]
+            if row_vals and row_vals[0] and str(row_vals[0]).strip() in ('客户', '广升件号'):
+                header_row = ri
+                break
+
+        if header_row is not None:
+            # New template format
+            headers = all_rows[header_row]
+            day_cols = []
+            for ci, h in enumerate(headers):
+                if h:
+                    m = _re.match(r'^(\d{1,2})\u53f7$', str(h).strip())
+                    if m:
+                        day_cols.append((ci, int(m.group(1))))
+
+            if not day_cols:
+                continue
+
+            if not plan_month:
+                fname = os.path.basename(file_path)
+                m = _re.search(r'(\d{4})[.\-/](\d{1,2})\u6708', fname)
+                if m:
+                    plan_month = m.group(1) + '-' + m.group(2).zfill(2)
+                else:
+                    plan_month = date.today().strftime('%Y-%m')
+
+            data_start = header_row + 2
+            if data_start < len(all_rows) and all_rows[data_start] and all_rows[data_start][0]:
+                val = str(all_rows[data_start][0] or '')
+                if val.startswith('\u661f\u671f'):
+                    data_start += 1
+
+            current_customer = None
+            current_project = None
+
+            for ri in range(data_start, ws.max_row):
+                row_vals_list = list(ws.iter_rows(min_row=ri+1, max_row=ri+1, values_only=True))
+                if not row_vals_list or not row_vals_list[0]:
+                    continue
+                row = list(row_vals_list[0])
+
+                col_a = row[0] if len(row) > 0 else None
+                col_b = row[1] if len(row) > 1 else None
+                col_c = row[2] if len(row) > 2 else None
+                col_d = row[3] if len(row) > 3 else None
+                col_e = row[4] if len(row) > 4 else None
+
+                if col_a:
+                    current_customer = str(col_a).strip()
+                if col_b:
+                    current_project = str(col_b).strip().replace('\n', ' ')
+
+                product_code = str(col_c).strip() if col_c else None
+                if not product_code:
+                    continue
+
+                gs_part_no = str(col_d).strip() if col_d else ''
+                product_name = str(col_e).strip() if col_e else ''
+
+                for ci, day_num in day_cols:
+                    if ci >= len(row):
+                        continue
+                    qty = row[ci]
+                    if qty is None:
+                        continue
+                    try:
+                        qty_val = float(qty)
+                    except (ValueError, TypeError):
+                        continue
+                    if qty_val <= 0:
+                        continue
+
+                    try:
+                        year, month = int(plan_month[:4]), int(plan_month[5:7])
+                        ship_date = date(year, month, day_num).strftime('%Y-%m-%d')
+                    except Exception:
+                        continue
+
+                    c.execute(
+                        "INSERT INTO shipping_plan (product_code, quantity, ship_date, plan_month, customer, project, customer_part_no, gs_part_no, product_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (product_code, qty_val, ship_date, plan_month,
+                         current_customer or '', current_project or '',
+                         product_code, gs_part_no, product_name)
+                    )
+                    count += 1
+        else:
+            # Legacy format: row 1 has datetime date headers
+            headers = all_rows[0]
+            dates = []
+            for i, h in enumerate(headers):
+                if hasattr(h, 'strftime'):
+                    dates.append((i, h))
+            if not dates:
+                continue
+            for ri in range(1, ws.max_row):
+                row_vals_list = list(ws.iter_rows(min_row=ri+1, max_row=ri+1, values_only=True))
+                if not row_vals_list or not row_vals_list[0]:
+                    continue
+                row = list(row_vals_list[0])
+                if not row[0]:
+                    continue
+                product_code = str(row[0]).strip()
+                for col_idx, ship_date in dates:
+                    qty = row[col_idx] if col_idx < len(row) else None
+                    if qty is None:
+                        continue
+                    try:
+                        qty_val = float(qty)
+                    except (ValueError, TypeError):
+                        continue
+                    if qty_val <= 0:
+                        continue
+                    date_str = ship_date.strftime('%Y-%m-%d')
+                    c.execute(
+                        "INSERT INTO shipping_plan (product_code, quantity, ship_date, plan_month, customer, project, customer_part_no, gs_part_no, product_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (product_code, qty_val, date_str,
+                         ship_date.strftime('%Y-%m'), '', '', '', product_code, '')
+                    )
+                    count += 1
+
     conn.commit()
     conn.close()
     return count
-
 
 def import_production_cycles(file_path):
     wb = openpyxl.load_workbook(file_path)
@@ -534,3 +658,168 @@ def import_work_reports(filepath):
     conn.commit()
     conn.close()
     return count
+
+    """�����Ʒ����"""
+    wb = openpyxl.load_workbook(file_path, data_only=True)
+    ws = wb.active
+    conn = get_connection()
+    c = conn.cursor()
+    
+    # �ֶ�ӳ��
+    field_map = {
+        'product_code': ['��Ʒ����', '��Ʒ���', '����'],
+        'product_name': ['��Ʒ����', '����'],
+        'specifications': ['����ͺ�', '���'],
+        'category': ['����', '��Ʒ����'],
+        'customer': ['�ͻ�', '�ͻ�����'],
+        'project': ['��Ŀ', '��Ŀ����'],
+        'description': ['����', '��Ʒ����'],
+        'status': ['״̬'],
+        'image_url': ['ͼƬURL', 'ͼƬ����', 'ͼƬ']
+    }
+    
+    try:
+        col_map, headers = _match_headers(ws, field_map)
+    except ValueError:
+        conn.close()
+        raise
+    
+    count = 0
+    header_row = getattr(ws, '_import_header_row', 1)
+    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+        if not row:
+            continue
+        product_code = str(row[col_map['product_code']]).strip() if row[col_map['product_code']] else ''
+        if not product_code:
+            continue
+        
+        product_name = str(row[col_map['product_name']]).strip() if row[col_map['product_name']] else ''
+        specifications = str(row[col_map['specifications']]).strip() if row[col_map.get('specifications')] else ''
+        category = str(row[col_map['category']]).strip() if row[col_map.get('category')] else ''
+        customer = str(row[col_map['customer']]).strip() if row[col_map.get('customer')] else ''
+        project = str(row[col_map['project']]).strip() if row[col_map.get('project')] else ''
+        description = str(row[col_map['description']]).strip() if row[col_map.get('description')] else ''
+        status = str(row[col_map['status']]).strip() if row[col_map.get('status')] else 'active'
+        image_url = str(row[col_map['image_url']]).strip() if row[col_map.get('image_url')] else ''
+        
+        # ����ͼƬ�������URL��
+        image_path = ''
+        if image_url:
+            try:
+                from app import download_product_image
+                image_path = download_product_image(image_url, product_code) or ''
+            except:
+                image_path = ''
+        
+        # ʹ�� INSERT OR REPLACE �����»����
+        c.execute("""INSERT OR REPLACE INTO products 
+            (product_code, product_name, specifications, category, customer, project, 
+             description, status, image_url, image_path, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))""",
+            (product_code, product_name, specifications, category, customer, project,
+             description, status, image_url, image_path))
+        count += 1
+    
+    conn.commit()
+    conn.close()
+    return count
+
+def import_product_definitions(file_path):
+    """导入产品定义"""
+    wb = openpyxl.load_workbook(file_path, data_only=True)
+    ws = wb.active
+    conn = get_connection()
+    c = conn.cursor()
+    
+    # 字段映射 - 匹配实际表头
+    field_map = {
+        'product_type': ['产品类型'],
+        'product_code': ['产品编号', '产品编码', '编码'],
+        'product_name': ['产品名称', '名称'],
+        'specifications': ['产品规格', '规格型号', '规格'],
+        'unit': ['单位'],
+        'route_code': ['工艺路线'],
+        'safety_stock_min': ['最小安全库存'],
+        'safety_stock_max': ['最大安全库存'],
+        'stock_qty': ['库存数量'],
+        'source': ['产品来源'],
+        'image_url': ['产品图', '图片URL', '图片链接', '图片'],
+        'customer': ['客户', '客户名称'],
+        'basket_capacity': ['每筐容量']
+    }
+    
+    try:
+        col_map, headers = _match_headers(ws, field_map)
+    except ValueError:
+        conn.close()
+        raise
+    
+    count = 0
+    header_row = getattr(ws, '_import_header_row', 1)
+    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+        if not row:
+            continue
+        product_code = str(row[col_map['product_code']]).strip() if row[col_map['product_code']] else ''
+        if not product_code:
+            continue
+        
+        product_name = str(row[col_map['product_name']]).strip() if row[col_map.get('product_name')] else ''
+        product_type = str(row[col_map['product_type']]).strip() if row[col_map.get('product_type')] else ''
+        specifications = str(row[col_map['specifications']]).strip() if row[col_map.get('specifications')] else ''
+        unit = str(row[col_map['unit']]).strip() if row[col_map.get('unit')] else ''
+        route_code = str(row[col_map['route_code']]).strip() if row[col_map.get('route_code')] else ''
+        safety_stock_min = row[col_map.get('safety_stock_min')] if row[col_map.get('safety_stock_min')] else 0
+        safety_stock_max = row[col_map.get('safety_stock_max')] if row[col_map.get('safety_stock_max')] else 0
+        stock_qty = row[col_map.get('stock_qty')] if row[col_map.get('stock_qty')] else 0
+        source = str(row[col_map.get('source')]).strip() if row[col_map.get('source')] else ''
+        image_url = str(row[col_map['image_url']]).strip() if row[col_map.get('image_url')] else ''
+        customer = str(row[col_map['customer']]).strip() if row[col_map.get('customer')] else ''
+        basket_capacity = row[col_map.get('basket_capacity')] if row[col_map.get('basket_capacity')] else 0
+        
+        # 下载图片（如果有URL）
+        image_path = ''
+        if image_url:
+            try:
+                import requests
+                from urllib.parse import urlparse
+                
+                # 创建图片目录
+                images_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'images', 'products')
+                os.makedirs(images_dir, exist_ok=True)
+                
+                # 生成文件名
+                url_path = urlparse(image_url).path
+                ext = os.path.splitext(url_path)[1] or '.jpg'
+                safe_code = product_code.replace('/', '_').replace('\\', '_').replace(':', '_')
+                filename = f"{safe_code}{ext}"
+                filepath = os.path.join(images_dir, filename)
+                
+                # 下载图片
+                response = requests.get(image_url, timeout=30)
+                response.raise_for_status()
+                
+                # 保存图片
+                with open(filepath, 'wb') as f:
+                    f.write(response.content)
+                
+                image_path = f"/static/images/products/{filename}"
+            except Exception as e:
+                print(f"下载图片失败 {product_code}: {e}")
+                image_path = ''
+        
+        # 使用 INSERT OR REPLACE 来更新或插入
+        c.execute("""INSERT OR REPLACE INTO products 
+            (product_code, product_name, product_type, specifications, unit, route_code,
+             safety_stock, stock_qty, source, image_url, image_path, customer, basket_capacity, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))""",
+            (product_code, product_name, product_type, specifications, unit, route_code,
+             safety_stock_min, stock_qty, source, image_url, image_path, customer, basket_capacity))
+        count += 1
+    
+    conn.commit()
+    conn.close()
+    return count
+
+
+
+

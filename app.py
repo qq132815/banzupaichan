@@ -173,11 +173,11 @@ def _sync_scheduler():
             except Exception as e:
                 print(f"Attendance auto-sync error: {e}")
             
-            # Equipment status auto-refresh at 08:15 and 20:30
+            # Equipment status auto-refresh at 08:15 and 20:15
             try:
                 now_dt = datetime.now()
                 refresh_times = [
-                    now_dt.replace(hour=8, minute=10, second=0, microsecond=0),
+                    now_dt.replace(hour=8, minute=15, second=0, microsecond=0),
                     now_dt.replace(hour=20, minute=15, second=0, microsecond=0),
                 ]
                 last_equip = last_run.get('equipment_status', 0)
@@ -2232,6 +2232,15 @@ def api_work_reports():
     if date:
         sql += " AND r.create_time LIKE ?"
         params.append(date + '%')
+    else:
+        date_from = request.args.get('date_from', '').strip()
+        date_to = request.args.get('date_to', '').strip()
+        if date_from:
+            sql += " AND r.create_time >= ?"
+            params.append(date_from + ' 00:00:00')
+        if date_to:
+            sql += " AND r.create_time <= ?"
+            params.append(date_to + ' 23:59:59')
     team_filter = request.args.get('team', '').strip()
     if team_filter:
         sql += " AND t.name = ?"
@@ -2496,6 +2505,10 @@ def api_sync_reports():
             c.execute("UPDATE sync_logs SET status='success', record_count=?, detail=? WHERE id=?", (count, output[-500:], log_id))
             conn.commit()
             conn.close()
+            try:
+                _refresh_equipment_status()
+            except Exception:
+                pass
             return jsonify({'ok': True, 'count': count, 'output': output[-1000:]})
         else:
             conn = get_connection()
@@ -2547,6 +2560,92 @@ def api_schedules():
     return jsonify(paginate_query(sql, params, page, page_size))
 
 # ========== Standard Hours Capacity API ==========
+def _norm_equipment_key(value):
+    import unicodedata as _ud
+    if not value:
+        return ''
+    text = _ud.normalize('NFKC', str(value)).strip().lower()
+    text = text.replace('/', '-').replace('.', '-').replace('_', '-')
+    while '--' in text:
+        text = text.replace('--', '-')
+    return text.replace(' ', '')
+
+def _strip_equipment_key(value):
+    return re.sub(r'[^a-z0-9]', '', _norm_equipment_key(value)) if value else ''
+
+def _build_standard_equipment_maps(cursor):
+    cursor.execute("SELECT equipment_code, equipment_name FROM equipments")
+    exact_map = {}
+    norm_map = {}
+    strip_map = {}
+    for code, name in cursor.fetchall():
+        display_name = name or code or ''
+        for key in (code, name):
+            if not key:
+                continue
+            exact_map[str(key).strip()] = display_name
+            nk = _norm_equipment_key(key)
+            if nk and nk not in norm_map:
+                norm_map[nk] = display_name
+            sk = _strip_equipment_key(key)
+            if sk and sk not in strip_map:
+                strip_map[sk] = display_name
+    return exact_map, norm_map, strip_map
+
+def _standard_equipment_name(raw_name, equipment_maps):
+    if not raw_name:
+        return ''
+    exact_map, norm_map, strip_map = equipment_maps
+    raw_name = str(raw_name).strip()
+    if raw_name in exact_map:
+        return exact_map[raw_name]
+    nk = _norm_equipment_key(raw_name)
+    if nk in norm_map:
+        return norm_map[nk]
+    sk = _strip_equipment_key(raw_name)
+    if sk in strip_map:
+        return strip_map[sk]
+    return ''
+
+def _sync_available_equipment_for_standard_hour(cursor, row, equipment_maps):
+    product_name = (row.get('product_name') or '').strip()
+    product_code = (row.get('product_code') or '').strip()
+    process_name = (row.get('process_name') or '').strip()
+    if not process_name or (not product_name and not product_code):
+        available_equipment = ''
+    else:
+        cursor.execute("""
+            SELECT DISTINCT equipment
+            FROM work_reports
+            WHERE TRIM(COALESCE(product_name, '')) = ?
+              AND TRIM(COALESCE(process_name, '')) = ?
+              AND equipment IS NOT NULL
+              AND TRIM(equipment) != ''
+        """, (product_name, process_name))
+        report_rows = cursor.fetchall()
+        if not report_rows and product_code:
+            cursor.execute("""
+                SELECT DISTINCT equipment
+                FROM work_reports
+                WHERE TRIM(COALESCE(product_code, '')) = ?
+                  AND TRIM(COALESCE(process_name, '')) = ?
+                  AND equipment IS NOT NULL
+                  AND TRIM(equipment) != ''
+            """, (product_code, process_name))
+            report_rows = cursor.fetchall()
+        names = []
+        seen = set()
+        for report_equipment, in report_rows:
+            standard_name = _standard_equipment_name(report_equipment, equipment_maps)
+            if standard_name and standard_name not in seen:
+                seen.add(standard_name)
+                names.append(standard_name)
+        names.sort(key=_natural_sort_key)
+        available_equipment = ','.join(names)
+    row['available_equipment'] = available_equipment
+    cursor.execute("UPDATE standard_hours SET available_equipment=? WHERE id=?", (available_equipment, row['id']))
+    return available_equipment
+
 @app.route('/api/standard-hours-capacity')
 @login_required
 def api_standard_hours_capacity():
@@ -2580,10 +2679,13 @@ def api_standard_hours_capacity():
     c.execute(sql + " LIMIT ? OFFSET ?", params + [page_size, offset])
     rows = [dict(row) for row in c.fetchall()]
     
+    equipment_maps = _build_standard_equipment_maps(c)
+
     # Enrich each row with capacity data
     for row in rows:
         pc = row['product_code']
         pn = row['process_name']
+        _sync_available_equipment_for_standard_hour(c, row, equipment_maps)
         
         # 排班产能: from schedules
         c.execute("SELECT DISTINCT capacity_per_hour FROM schedules WHERE product_code=? AND process_name=? AND capacity_per_hour > 0", (pc, pn))
@@ -2634,6 +2736,7 @@ def api_standard_hours_capacity():
     total_combos = prog[0] or 0
     has_cap_count = prog[1] or 0
     
+    conn.commit()
     conn.close()
     total_pages = max(1, (total + page_size - 1) // page_size)
     return jsonify({
@@ -2716,6 +2819,25 @@ def _refresh_equipment_status():
             return s.replace(' ', '')
         def _strip(s):
             return re.sub(r'[^a-z0-9]', '', _norm(s)) if s else ''
+        def _is_process_completed(progress_str, process_name):
+            if not progress_str or not process_name:
+                return False
+            norm_process = _ud.normalize('NFKC', process_name).strip()
+            norm_progress = _ud.normalize('NFKC', progress_str)
+            matches = []
+            for segment in norm_progress.split('->'):
+                segment = segment.strip()
+                if not segment.startswith(norm_process):
+                    continue
+                match = re.search(r'[\u3010\[]\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)\s*[\u3011\]]', segment)
+                if match:
+                    matches.append(match)
+            if not matches:
+                return False
+            match = matches[-1]
+            done = float(match.group(1))
+            total = float(match.group(2))
+            return total > 0 and done >= total
         updated = 0
         for equip_raw, order_no, process_name in latest_reports:
             if not order_no or not process_name:
@@ -2749,17 +2871,7 @@ def _refresh_equipment_status():
             if not row or not row[0]:
                 continue
             progress_str = row[0]
-            process_completed = False
-            if process_name:
-                pattern = re.escape(process_name) + r'.*?[\u3010(\d+)/(\d+)\u3011]'
-                match = re.search(pattern, progress_str)
-                if match:
-                    done = int(match.group(1))
-                    total = int(match.group(2))
-                    if total > 0 and done >= total:
-                        process_completed = True
-                else:
-                    process_completed = False
+            process_completed = _is_process_completed(progress_str, process_name)
             if not process_completed:
                 c.execute("UPDATE equipments SET status='running' WHERE id=?", (matched_eq['id'],))
                 updated += 1
@@ -4488,17 +4600,30 @@ def api_workshop_3d_status():
         cursor.execute("SELECT id, name FROM teams")
         teams_map = {row[0]: row[1] for row in cursor.fetchall()}
 
-        # Get latest work report for each equipment (qty + efficiency)
+        # Get latest work report for each equipment (qty + efficiency + quality/hours)
+        # Only use today's reports to avoid stale matches on workbench
         cursor.execute("""
-            SELECT wr.equipment, wr.report_qty, wr.efficiency, wr.order_no, wr.process_name, wr.create_time, wr.product_name
+            SELECT wr.equipment,
+                   wr.report_qty,
+                   wr.efficiency,
+                   wr.order_no,
+                   wr.process_name,
+                   wr.create_time,
+                   wr.product_name,
+                   SUM(COALESCE(wr.good_qty, 0)) AS good_qty,
+                   SUM(COALESCE(wr.bad_qty, 0)) AS bad_qty,
+                   SUM(COALESCE(wr.report_hours, 0)) AS report_hours
             FROM work_reports wr
             INNER JOIN (
                 SELECT equipment, MAX(create_time) as max_time
                 FROM work_reports
-                WHERE equipment IS NOT NULL AND equipment != ''
+                WHERE equipment IS NOT NULL AND TRIM(equipment) != ''
+                  AND create_time >= date('now', 'localtime')
                 GROUP BY equipment
             ) latest ON wr.equipment = latest.equipment AND wr.create_time = latest.max_time
-            WHERE wr.equipment IS NOT NULL AND wr.equipment != ''
+            WHERE wr.equipment IS NOT NULL AND TRIM(wr.equipment) != ''
+              AND wr.create_time >= date('now', 'localtime')
+            GROUP BY wr.equipment
         """)
         report_map = {}
         for row in cursor.fetchall():
@@ -4508,7 +4633,10 @@ def api_workshop_3d_status():
                 'order_no': row[3],
                 'process_name': row[4],
                 'report_time': row[5],
-                'product_name': row[6]
+                'product_name': row[6],
+                'good_qty': row[7],
+                'bad_qty': row[8],
+                'report_hours': row[9],
             }
         conn.close()
 
@@ -4542,6 +4670,10 @@ def api_workshop_3d_status():
                 stripped_report_map[sk] = val
 
         # Attach report data to equipments with 3-level fuzzy matching
+        # Prefill team names from teams table for every equipment
+        for eq in equipments:
+            eq['team_name'] = teams_map.get(eq['team_id'], '')
+
         for eq in equipments:
             rpt = None
             # Level 1: Exact match by name or code
@@ -4565,6 +4697,9 @@ def api_workshop_3d_status():
 
                 eq['team_name'] = teams_map.get(eq['team_id'], '')
                 eq['product_name'] = rpt.get('product_name', '')
+                eq['good_qty'] = rpt.get('good_qty', 0)
+                eq['bad_qty'] = rpt.get('bad_qty', 0)
+                eq['report_hours'] = rpt.get('report_hours', 0)
 
         return jsonify({'success': True, 'data': equipments})
     except Exception as e:

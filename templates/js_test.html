@@ -1,0 +1,60 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>JavaScript测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+        #result { margin: 20px 0; padding: 10px; background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <h1>JavaScript测试</h1>
+    <button onclick="testFunction()">测试函数</button>
+    <button onclick="testAlert()">测试弹窗</button>
+    <button onclick="testConfirm()">测试确认框</button>
+    <button onclick="testModal()">测试模态框</button>
+    
+    <div id="result">等待测试...</div>
+    
+    <div id="test-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
+        <div style="background:white; margin:100px auto; padding:20px; max-width:400px; border-radius:8px;">
+            <h3>测试模态框</h3>
+            <p>这是一个测试模态框</p>
+            <button onclick="closeModal()">关闭</button>
+        </div>
+    </div>
+    
+    <script>
+        function testFunction() {
+            document.getElementById('result').innerHTML = 'JavaScript函数正常工作';
+        }
+        
+        function testAlert() {
+            alert('这是一个测试弹窗');
+            document.getElementById('result').innerHTML = '弹窗已显示';
+        }
+        
+        function testConfirm() {
+            var result = confirm('这是一个确认框');
+            document.getElementById('result').innerHTML = '用户点击了: ' + (result ? '确定' : '取消');
+        }
+        
+        function testModal() {
+            document.getElementById('test-modal').style.display = 'block';
+            document.getElementById('result').innerHTML = '模态框已显示';
+        }
+        
+        function closeModal() {
+            document.getElementById('test-modal').style.display = 'none';
+            document.getElementById('result').innerHTML = '模态框已关闭';
+        }
+        
+        // 页面加载时显示提示
+        window.onload = function() {
+            document.getElementById('result').innerHTML = '页面加载完成，JavaScript正常工作';
+        };
+    </script>
+</body>
+</html>

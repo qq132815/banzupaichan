@@ -1,16 +1,16 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block content %}
 <div class="page-header">
-<h1>⏱️ 标准工时</h1>
+<h1>标准工时</h1>
 </div>
 <div class="toolbar">
 <input type="text" id="search" placeholder="搜索产品编号/名称/工序..." oninput="window._page=1;loadData()" style="width:240px">
 <div style="margin-left:auto;display:flex;gap:8px">
-<button class="btn btn-outline readonly-hide" onclick="initFromRoutes()">🔄 从工艺路线初始化</button>
-<button class="btn btn-danger readonly-hide" onclick="downloadShTpl()">📄 模板</button>
-<button class="btn btn-outline readonly-hide" onclick="doExport()">📤 导出</button>
-<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/standard_hours', function(){setTimeout(function(){loadData();}, 500);})">📥 导入</button>
-<button class="btn btn-primary readonly-hide" onclick="showAdd()">＋ 新增</button>
+<button class="btn btn-outline readonly-hide" onclick="initFromRoutes()">从工艺路线初始化</button>
+<button class="btn btn-danger readonly-hide" onclick="downloadShTpl()">模板</button>
+<button class="btn btn-outline readonly-hide" onclick="doExport()">导出</button>
+<button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/standard_hours', function(){setTimeout(function(){loadData();}, 500);})">导入</button>
+<button class="btn btn-primary readonly-hide" onclick="showAdd()">新增</button>
 </div>
 </div>
 <div style="display:flex;align-items:center;gap:12px;margin:12px 0;padding:0 4px">
@@ -40,10 +40,10 @@
 <div class="card-body">
 <div class="table-wrap" style="max-height:calc(100vh - 320px);overflow-y:auto">
 <table>
-<thead><tr><th>产品名称</th><th>工序</th><th>班组</th><th>标准工时(分)</th><th>排班产能(H)</th><th>报工平均产能(H)</th><th>报工最高产能(H)</th><th>报工最低产能(H)</th><th>备注</th><th>操作</th></tr></thead>
+<thead><tr><th>产品名称</th><th>工序</th><th>班组</th><th>标准工时(分)</th><th>可用设备</th><th>排班产能(H)</th><th>报工平均产能(H)</th><th>报工最高产能(H)</th><th>报工最低产能(H)</th><th>备注</th><th>操作</th></tr></thead>
 <tbody id="tbody"></tbody>
 </table>
-<div id="empty-msg" class="table-empty" style="display:none">暂无数据，点击"从工艺路线初始化"生成基础数据</div>
+<div id="empty-msg" class="table-empty" style="display:none">暂无数据，点击“从工艺路线初始化”生成基础数据</div>
 </div>
 </div>
 <div id="sh-pagination"></div>
@@ -66,6 +66,7 @@
 <div class="form-group"><label>标准工时(分钟/件)</label><input type="number" class="form-control" id="m-hours" step="0.1" min="0"></div>
 <div class="form-group"><label>换线时间(分钟)</label><input type="number" class="form-control" id="m-setup" step="1" min="0"></div>
 </div>
+<div class="form-group"><label>可用设备</label><input type="text" class="form-control" id="m-available-equipment" readonly placeholder="由报工数据自动匹配"></div>
 <div class="form-group"><label>备注</label><input type="text" class="form-control" id="m-remark"></div>
 </div>
 <div class="modal-footer">
@@ -81,277 +82,327 @@
 <div class="modal-body" id="cap-detail-body" style="max-height:400px;overflow-y:auto"></div>
 </div>
 </div>
-
 {% endblock %}
 {% block scripts %}
 <script>
-
 window._page=1;window._pageSize=50;window._total=0;
 var USER_ROLE="{{ session.get('role','') }}";
-document.addEventListener("DOMContentLoaded", function(){
-    if(USER_ROLE !== "planner"){
-        document.querySelectorAll(".readonly-hide").forEach(function(el){el.style.display="none";});
-    }
-});
-
 var editId=null;
 var allRoutes=[];
+var currentRows={};
 
-// Load process routes for product autocomplete
-fetch("/api/process-routes").then(function(resp){var r=resp.data||resp;window._total=resp.total||0;renderPagination('sh-pagination',resp.page||1,resp.total_pages||1,'loadData');return r.json()}).then(function(resp){var d=resp.data||resp;window._total=resp.total||d.length;renderPagination('sh-pagination',resp.page||1,resp.total_pages||1,'loadData');allRoutes=d;});
+function escHtml(v){
+    if(v===null || v===undefined) return '';
+    return String(v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});
+}
+
+function fetchAllPages(url, done){
+    var rows=[];
+    function load(page){
+        var sep=url.indexOf('?')>=0?'&':'?';
+        fetch(url+sep+'page='+page+'&page_size=200').then(function(r){return r.json();}).then(function(resp){
+            var data=resp.data||resp;
+            for(var i=0;i<data.length;i++) rows.push(data[i]);
+            if(resp.total_pages && page < resp.total_pages) load(page+1);
+            else done(rows);
+        });
+    }
+    load(1);
+}
+
+function loadRoutes(){
+    fetchAllPages('/api/process-routes', function(rows){ allRoutes=rows; });
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+    if(USER_ROLE !== 'planner'){
+        var hidden=document.querySelectorAll('.readonly-hide');
+        for(var i=0;i<hidden.length;i++) hidden[i].style.display='none';
+    }
+    loadRoutes();
+});
 
 function loadProducts(){
     var seen={};
     var products=[];
-    allRoutes.forEach(function(r){
+    for(var i=0;i<allRoutes.length;i++){
+        var r=allRoutes[i];
         if(r.product_code && !seen[r.product_code]){
             seen[r.product_code]=true;
             products.push({code:r.product_code, name:r.route_name||''});
         }
-    });
+    }
     return products;
 }
 
 function onProductInput(){
-    var code=document.getElementById("m-product-code").value;
-    var dl=document.getElementById("dl-product-code");
-    dl.innerHTML="";
+    var code=document.getElementById('m-product-code').value;
+    var dl=document.getElementById('dl-product-code');
+    dl.innerHTML='';
     var products=loadProducts();
-    products.forEach(function(p){
-        if(p.code.toLowerCase().indexOf(code.toLowerCase())>=0){
-            var opt=document.createElement("option");
+    for(var i=0;i<products.length;i++){
+        var p=products[i];
+        if(!code || p.code.toLowerCase().indexOf(code.toLowerCase())>=0){
+            var opt=document.createElement('option');
             opt.value=p.code;
             dl.appendChild(opt);
         }
-    });
+    }
+    updateProductNameFromCode(code);
     updateProcessList();
 }
 
-function onProductNameInput(){
-    var name=document.getElementById("m-product-name").value;
-    var dl=document.getElementById("dl-product-name");
-    dl.innerHTML="";
+function updateProductNameFromCode(code){
     var products=loadProducts();
-    products.forEach(function(p){
-        if(p.name.toLowerCase().indexOf(name.toLowerCase())>=0){
-            var opt=document.createElement("option");
+    for(var i=0;i<products.length;i++){
+        if(products[i].code===code){
+            document.getElementById('m-product-name').value=products[i].name||'';
+            return;
+        }
+    }
+}
+
+function onProductNameInput(){
+    var name=document.getElementById('m-product-name').value;
+    var dl=document.getElementById('dl-product-name');
+    dl.innerHTML='';
+    var products=loadProducts();
+    var found=null;
+    for(var i=0;i<products.length;i++){
+        var p=products[i];
+        if(!name || (p.name||'').toLowerCase().indexOf(name.toLowerCase())>=0){
+            var opt=document.createElement('option');
             opt.value=p.name;
             dl.appendChild(opt);
         }
-    });
-    // Find matching product and set code
-    var found=products.find(function(p){return p.name===name;});
+        if(p.name===name) found=p;
+    }
     if(found){
-        document.getElementById("m-product-code").value=found.code;
+        document.getElementById('m-product-code').value=found.code;
         updateProcessList();
     }
 }
 
-function updateProcessList(){
-    var code=document.getElementById("m-product-code").value;
-    var sel=document.getElementById("m-process");
+function updateProcessList(selectedProcess){
+    var code=document.getElementById('m-product-code').value;
+    var sel=document.getElementById('m-process');
+    var teamInput=document.getElementById('m-team');
     sel.innerHTML='<option value="">-- 选择工序 --</option>';
-    var teamInput=document.getElementById("m-team");
-    teamInput.value="";
-    // Find all routes for this product
-    var matched=allRoutes.filter(function(r){return r.product_code===code;});
+    teamInput.value='';
     var seen={};
-    matched.forEach(function(r){
-        var processes=(r.process_list||"").split(",");
-        processes.forEach(function(p){
-            p=p.trim();
+    for(var i=0;i<allRoutes.length;i++){
+        var r=allRoutes[i];
+        if(r.product_code!==code) continue;
+        var processes=(r.process_list||'').split(',');
+        for(var j=0;j<processes.length;j++){
+            var p=processes[j].trim();
             if(p && !seen[p]){
                 seen[p]=true;
-                var opt=document.createElement("option");
+                var opt=document.createElement('option');
                 opt.value=p;
                 opt.textContent=p;
-                opt.dataset.team=r.remark||"";
+                opt.setAttribute('data-team', r.remark||'');
                 sel.appendChild(opt);
             }
-        });
-    });
-    sel.onchange=function(){
-        var opt=sel.options[sel.selectedIndex];
-        teamInput.value=opt?opt.dataset.team:"";
-    };
+        }
+    }
+    if(selectedProcess && !seen[selectedProcess]){
+        var extra=document.createElement('option');
+        extra.value=selectedProcess;
+        extra.textContent=selectedProcess;
+        extra.setAttribute('data-team','');
+        sel.appendChild(extra);
+    }
+    if(selectedProcess) sel.value=selectedProcess;
+    updateTeamFromProcess();
+    sel.onchange=updateTeamFromProcess;
+}
+
+function updateTeamFromProcess(){
+    var sel=document.getElementById('m-process');
+    var opt=sel.options[sel.selectedIndex];
+    document.getElementById('m-team').value=opt ? (opt.getAttribute('data-team')||'') : '';
 }
 
 function loadData(){
-    var q=document.getElementById("search").value;
-    var url="/api/standard-hours-capacity?page="+window._page+"&page_size="+window._pageSize;
-    if(q)url+="&q="+encodeURIComponent(q);
-    fetch(url).then(function(r){return r.json()}).then(function(resp){
-        var d=resp.data||resp;window._total=resp.total||d.length;renderPagination('sh-pagination',resp.page||1,resp.total_pages||1,'loadData');
-        
-        // 更新进度条
+    var q=document.getElementById('search').value;
+    var url='/api/standard-hours-capacity?page='+window._page+'&page_size='+window._pageSize;
+    if(q) url+='&q='+encodeURIComponent(q);
+    fetch(url).then(function(r){return r.json();}).then(function(resp){
+        var d=resp.data||resp;
+        window._total=resp.total||d.length;
+        renderPagination('sh-pagination',resp.page||1,resp.total_pages||1,'loadData');
         var prog=resp.progress||{};
         var pct=prog.percent||0;
         var total=prog.total||0;
         var completed=prog.completed||0;
-        document.getElementById("progress-fill").style.width=pct+"%";
-        document.getElementById("progress-text").textContent=pct+"%";
-        document.getElementById("progress-detail").textContent=completed+"/"+total+" 项已完成";
-        // 根据进度改变颜色
-        var fill=document.getElementById("progress-fill");
-        if(pct>=80){fill.style.background="linear-gradient(90deg,#059669,#10b981)";}
-        else if(pct>=50){fill.style.background="linear-gradient(90deg,#d97706,#f59e0b)";}
-        else{fill.style.background="linear-gradient(90deg,#dc2626,#f87171)";}
-        var tb=document.getElementById("tbody");tb.innerHTML="";
-        var empty=document.getElementById("empty-msg");
-        if(!d.length){empty.style.display="block";return;}
-        empty.style.display="none";
-        d.forEach(function(r){
-            var tr=document.createElement("tr");
+        document.getElementById('progress-fill').style.width=pct+'%';
+        document.getElementById('progress-text').textContent=pct+'%';
+        document.getElementById('progress-detail').textContent=completed+'/'+total+' 项已完成';
+        var fill=document.getElementById('progress-fill');
+        if(pct>=80) fill.style.background='linear-gradient(90deg,#059669,#10b981)';
+        else if(pct>=50) fill.style.background='linear-gradient(90deg,#d97706,#f59e0b)';
+        else fill.style.background='linear-gradient(90deg,#dc2626,#f87171)';
+
+        currentRows={};
+        var tb=document.getElementById('tbody');
+        tb.innerHTML='';
+        var empty=document.getElementById('empty-msg');
+        if(!d.length){empty.style.display='block';return;}
+        empty.style.display='none';
+        for(var i=0;i<d.length;i++){
+            var r=d[i];
+            currentRows[r.id]=r;
+            var tr=document.createElement('tr');
             var schedCap='';
             if(r.schedule_capacity===-1){
-                schedCap='<span style="color:#dc2626;cursor:pointer" onclick="showCapDetail('+r.id+',\''+r.product_code+'\',\''+r.process_name+'\')">'+r.schedule_capacities[0]+'<span style="font-size:11px;color:#dc2626;margin-left:4px">⚠明细</span></span>';
+                schedCap='<span style="color:#dc2626;cursor:pointer" onclick="showCapDetail('+r.id+')">'+escHtml(r.schedule_capacities[0])+'<span style="font-size:11px;color:#dc2626;margin-left:4px">明细</span></span>';
             }else if(r.schedule_capacity>0){
-                schedCap=''+r.schedule_capacity;
+                schedCap=escHtml(r.schedule_capacity);
             }else{
                 schedCap='<span style="color:#9ca3af">-</span>';
             }
-            var avgCap=r.report_avg>0?r.report_avg:'<span style="color:#9ca3af">-</span>';
-            var maxCap=r.report_max>0?r.report_max:'<span style="color:#9ca3af">-</span>';
-            var minCap=r.report_min>0?r.report_min:'<span style="color:#9ca3af">-</span>';
-            tr.innerHTML='<td>'+(r.product_name||r.product_code)+'</td>'
-                +'<td>'+r.process_name+'</td>'
-                +'<td>'+(r.team_name||'')+'</td>'
-                +'<td><strong>'+(r.standard_hours||0)+'</strong></td>'
+            var avgCap=r.report_avg>0?escHtml(r.report_avg):'<span style="color:#9ca3af">-</span>';
+            var maxCap=r.report_max>0?escHtml(r.report_max):'<span style="color:#9ca3af">-</span>';
+            var minCap=r.report_min>0?escHtml(r.report_min):'<span style="color:#9ca3af">-</span>';
+            var equip=escHtml(r.available_equipment||'');
+            if(!equip) equip='<span style="color:#9ca3af">-</span>';
+            tr.innerHTML='<td>'+escHtml(r.product_name||r.product_code)+'</td>'
+                +'<td>'+escHtml(r.process_name)+'</td>'
+                +'<td>'+escHtml(r.team_name||'')+'</td>'
+                +'<td><strong>'+escHtml(r.standard_hours||0)+'</strong></td>'
+                +'<td style="max-width:220px;white-space:normal">'+equip+'</td>'
                 +'<td>'+schedCap+'</td>'
                 +'<td>'+avgCap+'</td>'
                 +'<td>'+maxCap+'</td>'
                 +'<td>'+minCap+'</td>'
-                +'<td>'+(r.remark||'')+'</td>'
+                +'<td>'+escHtml(r.remark||'')+'</td>'
                 +'<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editItem('+r.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="deleteItem('+r.id+')">删除</button></div></td>';
             tb.appendChild(tr);
-        });
+        }
     });
 }
 
 function showAdd(){
     editId=null;
-    document.getElementById("m-title").textContent="新增标准工时";
-    ["m-product-code","m-product-name","m-team","m-hours","m-setup","m-remark"].forEach(function(id){document.getElementById(id).value=""});
-    document.getElementById("m-process").innerHTML='<option value="">-- 先输入产品编号 --</option>';
-    document.getElementById("modal").classList.add("show");
+    document.getElementById('m-title').textContent='新增标准工时';
+    var ids=['m-product-code','m-product-name','m-team','m-hours','m-setup','m-remark','m-available-equipment'];
+    for(var i=0;i<ids.length;i++) document.getElementById(ids[i]).value='';
+    document.getElementById('m-process').innerHTML='<option value="">-- 先输入产品编号 --</option>';
+    document.getElementById('modal').classList.add('show');
 }
-function closeM(){document.getElementById("modal").classList.remove("show");}
+function closeM(){document.getElementById('modal').classList.remove('show');}
 
 function editItem(id){
-    fetch("/api/standard-hours").then(function(r){return r.json()}).then(function(d){
-        var item=d.find(function(x){return x.id===id});
-        if(!item)return;
-        editId=id;
-        document.getElementById("m-title").textContent="编辑标准工时";
-        document.getElementById("m-product-code").value=item.product_code;
-        document.getElementById("m-product-name").value=item.product_name||"";
-        updateProcessList();
-        // Set process after list is populated
-        setTimeout(function(){
-            document.getElementById("m-process").value=item.process_name;
-            document.getElementById("m-team").value=item.team_name||"";
-        },100);
-        document.getElementById("m-hours").value=item.standard_hours||"";
-        document.getElementById("m-setup").value=item.setup_time||"";
-        document.getElementById("m-remark").value=item.remark||"";
-        document.getElementById("modal").classList.add("show");
-    });
+    var item=currentRows[id];
+    if(!item){toast('未找到当前记录，请刷新后重试','warning');return;}
+    editId=id;
+    document.getElementById('m-title').textContent='编辑标准工时';
+    document.getElementById('m-product-code').value=item.product_code||'';
+    document.getElementById('m-product-name').value=item.product_name||'';
+    updateProcessList(item.process_name||'');
+    document.getElementById('m-team').value=item.team_name||'';
+    document.getElementById('m-hours').value=item.standard_hours||'';
+    document.getElementById('m-setup').value=item.setup_time||'';
+    document.getElementById('m-available-equipment').value=item.available_equipment||'';
+    document.getElementById('m-remark').value=item.remark||'';
+    document.getElementById('modal').classList.add('show');
 }
 
 function save(){
     var data={
-        product_code:document.getElementById("m-product-code").value.trim(),
-        product_name:document.getElementById("m-product-name").value.trim(),
-        process_name:document.getElementById("m-process").value,
-        team_name:document.getElementById("m-team").value,
-        standard_hours:parseFloat(document.getElementById("m-hours").value)||0,
-        setup_time:parseFloat(document.getElementById("m-setup").value)||0,
-        remark:document.getElementById("m-remark").value
+        product_code:document.getElementById('m-product-code').value.trim(),
+        product_name:document.getElementById('m-product-name').value.trim(),
+        process_name:document.getElementById('m-process').value,
+        team_name:document.getElementById('m-team').value,
+        standard_hours:parseFloat(document.getElementById('m-hours').value)||0,
+        setup_time:parseFloat(document.getElementById('m-setup').value)||0,
+        remark:document.getElementById('m-remark').value
     };
-    if(!data.product_code||!data.process_name){toast("产品编号和工序必填","warning");return;}
-    var url=editId?"/api/standard-hours/"+editId:"/api/standard-hours";
-    api(url,{method:editId?"PUT":"POST",body:data}).then(function(){toast("保存成功","success");closeM();loadData();}).catch(function(e){toast(e.error||"保存失败","error");});
+    if(!data.product_code||!data.process_name){toast('产品编号和工序必填','warning');return;}
+    var url=editId?'/api/standard-hours/'+editId:'/api/standard-hours';
+    api(url,{method:editId?'PUT':'POST',body:data}).then(function(){toast('保存成功','success');closeM();loadData();}).catch(function(e){toast(e.error||'保存失败','error');});
 }
 
-function deleteItem(id){if(!confirm("确定删除？"))return;api("/api/standard-hours/"+id,{method:"DELETE"}).then(function(){toast("已删除","success");loadData();}).catch(function(e){toast(e.error||"删除失败","error");});}
+function deleteItem(id){
+    if(!confirm('确定删除？'))return;
+    api('/api/standard-hours/'+id,{method:'DELETE'}).then(function(){toast('已删除','success');loadData();}).catch(function(e){toast(e.error||'删除失败','error');});
+}
 
 function initFromRoutes(){
-    if(!confirm("将从工艺路线中提取所有产品+工序组合生成标准工时记录（已有数据不会重复），是否继续？"))return;
-    api("/api/standard-hours/init",{method:"POST"}).then(function(d){
-        toast("初始化完成，新增 "+d.count+" 条记录","success");
-        loadData();
-    }).catch(function(e){toast("初始化失败","error");});
+    if(!confirm('将从工艺路线中提取所有产品+工序组合生成标准工时记录（已有数据不会重复），是否继续？'))return;
+    api('/api/standard-hours/init',{method:'POST'}).then(function(d){toast('初始化完成，新增 '+d.count+' 条记录','success');loadData();}).catch(function(){toast('初始化失败','error');});
 }
 
 function doExport(){
-    fetch("/api/standard-hours").then(function(r){return r.json()}).then(function(d){
-        if(!d.length){toast("无数据可导出","warning");return;}
-        var headers=["产品编号","产品名称","工序","班组","标准工时(分)","换线时间(分)","备注"];
-        var csv=headers.join(",")+"\n";
-        d.forEach(function(r){
-            var row=['"'+r.product_code+'"','"'+(r.product_name||'')+'"','"'+r.process_name+'"','"'+(r.team_name||'')+'"',r.standard_hours||0,r.setup_time||0,'"'+(r.remark||'')+'"'];
-            csv+=row.join(",")+"\n";
-        });
-        var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
-        var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="标准工时.csv";a.click();
+    var q=document.getElementById('search').value;
+    var url='/api/standard-hours-capacity';
+    if(q) url+='?q='+encodeURIComponent(q);
+    fetchAllPages(url, function(d){
+        if(!d.length){toast('无数据可导出','warning');return;}
+        var headers=['产品编号','产品名称','工序','班组','标准工时(分)','换线时间(分)','可用设备','备注'];
+        var csv=headers.join(',')+'\n';
+        for(var i=0;i<d.length;i++){
+            var r=d[i];
+            var row=['"'+(r.product_code||'')+'"','"'+(r.product_name||'')+'"','"'+(r.process_name||'')+'"','"'+(r.team_name||'')+'"',r.standard_hours||0,r.setup_time||0,'"'+(r.available_equipment||'')+'"','"'+(r.remark||'')+'"'];
+            csv+=row.join(',')+'\n';
+        }
+        var blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+        var a=document.createElement('a');
+        a.href=URL.createObjectURL(blob);
+        a.download='标准工时.csv';
+        a.click();
     });
 }
 
-loadData();
-// 加载全局配置
 function loadConfig(){
-    fetch("/api/system-config").then(function(r){return r.json()}).then(function(config){
-        var baseline=config.capacity_baseline||"1";
-        document.getElementById("capacity-baseline").value=baseline;
+    fetch('/api/system-config').then(function(r){return r.json();}).then(function(config){
+        document.getElementById('capacity-baseline').value=config.capacity_baseline||'1';
     });
 }
-
-// 保存全局配置
 function saveBaseline(){
-    var baseline=document.getElementById("capacity-baseline").value;
-    api("/api/system-config",{method:"POST",body:{capacity_baseline:baseline}}).then(function(){
-        toast("配置已保存","success");
-    }).catch(function(){toast("保存失败","error");});
+    var baseline=document.getElementById('capacity-baseline').value;
+    api('/api/system-config',{method:'POST',body:{capacity_baseline:baseline}}).then(function(){toast('配置已保存','success');}).catch(function(){toast('保存失败','error');});
 }
-
-// 重新计算效率
 function recalculateEfficiency(){
-    if(!confirm("将重新计算所有报工数据的生产效率，是否继续？"))return;
-    toast("正在计算...","info");
-    api("/api/recalculate-efficiency",{method:"POST"}).then(function(d){
-        toast("计算完成，更新 "+d.updated+" 条记录","success");
-    }).catch(function(){toast("计算失败","error");});
+    if(!confirm('将重新计算所有报工数据的生产效率，是否继续？'))return;
+    toast('正在计算...','info');
+    api('/api/recalculate-efficiency',{method:'POST'}).then(function(d){toast('计算完成，更新 '+d.updated+' 条记录','success');}).catch(function(){toast('计算失败','error');});
 }
-
-// 页面加载时获取配置
-loadConfig();
-
-function downloadShTpl(){var headers=["产品编号","产品名称","工序","班组","标准工时(分)","换线时间(分)","备注"];var rows=["F01-ABC,成品F01,焊接压板1（自动）,焊接,2.5,15,"];var csv=headers.join(",")+"\n"+rows.join("\n")+"\n";var blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="标准工时导入模板.csv";a.click();}
-
-function showCapDetail(id, productCode, processName){
-    var body=document.getElementById("cap-detail-body");
-    body.innerHTML="<p>加载中...</p>";
-    document.getElementById("cap-modal").classList.add("show");
-    fetch("/api/schedules?q="+encodeURIComponent(productCode)).then(function(r){return r.json()}).then(function(resp){
+function downloadShTpl(){
+    var headers=['产品编号','产品名称','工序','班组','标准工时(分)','换线时间(分)','备注'];
+    var rows=['F01-ABC,成品F01,焊接压板1（自动）,焊接,2.5,15,'];
+    var csv=headers.join(',')+'\n'+rows.join('\n')+'\n';
+    var blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='标准工时导入模板.csv';
+    a.click();
+}
+function showCapDetail(id){
+    var item=currentRows[id];
+    if(!item)return;
+    var body=document.getElementById('cap-detail-body');
+    body.innerHTML='<p>加载中...</p>';
+    document.getElementById('cap-modal').classList.add('show');
+    fetch('/api/schedules?q='+encodeURIComponent(item.product_code||'')).then(function(r){return r.json();}).then(function(resp){
         var d=resp.data||resp;
-        var filtered=d.filter(function(s){return s.product_code===productCode && s.process_name===processName;});
-        if(!filtered.length){body.innerHTML="<p>无排班数据</p>";return;}
-        var html="<table><thead><tr><th>日期</th><th>设备</th><th>产能/H</th><th>数量</th><th>工时</th><th>生产人</th><th>工单号</th></tr></thead><tbody>";
-        filtered.forEach(function(s){
-            html+="<tr><td>"+(s.schedule_date||'')+"</td><td>"+(s.equipment_name||s.equipment_id||'')+"</td><td>"+(s.capacity_per_hour||0)+"</td><td>"+(s.quantity||0)+"</td><td>"+(s.hours||0)+"</td><td>"+(s.operator||'')+"</td><td>"+(s.work_order_no||'')+"</td></tr>";
-        });
-        html+="</tbody></table>";
+        var filtered=[];
+        for(var i=0;i<d.length;i++){
+            if(d[i].product_code===item.product_code && d[i].process_name===item.process_name) filtered.push(d[i]);
+        }
+        if(!filtered.length){body.innerHTML='<p>无排班数据</p>';return;}
+        var html='<table><thead><tr><th>日期</th><th>设备</th><th>产能/H</th><th>数量</th><th>工时</th><th>生产人</th><th>工单号</th></tr></thead><tbody>';
+        for(var j=0;j<filtered.length;j++){
+            var s=filtered[j];
+            html+='<tr><td>'+escHtml(s.schedule_date||'')+'</td><td>'+escHtml(s.equipment_name||s.equipment_id||'')+'</td><td>'+escHtml(s.capacity_per_hour||0)+'</td><td>'+escHtml(s.quantity||0)+'</td><td>'+escHtml(s.hours||0)+'</td><td>'+escHtml(s.operator||'')+'</td><td>'+escHtml(s.work_order_no||'')+'</td></tr>';
+        }
+        html+='</tbody></table>';
         body.innerHTML=html;
     });
 }
 
+loadData();
+loadConfig();
 </script>
-
-<div class="modal-overlay" id="cap-modal">
-<div class="modal" style="max-width:640px">
-<div class="modal-header"><h3>排班产能明细</h3><button class="modal-close" onclick="document.getElementById('cap-modal').classList.remove('show')">&times;</button></div>
-<div class="modal-body" id="cap-detail-body" style="max-height:400px;overflow-y:auto"></div>
-</div>
-</div>
-
 {% endblock %}

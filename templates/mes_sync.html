@@ -90,17 +90,18 @@
 <div class="card-body" style="padding:16px">
 <div class="table-wrap">
 <table>
-<thead><tr><th>时间</th><th>类型</th><th>状态</th><th>数量</th><th>详情</th></tr></thead>
+<thead><tr><th>时间</th><th>类型</th><th>状态</th><th>触发</th><th>数量</th><th>详情</th></tr></thead>
 <tbody id="sync-log-tbody"></tbody>
 </table>
 <div id="sync-log-empty" class="table-empty" style="display:none">暂无同步记录</div>
 </div>
 </div>
 </div>
-</script>
+{% endblock %}
+{% block scripts %}
 <script>
 function loadAttendanceSettings(){
-    fetch("/api/attendance/settings").then(function(r){return r.json()}).then(function(d){
+    api("/api/attendance/settings").then(function(d){
         document.getElementById("att-api-url").value=d.api_url||"";
         document.getElementById("att-api-key").value=d.api_key||"";
         document.getElementById("att-auto-sync").checked=d.auto_sync==="1";
@@ -108,20 +109,29 @@ function loadAttendanceSettings(){
         var yesterday=new Date(today);yesterday.setDate(yesterday.getDate()-1);
         document.getElementById("att-date-from").value=yesterday.toISOString().substring(0,10);
         document.getElementById("att-date-to").value=yesterday.toISOString().substring(0,10);
+        console.log("Attendance settings loaded:", d);
+    }).catch(function(e){
+        console.error("Failed to load attendance settings:", e);
     });
 }
 
 function saveAttendanceSettings(){
+    console.log("saveAttendanceSettings called");
     var data={
         api_url:document.getElementById("att-api-url").value.trim(),
         api_key:document.getElementById("att-api-key").value.trim(),
         auto_sync:document.getElementById("att-auto-sync").checked?"1":"0"
     };
-    fetch("/api/attendance/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)})
-    .then(function(r){return r.json()}).then(function(d){
+    console.log("Sending attendance data:", data);
+    api("/api/attendance/settings",{method:"POST",body:data}).then(function(d){
+        console.log("Attendance response:", d);
         if(d.ok){document.getElementById("att-save-status").innerHTML='<span style="color:#059669">\u2713 \u5df2\u4fdd\u5b58</span>';}
         else{document.getElementById("att-save-status").innerHTML='<span style="color:#dc2626">\u2717 \u4fdd\u5b58\u5931\u8d25</span>';}
         setTimeout(function(){document.getElementById("att-save-status").innerHTML="";},3000);
+    }).catch(function(e){
+        console.error("Attendance settings error:", e);
+        document.getElementById("att-save-status").innerHTML='<span style="color:#dc2626">\u2717 \u4fdd\u5b58\u5931\u8d25: '+(e.message||"")+'</span>';
+        setTimeout(function(){document.getElementById("att-save-status").innerHTML="";},5000);
     });
 }
 
@@ -132,7 +142,7 @@ function syncWorkOrders(){
     btn.disabled=true;btn.textContent="同步中...";
     status.innerHTML='<span style="color:#d97706">正在同步工单...</span>';
     detail.style.display="block";detail.textContent="正在从MES系统拉取工单数据...";
-    fetch("/api/mes-sync/work-orders",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+    api("/api/mes-sync/work-orders",{method:"POST"}).then(function(d){
         btn.disabled=false;btn.textContent="开始同步工单";
         if(d.ok){
             status.innerHTML='<span style="color:#059669">同步完成</span>';
@@ -155,7 +165,7 @@ function syncReports(){
     btn.disabled=true;btn.textContent="同步中...";
     status.innerHTML='<span style="color:#d97706">正在同步报工...</span>';
     detail.style.display="block";detail.textContent="正在从MES系统拉取报工数据...";
-    fetch("/api/mes-sync/reports",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+    api("/api/mes-sync/reports",{method:"POST"}).then(function(d){
         btn.disabled=false;btn.textContent="开始同步报工";
         if(d.ok){
             status.innerHTML='<span style="color:#059669">同步完成</span>';
@@ -181,8 +191,7 @@ function syncAttendance(){
     btn.disabled=true;btn.textContent="\u540c\u6b65\u4e2d...";
     status.innerHTML='<span style="color:#d97706">\u23f3 \u6b63\u5728\u540c\u6b65...</span>';
     detail.style.display="block";detail.textContent="\u6b63\u5728\u4ece\u8003\u52e4\u7cfb\u7edf\u62c9\u53d6\u6570\u636e...";
-    fetch("/api/attendance/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({date_from:dateFrom,date_to:dateTo})})
-    .then(function(r){return r.json()}).then(function(d){
+    api("/api/attendance/sync",{method:"POST",body:{date_from:dateFrom,date_to:dateTo}}).then(function(d){
         btn.disabled=false;btn.textContent="\u540c\u6b65\u8003\u52e4";
         if(d.ok){
             status.innerHTML='<span style="color:#059669">\u2713 \u540c\u6b65\u5b8c\u6210</span>';
@@ -202,7 +211,7 @@ function testAttendanceApi(){
     var status=document.getElementById("att-test-status");
     status.innerHTML='<span style="color:#d97706">\u6d4b\u8bd5\u4e2d...</span>';
     saveAttendanceSettings();
-    fetch("/api/attendance/test",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+    api("/api/attendance/test",{method:"POST"}).then(function(d){
         if(d.ok){
             status.innerHTML='<span style="color:#059669">\u2713 \u8fde\u63a5\u6210\u529f\uff0c'+d.date+'\u83b7\u53d6'+d.count+'\u6761\u8bb0\u5f55</span>';
         }else{
@@ -212,5 +221,58 @@ function testAttendanceApi(){
         status.innerHTML='<span style="color:#dc2626">\u2717 \u7f51\u7edc\u9519\u8bef</span>';
     });
 }
+
+// ====== Sync Interval Settings ======
+function loadSyncSettings(){
+    api("/api/mes-sync/settings").then(function(d){
+        document.getElementById("work-order-interval").value=d.work_order_interval||0;
+        document.getElementById("report-interval").value=d.report_interval||0;
+    });
+}
+function saveSyncSettings(){
+    console.log("saveSyncSettings called");
+    var data={
+        work_order_interval:parseInt(document.getElementById("work-order-interval").value)||0,
+        report_interval:parseInt(document.getElementById("report-interval").value)||0
+    };
+    console.log("Sending sync settings:", data);
+    api("/api/mes-sync/settings",{method:"POST",body:data}).then(function(d){
+        console.log("Sync settings response:", d);
+        if(d.ok){toast("\u540c\u6b65\u8bbe\u7f6e\u4fdd\u5b58\u6210\u529f","success");}
+        else{toast("\u4fdd\u5b58\u5931\u8d25:" + JSON.stringify(d),"error");}
+    }).catch(function(e){
+        console.error("Sync settings error:", e);
+        toast("\u4fdd\u5b58\u5931\u8d25:" + (e.message||JSON.stringify(e)),"error");
+    });
+}
+function loadSyncLogs(){
+    api("/api/mes-sync/logs").then(function(d){
+        var tbody=document.getElementById("sync-log-tbody");
+        var empty=document.getElementById("sync-log-empty");
+        if(!d||!d.length){tbody.innerHTML="";empty.style.display="block";return;}
+        empty.style.display="none";
+        var html="";
+        d.forEach(function(r){
+            var typeLabel=r.sync_type==="work_orders"?"\u5de5\u5355\u540c\u6b65":r.sync_type==="reports"?"\u62a5\u5de5\u540c\u6b65":r.sync_type;
+            var statusColor=r.status==="success"?"#059669":r.status==="error"?"#dc2626":"#d97706";
+            var statusText=r.status==="success"?"\u6210\u529f":r.status==="error"?"\u5931\u8d25":"\u8fd0\u884c\u4e2d";
+            var triggerLabel=r.trigger_type==="auto"?"\u81ea\u52a8":"\u624b\u52a8";
+            html+="<tr>";
+            html+="<td>"+(r.created_at||"")+"</td>";
+            html+="<td>"+typeLabel+"</td>";
+            html+="<td><span style=\"color:"+statusColor+";font-weight:600\">"+statusText+"</span></td>";
+            html+="<td>"+triggerLabel+"</td>";
+            html+="<td>"+(r.record_count||0)+"</td>";
+            html+="<td style=\"max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\" title=\""+(r.detail||"").replace(/"/g,"&quot;")+"\">"+(r.detail||"").substring(0,80)+"</td>";
+            html+="</tr>";
+        });
+        tbody.innerHTML=html;
+    }).catch(function(){document.getElementById("sync-log-empty").style.display="block";});
+}
+// Init
+loadSyncSettings();
+loadSyncLogs();
+loadAttendanceSettings();
 </script>
 {% endblock %}
+

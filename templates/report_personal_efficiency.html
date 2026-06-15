@@ -10,6 +10,7 @@
 <span style="color:#9ca3af">至</span>
 <input type="date" id="date-to" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
 <button class="btn btn-primary" onclick="loadData()">查询</button>
+<button class="btn btn-secondary" onclick="exportData()" style="background:#059669;color:#fff;border-color:#059669">导出Excel</button>
 </div>
 <div class="card"><div class="card-body">
 <div class="table-wrap" style="overflow-x:auto">
@@ -91,6 +92,14 @@ function loadData(){
             tr.innerHTML=td;tbody.appendChild(tr);
         });
     });
+}
+
+function exportData(){
+    var name=document.getElementById('emp-search').value;
+    var df=document.getElementById('date-from').value;
+    var dt=document.getElementById('date-to').value;
+    if(!name){toast("请输入姓名","warning");return;}
+    window.location.href="/api/reports/personal/export?name="+encodeURIComponent(name)+"&date_from="+df+"&date_to="+dt;
 }
 </script>
 {% endblock %}

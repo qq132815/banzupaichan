@@ -9,7 +9,7 @@
 <div class="card-body" style="padding:16px 20px">
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
 <h3 style="font-size:15px;color:#374151;margin:0">📊 当日计划进行情况</h3>
-<span id="today-date" style="font-size:13px;color:#6b7280"></span>
+<input type="date" id="progress-date" onchange="loadTodayProgress()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
 </div>
 <div id="today-progress"></div>
 </div>
@@ -101,7 +101,7 @@ for(var h=6;h<=22;h++)GANTT_HOURS.push(h);
 (function(){
     fetch('/api/settings').then(function(r){return r.json()}).then(function(d){window._publishTime=d.plan_publish_time||'15:00';});
     var now=new Date();var dd=now.getFullYear()+"-"+("0"+(now.getMonth()+1)).slice(-2)+"-"+("0"+now.getDate()).slice(-2);
-    document.getElementById('today-date').textContent=dd;
+    document.getElementById('progress-date').value=dd;
     // Init date pickers
     document.getElementById('filter-date-from').value=dd;
     document.getElementById('filter-date-to').value=dd;
@@ -127,10 +127,12 @@ function switchTab(tab,btn){
 
 // ====== TODAY PROGRESS ======
 function loadTodayProgress(){
-    fetch('/api/plan/today-progress').then(function(r){return r.json()}).then(function(d){
+    var dt=document.getElementById("progress-date").value;
+    if(!dt){var now=new Date();dt=now.getFullYear()+"-"+("0"+(now.getMonth()+1)).slice(-2)+"-"+("0"+now.getDate()).slice(-2);}
+    fetch('/api/plan/today-progress?date='+dt).then(function(r){return r.json()}).then(function(d){
         todayProgress=d.teams||[];
         renderTodayProgress();
-    });
+    }).catch(function(){todayProgress=[];renderTodayProgress();});
 }
 function renderTodayProgress(){
     var c=document.getElementById('today-progress');
@@ -232,11 +234,13 @@ function renderCompletion(){
 
 // ====== GANTT MODAL ======
 function openTodayGantt(teamId,teamName){
-    document.getElementById('gantt-title').textContent=teamName+' - 当日排班甘特图';
+    document.getElementById('gantt-title').textContent=teamName+' - 排班计划 vs 报工进度';
     document.getElementById('gantt-summary').innerHTML='加载中...';
     document.getElementById('gantt-container').innerHTML='';
     document.getElementById('gantt-modal').classList.add('show');
-    fetch('/api/plan/today-gantt/'+teamId).then(function(r){return r.json()}).then(function(d){
+    var dt=document.getElementById('progress-date').value;
+    if(!dt){var now=new Date();dt=now.getFullYear()+"-"+("0"+(now.getMonth()+1)).slice(-2)+"-"+("0"+now.getDate()).slice(-2);}
+    fetch('/api/plan/today-gantt/'+teamId+'?date='+dt).then(function(r){return r.json()}).then(function(d){
         renderGanttModal(d,'inprogress');
     });
 }
@@ -277,11 +281,7 @@ function renderGanttModal(data,mode){
         if(!equipMap[ename])equipMap[ename]=[];
         equipMap[ename].push(s);
     });
-    // Add report-only items (equipment not in schedule)
-    reports.forEach(function(r){
-        var ename=r.equipment||'未知设备';
-        if(!equipMap[ename])equipMap[ename]=[];
-    });
+    // (report-only equipment removed - only show schedule data)
 
     // Time range
     var minH=22,maxH=6;
@@ -289,10 +289,7 @@ function renderGanttModal(data,mode){
         if(s.start_time){var h=parseInt(s.start_time.split(':')[0]);if(h<minH)minH=h;}
         if(s.end_time){var h2=parseInt(s.end_time.split(':')[0]);if(h2>maxH)maxH=h2;}
     });
-    reports.forEach(function(r){
-        if(r.first_start){var h=parseInt(r.first_start.split(' ')[1].split(':')[0]);if(h<minH)minH=h;}
-        if(r.last_end){var h2=parseInt(r.last_end.split(' ')[1].split(':')[0]);if(h2>maxH)maxH=h2;}
-    });
+    // (reports time range removed - only use schedule times)
     if(minH>=maxH){minH=6;maxH=22;}
     var hours=[];
     for(var h=minH;h<=maxH;h++)hours.push(h);
@@ -327,32 +324,55 @@ function renderGanttModal(data,mode){
             var left=(sh-minH)*cellW;
             var width=Math.max((eh-sh)*cellW,4);
             html+='<div class="gantt-bar gantt-bar-planned" style="left:'+left+'px;width:'+width+'px" title="'+(s.process_name||'')+' 计划:'+(s.quantity||0)+'"></div>';
+            // Progress overlay: find matching reports by product_name+process_name, draw time-based bars
+            var sProd=(s.product_name||s.product_code||'').trim();
+            var sProc=(s.process_name||'').trim();
+            var totalReportQty=0;
+            reports.forEach(function(r){
+                if(!r.start_time||!r.end_time)return;
+                var rProd=(r.product_name||'').trim();
+                var rProc=(r.process_name||'').trim();
+                if(!rProd||!rProc||rProd!==sProd||rProc!==sProc)return;
+                totalReportQty+=(r.qty||0);
+                // Calculate report time position
+                var rsh,rsm,reh,rem;
+                if(r.start_time.indexOf(' ')>=0){
+                    var st=r.start_time.split(' ')[1].split(':');
+                    var et=r.end_time.split(' ')[1].split(':');
+                    rsh=parseInt(st[0]);rsm=parseInt(st[1]);
+                    reh=parseInt(et[0]);rem=parseInt(et[1]);
+                }else{
+                    var st=r.start_time.split(':');
+                    var et=r.end_time.split(':');
+                    rsh=parseInt(st[0]);rsm=parseInt(st[1]);
+                    reh=parseInt(et[0]);rem=parseInt(et[1]);
+                }
+                var rl=(rsh+rsm/60-minH)*cellW;
+                var rw=Math.max((reh+rem/60-rsh-rsm/60)*cellW,2);
+                // Clamp to schedule bar bounds
+                if(rl<left){rw-=(left-rl);rl=left;}
+                if(rl+rw>left+width)rw=left+width-rl;
+                if(rw>0){
+                    html+='<div style="position:absolute;left:'+rl+'px;top:0;width:'+rw+'px;height:100%;background:rgba(59,130,246,0.45);border-radius:2px;z-index:2;pointer-events:none" title="报工: '+(r.qty||0)+'件"></div>';
+                }
+            });
+            // Show completion pct text on the bar
+            if(totalReportQty>0 && s.quantity>0){
+                var pct=Math.min(Math.round(totalReportQty/s.quantity*100),100);
+                html+='<div style="position:absolute;left:'+(left+4)+'px;top:2px;font-size:10px;color:#fff;z-index:3;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.5)">'+pct+'%</div>';
+            }
         });
 
-        // Actual bars (blue or red)
-        reports.forEach(function(r){
-            if(!r.first_start||!r.last_end)return;
-            var rEquip=r.equipment||'';
-            if(rEquip!==ename)return;
-            var sh=parseInt(r.first_start.split(' ')[1].split(':')[0])+parseInt(r.first_start.split(' ')[1].split(':')[1])/60;
-            var eh=parseInt(r.last_end.split(' ')[1].split(':')[0])+parseInt(r.last_end.split(' ')[1].split(':')[1])/60;
-            var left=(sh-minH)*cellW;
-            var width=Math.max((eh-sh)*cellW,4);
-            var barClass=mode==='inprogress'?'gantt-bar-inprogress':'gantt-bar-actual';
-            html+='<div class="gantt-bar '+barClass+'" style="left:'+left+'px;width:'+width+'px;top:4px;height:16px" title="'+(r.process_name||'')+' 实际:'+(r.qty||0)+'"></div>';
-        });
+        // (actual bars removed - using progress overlay instead)
 
         html+='</div></div>';
     });
 
     // Legend
     html+='<div style="padding:10px 20px;font-size:12px;color:#6b7280;border-top:1px solid #e5e7eb">';
-    html+='<span style="display:inline-block;width:14px;height:10px;background:#d1d5db;border:1px solid #9ca3af;border-radius:2px;margin-right:4px;vertical-align:middle"></span> 原计划 &nbsp;&nbsp;';
-    if(mode==='inprogress'){
-        html+='<span style="display:inline-block;width:14px;height:10px;background:#ef4444;border:1px solid #dc2626;border-radius:2px;margin-right:4px;vertical-align:middle"></span> 生产中';
-    }else{
-        html+='<span style="display:inline-block;width:14px;height:10px;background:#3b82f6;border:1px solid #2563eb;border-radius:2px;margin-right:4px;vertical-align:middle"></span> 已完成';
-    }
+    html+='<span style="display:inline-block;width:14px;height:10px;background:#d1d5db;border:1px solid #9ca3af;border-radius:2px;margin-right:4px;vertical-align:middle"></span> 排班计划 &nbsp;&nbsp;';
+    html+='<span style="display:inline-block;width:14px;height:10px;background:rgba(59,130,246,0.45);border:1px solid #3b82f6;border-radius:2px;margin-right:4px;vertical-align:middle"></span> 报工完成 &nbsp;&nbsp;';
+
     html+='</div>';
 
     document.getElementById('gantt-container').innerHTML=html;

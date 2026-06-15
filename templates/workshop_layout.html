@@ -53,12 +53,19 @@
 .canvas-toolbar button.live-on { background: #1b5e20; color: #00e676; border-color: #00e676; }
 .live-badge { position: absolute; top: 10px; right: 280px; z-index: 10; background: rgba(27,94,32,0.9); color: #00e676; padding: 4px 12px; border-radius: 3px; border: 1px solid #00e676; font-size: 12px; display: none; animation: livePulse 2s infinite; }
 @keyframes livePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
-.eq-data-overlay { position: absolute; background: rgba(0,20,50,0.92); border: 1px solid #4fc3f7; color: #e0f0ff; padding: 8px 12px; border-radius: 4px; font-size: 12px; display: none; pointer-events: none; z-index: 50; min-width: 180px; box-shadow: 0 0 15px rgba(79,195,247,0.3); }
+.eq-data-overlay { position: fixed; background: rgba(0,20,50,0.92); border: 1px solid #4fc3f7; color: #e0f0ff; padding: 8px 12px; border-radius: 4px; font-size: 12px; display: none; pointer-events: none; z-index: 9999; min-width: 180px; box-shadow: 0 0 15px rgba(79,195,247,0.3); }
 .eq-data-overlay .eq-title { color: #4fc3f7; font-weight: bold; margin-bottom: 4px; }
 .eq-data-overlay .eq-row { display: flex; justify-content: space-between; padding: 2px 0; }
 .eq-data-overlay .eq-label { color: #8eafc4; }
 .eq-data-overlay .eq-val { color: #fff; }
 
+
+/* Background Image Controls */
+.bg-controls { position: absolute; bottom: 10px; left: 10px; z-index: 10; background: rgba(10,25,41,0.92); padding: 6px 10px; border-radius: 4px; border: 1px solid #1e3a5f; display: none; align-items: center; gap: 8px; font-size: 11px; color: #8eafc4; }
+.bg-controls.active { display: flex; }
+.bg-controls label { color: #4fc3f7; }
+.bg-controls input[type="range"] { width: 80px; accent-color: #4fc3f7; }
+.bg-controls button { background: #0d2137; border: 1px solid #1e3a5f; color: #ff5252; padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 10px; }
 </style>
 
 <div id="editor-container">
@@ -120,9 +127,18 @@
             <button onclick="exportImage()">导出图片</button>
             <button onclick="exportJSON()">导出JSON</button>
             <button onclick="importJSON()">导入JSON</button>
+            <span class="sep"></span>
+            <button onclick="document.getElementById('bg-image-input').click()">导入平面图</button>
+            <input type="file" id="bg-image-input" accept="image/*" style="display:none" onchange="importBgImage(event)">
         </div>
         <div class="live-badge" id="live-badge">LIVE</div>
-<div class="eq-data-overlay" id="eq-data-overlay"></div>
+        <div class="bg-controls" id="bg-controls">
+            <label>背景透明度:</label>
+            <input type="range" id="bg-opacity" min="0.1" max="1" step="0.1" value="0.5" onchange="setBgOpacity(this.value)">
+            <label>缩放:</label>
+            <input type="range" id="bg-scale" min="0.1" max="2" step="0.1" value="1" onchange="setBgScale(this.value)">
+            <button onclick="removeBgImage()">移除背景</button>
+        </div>
         <div class="canvas-info" id="canvas-info">就绪 | 中键平移 | 滚轮缩放 | Del删除</div>
         <div class="canvas-size">
             <label>画布:</label>
@@ -131,6 +147,7 @@
         </div>
         <canvas id="fabric-canvas"></canvas>
     </div>
+<div class="eq-data-overlay" id="eq-data-overlay"></div>
 
     <div class="props-panel">
         <div class="props-title">| 属性面板</div>
@@ -163,7 +180,79 @@
 
 <input type="file" id="json-file-input" accept=".json" style="display:none" onchange="handleJSONImport(event)">
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js">
+
+/* ========== Background Image ========== */
+var bgImageObj = null;
+
+function importBgImage(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+        var dataUrl = ev.target.result;
+        fabric.Image.fromURL(dataUrl, function(img) {
+            // Remove old bg image
+            if (bgImageObj) { canvas.remove(bgImageObj); }
+            // Scale to fit canvas
+            var cw = canvas.getWidth();
+            var ch = canvas.getHeight();
+            var scale = Math.min(cw / img.width, ch / img.height) * 0.9;
+            img.set({
+                left: cw / 2,
+                top: ch / 2,
+                originX: 'center',
+                originY: 'center',
+                scaleX: scale,
+                scaleY: scale,
+                selectable: true,
+                evented: true,
+                hasControls: true,
+                opacity: 0.5,
+                _isBgImage: true
+            });
+            canvas.add(img);
+            canvas.sendToBack(img);
+            bgImageObj = img;
+            document.getElementById('bg-controls').classList.add('active');
+            canvas.renderAll();
+        });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+}
+
+function setBgOpacity(val) {
+    if (bgImageObj) {
+        bgImageObj.set('opacity', parseFloat(val));
+        canvas.renderAll();
+    }
+}
+
+function setBgScale(val) {
+    if (bgImageObj) {
+        var v = parseFloat(val);
+        var cw = canvas.getWidth();
+        var ch = canvas.getHeight();
+        // Get original image dimensions
+        var origW = bgImageObj.width;
+        var origH = bgImageObj.height;
+        var baseScale = Math.min(cw / origW, ch / origH) * 0.9;
+        bgImageObj.set('scaleX', baseScale * v);
+        bgImageObj.set('scaleY', baseScale * v);
+        canvas.renderAll();
+    }
+}
+
+function removeBgImage() {
+    if (bgImageObj) {
+        canvas.remove(bgImageObj);
+        bgImageObj = null;
+        document.getElementById('bg-controls').classList.remove('active');
+        canvas.renderAll();
+    }
+}
+</script>
 <script>
 var canvas = new fabric.Canvas("fabric-canvas", {
     backgroundColor: "#060e18", selection: true, preserveObjectStacking: true,
@@ -526,44 +615,62 @@ function updateLiveVisuals() {
             name: eq.name,
             status: eq.status,
             team_id: eq.team_id,
-            model: eq.model
+            model: eq.model,
+            report_qty: eq.report_qty,
+            efficiency: eq.efficiency,
+            order_no: eq.order_no,
+            process_name: eq.process_name,
+            report_time: eq.report_time
         };
     });
 
     canvas.renderAll();
 }
 
-// Hover to show live data overlay
-canvas.on("mouse:over", function(opt) {
+// Hover to show live data overlay - use mouse:move for reliable detection
+var _lastHoverObj = null;
+canvas.on("mouse:move", function(opt) {
     if (!liveMode) return;
-    var obj = opt.target;
-    if (!obj || !obj._liveData) return;
-
     var overlay = document.getElementById("eq-data-overlay");
-    var d = obj._liveData;
+    // Position overlay to follow cursor
+    overlay.style.left = (opt.e.clientX + 15) + "px";
+    overlay.style.top = (opt.e.clientY - 50) + "px";
+
+    var obj = opt.target;
+    if (!obj) {
+        overlay.style.display = "none";
+        _lastHoverObj = null;
+        return;
+    }
+    // Walk up to find group with _liveData
+    var liveObj = obj;
+    while (liveObj && !liveObj._liveData && liveObj.group) { liveObj = liveObj.group; }
+    if (!liveObj || !liveObj._liveData) {
+        overlay.style.display = "none";
+        _lastHoverObj = null;
+        return;
+    }
+    if (_lastHoverObj === liveObj) return; // same object, skip re-render
+    _lastHoverObj = liveObj;
+    var d = liveObj._liveData;
     var statusText = { running: "运行中", idle: "待机", down: "故障", normal: "未排班" };
     var statusColor = { running: "#00e676", idle: "#ffd740", down: "#ff5252", normal: "#546e7a" };
 
     overlay.innerHTML =
-        '<div class="eq-title">' + (d.code || "") + '</div>' +
+        '<div class="eq-title">' + (d.code || d.name || "") + '</div>' +
         '<div class="eq-row"><span class="eq-label">名称</span><span class="eq-val">' + (d.name || "--") + '</span></div>' +
         '<div class="eq-row"><span class="eq-label">状态</span><span class="eq-val" style="color:' + (statusColor[d.status]||"#fff") + '">' + (statusText[d.status]||d.status) + '</span></div>' +
-        '<div class="eq-row"><span class="eq-label">班组</span><span class="eq-val">' + (d.team_id || "--") + '</span></div>' +
-        '<div class="eq-row"><span class="eq-label">类型</span><span class="eq-val">' + (d.model || "--") + '</span></div>';
+        '<div class="eq-row"><span class="eq-label">产量</span><span class="eq-val">' + (d.report_qty != null ? d.report_qty : "--") + '</span></div>' +
+        '<div class="eq-row"><span class="eq-label">效率</span><span class="eq-val">' + (d.efficiency != null ? d.efficiency + "%" : "--") + '</span></div>' +
+        '<div class="eq-row"><span class="eq-label">订单</span><span class="eq-val">' + (d.order_no || "--") + '</span></div>' +
+        '<div class="eq-row"><span class="eq-label">工序</span><span class="eq-val">' + (d.process_name || "--") + '</span></div>' +
+        '<div class="eq-row"><span class="eq-label">报工时间</span><span class="eq-val">' + (d.report_time || "--") + '</span></div>';
     overlay.style.display = "block";
-});
-
-canvas.on("mouse:move", function(opt) {
-    if (!liveMode) return;
-    var overlay = document.getElementById("eq-data-overlay");
-    if (overlay.style.display === "block") {
-        overlay.style.left = (opt.e.clientX + 15) + "px";
-        overlay.style.top = (opt.e.clientY - 50) + "px";
-    }
 });
 
 canvas.on("mouse:out", function(opt) {
     document.getElementById("eq-data-overlay").style.display = "none";
+    _lastHoverObj = null;
 });
 
 // Animation loop for live effects
@@ -594,5 +701,77 @@ function liveAnimation() {
 liveAnimation();
 
 loadEquipments();loadLayouts();
+
+
+/* ========== Background Image ========== */
+var bgImageObj = null;
+
+function importBgImage(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+        var dataUrl = ev.target.result;
+        fabric.Image.fromURL(dataUrl, function(img) {
+            // Remove old bg image
+            if (bgImageObj) { canvas.remove(bgImageObj); }
+            // Scale to fit canvas
+            var cw = canvas.getWidth();
+            var ch = canvas.getHeight();
+            var scale = Math.min(cw / img.width, ch / img.height) * 0.9;
+            img.set({
+                left: cw / 2,
+                top: ch / 2,
+                originX: 'center',
+                originY: 'center',
+                scaleX: scale,
+                scaleY: scale,
+                selectable: true,
+                evented: true,
+                hasControls: true,
+                opacity: 0.5,
+                _isBgImage: true
+            });
+            canvas.add(img);
+            canvas.sendToBack(img);
+            bgImageObj = img;
+            document.getElementById('bg-controls').classList.add('active');
+            canvas.renderAll();
+        });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+}
+
+function setBgOpacity(val) {
+    if (bgImageObj) {
+        bgImageObj.set('opacity', parseFloat(val));
+        canvas.renderAll();
+    }
+}
+
+function setBgScale(val) {
+    if (bgImageObj) {
+        var v = parseFloat(val);
+        var cw = canvas.getWidth();
+        var ch = canvas.getHeight();
+        // Get original image dimensions
+        var origW = bgImageObj.width;
+        var origH = bgImageObj.height;
+        var baseScale = Math.min(cw / origW, ch / origH) * 0.9;
+        bgImageObj.set('scaleX', baseScale * v);
+        bgImageObj.set('scaleY', baseScale * v);
+        canvas.renderAll();
+    }
+}
+
+function removeBgImage() {
+    if (bgImageObj) {
+        canvas.remove(bgImageObj);
+        bgImageObj = null;
+        document.getElementById('bg-controls').classList.remove('active');
+        canvas.renderAll();
+    }
+}
 </script>
 {% endblock %}

@@ -1,0 +1,173 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>测试进度弹窗</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 500px;
+            width: 90%;
+        }
+        .progress-container { margin: 20px 0; }
+        .progress-bar-container {
+            background: #e5e7eb;
+            border-radius: 8px;
+            height: 20px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        .progress-bar {
+            background: linear-gradient(90deg, #3b82f6, #60a5fa);
+            height: 100%;
+            transition: width 0.3s ease;
+            border-radius: 8px;
+        }
+        .progress-text {
+            text-align: center;
+            font-size: 14px;
+            color: #6b7280;
+            margin-bottom: 15px;
+        }
+        .progress-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .stat-item {
+            background: #f3f4f6;
+            padding: 8px 12px;
+            border-radius: 6px;
+            flex: 1;
+            min-width: 80px;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #6b7280;
+            display: block;
+        }
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #1f2937;
+            display: block;
+        }
+        .progress-message {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 13px;
+            color: #92400e;
+            min-height: 40px;
+        }
+    </style>
+</head>
+<body>
+    <h1>测试进度弹窗</h1>
+    <p>点击下面的按钮测试弹窗功能：</p>
+    <button onclick="showModal()">显示弹窗</button>
+    <button onclick="startProgress()">开始进度</button>
+    <button onclick="testAPI()">测试API</button>
+    
+    <div id="result"></div>
+    
+    <div class="modal-overlay" id="download-progress-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>📷 图片下载进度</h3>
+                <button onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="progress-container">
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="download-progress-bar" style="width:0%"></div>
+                    </div>
+                    <div class="progress-text" id="download-progress-text">准备开始下载...</div>
+                </div>
+                <div class="progress-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">总数:</span>
+                        <span class="stat-value" id="stat-total">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">已完成:</span>
+                        <span class="stat-value" id="stat-current">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">成功:</span>
+                        <span class="stat-value" id="stat-success">0</span>
+                    </div>
+                </div>
+                <div class="progress-message" id="download-progress-message"></div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function showModal() {
+            document.getElementById('download-progress-modal').style.display = 'flex';
+            document.getElementById('result').innerHTML = '弹窗已显示';
+        }
+        
+        function closeModal() {
+            document.getElementById('download-progress-modal').style.display = 'none';
+            document.getElementById('result').innerHTML = '弹窗已关闭';
+        }
+        
+        function startProgress() {
+            showModal();
+            var current = 0;
+            var total = 100;
+            var interval = setInterval(function() {
+                current += 5;
+                if (current > total) {
+                    clearInterval(interval);
+                    document.getElementById('download-progress-message').textContent = '下载完成!';
+                    return;
+                }
+                
+                var percent = Math.round((current / total) * 100);
+                document.getElementById('download-progress-bar').style.width = percent + '%';
+                document.getElementById('download-progress-text').textContent = percent + '% (' + current + '/' + total + ')';
+                document.getElementById('stat-total').textContent = total;
+                document.getElementById('stat-current').textContent = current;
+                document.getElementById('stat-success').textContent = Math.round(current * 0.9);
+                document.getElementById('download-progress-message').textContent = '正在下载图片... ' + current + '/' + total;
+            }, 200);
+        }
+        
+        function testAPI() {
+            document.getElementById('result').innerHTML = '正在测试API...';
+            fetch('http://localhost:5000/api/product-definitions/download-progress')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    document.getElementById('result').innerHTML = 'API响应: ' + JSON.stringify(data);
+                })
+                .catch(function(err) {
+                    document.getElementById('result').innerHTML = 'API错误: ' + err;
+                });
+        }
+    </script>
+</body>
+</html>

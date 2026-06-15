@@ -126,9 +126,10 @@ def run_fetch():
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        ctx = browser.new_context(accept_downloads=True)
+        browser = p.chromium.launch(headless=True, args=['--disable-blink-features=AutomationControlled', '--no-sandbox'])
+        ctx = browser.new_context(accept_downloads=True, user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
         page = ctx.new_page()
+        page.add_init_script('Object.defineProperty(navigator, "webdriver", {get: () => undefined})')
 
         try:
             # Login
@@ -139,8 +140,11 @@ def run_fetch():
             page.locator(u"input[placeholder*=\u5de5\u5382]").first.fill(FACTORY_CODE)
             page.locator(u"input[placeholder*=\u7528\u6237\u540d]").first.fill(USERNAME)
             page.locator("input[type=password]").first.fill(PASSWORD)
-            page.locator("button").filter(has_text=u"\u767b\u5f55").first.click()
-            page.wait_for_load_state("networkidle", timeout=15000)
+            page.locator("input[type=password]").first.press("Enter")
+            try:
+                page.wait_for_url(lambda url: "login" not in url, timeout=15000)
+            except Exception:
+                pass
             time.sleep(3)
             print("  Login OK")
 
@@ -188,10 +192,7 @@ def run_fetch():
             print("Error: %s" % e)
             import traceback
             traceback.print_exc()
-            try:
-                page.screenshot(path=os.path.join(DOWNLOAD_DIR, "error.png"))
-            except:
-                pass
+            pass  # screenshot disabled
         finally:
             browser.close()
 

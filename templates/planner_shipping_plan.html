@@ -3,6 +3,9 @@
 <div class="page-header">
 <h1>📦 成品发货计划</h1>
 <div class="page-actions">
+<select id="month-select" onchange="onMonthChange()" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px">
+<option value="">加载中...</option>
+</select>
 <label class="btn btn-outline" style="cursor:pointer">
 📥 导入计划
 <input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="importPlan(this)">
@@ -22,63 +25,187 @@
 <div id="matrix-empty" class="table-empty" style="display:none">暂无发货计划，请先导入</div>
 </div>
 </div>
+
+<!-- Import dialog with month picker -->
+<div id="import-dialog" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center">
+<div style="background:#fff;border-radius:12px;padding:24px 32px;min-width:360px;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+<h3 style="margin:0 0 16px;font-size:16px">📥 导入发货计划</h3>
+<div style="margin-bottom:16px">
+<label style="display:block;font-size:13px;color:#6b7280;margin-bottom:4px">计划月份</label>
+<input type="month" id="import-month" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;box-sizing:border-box">
+</div>
+<div style="margin-bottom:16px">
+<label style="display:block;font-size:13px;color:#6b7280;margin-bottom:4px">选择文件</label>
+<input type="file" id="import-dialog-file" accept=".xlsx,.xls" style="width:100%;font-size:14px">
+<p style="font-size:12px;color:#9ca3af;margin:4px 0 0">支持发货计划模板（客户/项目/客户件号/广升件号/名称 + 1号~31号）</p>
+</div>
+<div style="display:flex;gap:10px;justify-content:flex-end">
+<button class="btn btn-outline" onclick="closeImportDialog()">取消</button>
+<button class="btn btn-primary" onclick="doImport()">开始导入</button>
+</div>
+</div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
 var today = new Date().toISOString().split("T")[0];
+var currentMonth = "";
 
-(function(){ loadShippingMatrix(); })();
+(function(){
+    loadMonths();
+})();
 
-function loadShippingMatrix(){
-    fetch("/api/shipping-plan").then(function(r){return r.json()}).then(function(d){
+function loadMonths(){
+    fetch("/api/shipping-plan/months").then(function(r){return r.json()}).then(function(months){
+        var sel = document.getElementById("month-select");
+        sel.innerHTML = "";
+        if(!months.length){
+            sel.innerHTML = '<option value="">暂无数据</option>';
+            loadShippingMatrix("");
+            return;
+        }
+        months.forEach(function(m, i){
+            var opt = document.createElement("option");
+            opt.value = m;
+            var parts = m.split("-");
+            opt.textContent = parts[0] + "年" + parseInt(parts[1]) + "月";
+            if(i === 0) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        currentMonth = months[0];
+        loadShippingMatrix(currentMonth);
+    });
+}
+
+function onMonthChange(){
+    currentMonth = document.getElementById("month-select").value;
+    loadShippingMatrix(currentMonth);
+}
+
+function loadShippingMatrix(month){
+    var url = "/api/shipping-plan";
+    if(month) url += "?month=" + encodeURIComponent(month);
+    fetch(url).then(function(r){return r.json()}).then(function(d){
         var container = document.getElementById("matrix-container");
         var empty = document.getElementById("matrix-empty");
         document.getElementById("plan-count").textContent = d.length + " 条记录";
         if(!d.length){ container.innerHTML=""; empty.style.display="block"; return; }
         empty.style.display="none";
-        var dates={}, products={}, dataMap={};
+
+        // Group by customer, then by product
+        var customerGroups = {};
         d.forEach(function(r){
-            dates[r.ship_date]=true;
-            if(!products[r.product_code]) products[r.product_code]={name:r.product_code};
-            var key=r.product_code+'|'+r.ship_date;
-            if(!dataMap[key]) dataMap[key]=0;
-            dataMap[key]+=r.quantity;
+            var cust = r.customer || "未分组";
+            if(!customerGroups[cust]) customerGroups[cust] = {};
+            var code = r.product_code;
+            if(!customerGroups[cust][code]){
+                customerGroups[cust][code] = {
+                    name: r.product_name || code,
+                    code: code,
+                    gs_code: r.gs_part_no || "",
+                    project: r.project || "",
+                    dates: {}
+                };
+            }
+            var day = r.ship_date;
+            if(!customerGroups[cust][code].dates[day]) customerGroups[cust][code].dates[day] = 0;
+            customerGroups[cust][code].dates[day] += r.quantity;
         });
-        var dateArr=Object.keys(dates).sort();
-        var prodArr=Object.keys(products).sort(function(a,b){return a.localeCompare(b);});
-        var html='<table class="matrix-table"><thead><tr><th class="sticky-col">产品编码</th>';
-        dateArr.forEach(function(d){
-            var cls=d<today?'past':d===today?'today':'';
-            html+='<th class="date-header '+cls+'">'+d.substring(5)+'</th>';
+
+        // Collect all dates
+        var allDates = {};
+        d.forEach(function(r){ allDates[r.ship_date] = true; });
+        var dateArr = Object.keys(allDates).sort();
+
+        var html = '<table class="matrix-table"><thead><tr>';
+        html += '<th class="sticky-col">客户</th>';
+        html += '<th class="sticky-col2">系统编码</th>';
+        html += '<th class="sticky-col2b">广升件号</th>';
+        html += '<th class="sticky-col3">名称</th>';
+        dateArr.forEach(function(dt){
+            var dayNum = parseInt(dt.substring(8));
+            var cls = dt < today ? "past" : (dt === today ? "today" : "");
+            html += '<th class="date-header ' + cls + '">' + dayNum + "号</th>";
         });
-        html+='<th class="total-col">合计</th></tr></thead><tbody>';
-        prodArr.forEach(function(code){
-            html+='<tr><td class="sticky-col"><strong>'+products[code].name+'</strong></td>';
-            var total=0;
-            dateArr.forEach(function(date){
-                var key=code+'|'+date; var val=dataMap[key]||0; total+=val;
-                var cls=val>0?'has-value':'';
-                if(date<today) cls+=' past'; else if(date===today) cls+=' today';
-                html+='<td class="data-cell '+cls+'">'+(val>0?val:'')+'</td>';
+        html += '<th class="total-col">合计</th></tr></thead><tbody>';
+
+        var custKeys = Object.keys(customerGroups).sort();
+        custKeys.forEach(function(cust){
+            var products = customerGroups[cust];
+            var prodKeys = Object.keys(products).sort();
+            var firstRow = true;
+            prodKeys.forEach(function(code){
+                var p = products[code];
+                html += "<tr>";
+                if(firstRow){
+                    html += '<td class="sticky-col cust-cell" rowspan="' + prodKeys.length + '"><strong>' + cust + '</strong></td>';
+                    firstRow = false;
+                }
+                html += '<td class="sticky-col2">' + code + '</td>';
+                html += '<td class="sticky-col2b">' + (p.gs_code || '') + '</td>';
+                html += '<td class="sticky-col3">' + p.name + '</td>';
+                var total = 0;
+                dateArr.forEach(function(dt){
+                    var val = p.dates[dt] || 0;
+                    total += val;
+                    var cls = val > 0 ? "has-value" : "";
+                    if(dt < today) cls += " past"; else if(dt === today) cls += " today";
+                    html += '<td class="data-cell ' + cls + '">' + (val > 0 ? val : "") + '</td>';
+                });
+                html += '<td class="total-col"><strong>' + total + '</strong></td>';
+                html += "</tr>";
             });
-            html+='<td class="total-col"><strong>'+total+'</strong></td></tr>';
         });
-        html+='</tbody></table>';
-        container.innerHTML=html;
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
     });
 }
 
 function importPlan(input){
-    if(!input.files.length) return;
-    var fd = new FormData();
-    fd.append("file", input.files[0]);
-    toast("正在导入...", "info");
-    fetch("/api/import/shipping", {method:"POST", body:fd}).then(function(r){return r.json()}).then(function(d){
-        if(d.error){ toast(d.error, "error"); return; }
-        toast("导入成功，共 "+d.count+" 条", "success");
-        loadShippingMatrix();
-    }).catch(function(e){ toast("导入失败", "error"); });
+    // Show dialog instead of direct import
+    var dialog = document.getElementById("import-dialog");
+    dialog.style.display = "flex";
+    // Pre-set current month
+    var monthInput = document.getElementById("import-month");
+    if(currentMonth){
+        monthInput.value = currentMonth;
+    } else {
+        var now = new Date();
+        monthInput.value = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2,"0");
+    }
+    // Move file to dialog
+    document.getElementById("import-dialog-file").files = input.files;
     input.value = "";
+}
+
+function closeImportDialog(){
+    document.getElementById("import-dialog").style.display = "none";
+}
+
+function doImport(){
+    var monthInput = document.getElementById("import-month");
+    var fileInput = document.getElementById("import-dialog-file");
+    if(!monthInput.value){
+        toast("请选择计划月份", "warning");
+        return;
+    }
+    if(!fileInput.files.length){
+        toast("请选择文件", "warning");
+        return;
+    }
+    var fd = new FormData();
+    fd.append("file", fileInput.files[0]);
+    fd.append("plan_month", monthInput.value);
+    toast("正在导入...", "info");
+    closeImportDialog();
+    fetch("/api/import/shipping", {method:"POST", body:fd, credentials:"same-origin"}).then(function(r){return r.json()}).then(function(d){
+        if(d.error){ toast(d.error, "error"); return; }
+        toast("导入成功，共 " + d.count + " 条", "success");
+        currentMonth = monthInput.value;
+        loadMonths();
+    }).catch(function(e){ toast("导入失败", "error"); });
+    fileInput.value = "";
 }
 
 function downloadTemplate(){
@@ -86,32 +213,41 @@ function downloadTemplate(){
 }
 
 function exportMatrix(){
-    var table = document.querySelector('.matrix-table');
+    var table = document.querySelector(".matrix-table");
     if(!table){toast("无数据可导出","warning");return;}
     var csv="";
-    table.querySelectorAll('tr').forEach(function(row){
+    table.querySelectorAll("tr").forEach(function(row){
         var cols=[];
-        row.querySelectorAll('th,td').forEach(function(cell){
-            cols.push('"'+cell.textContent.replace(/"/g,'""')+'"');
+        row.querySelectorAll("th,td").forEach(function(cell){
+            cols.push('"' + cell.textContent.replace(/"/g,'""') + '"');
         });
-        csv+=cols.join(',')+"\n";
+        csv += cols.join(",") + "\n";
     });
-    var blob = new Blob(["\ufeff"+csv], {type:"text/csv;charset=utf-8"});
-    var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "成品发货计划.csv"; a.click();
+    var blob = new Blob(["\ufeff" + csv], {type:"text/csv;charset=utf-8"});
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    var sel = document.getElementById("month-select");
+    a.download = "成品发货计划_" + (sel.value || "all") + ".csv";
+    a.click();
 }
 </script>
 <style>
 .matrix-table{border-collapse:collapse;font-size:12px;white-space:nowrap}
 .matrix-table th,.matrix-table td{padding:6px 10px;border:1px solid #e5e7eb;text-align:center}
 .matrix-table th{background:#f9fafb;font-weight:600;position:sticky;top:0;z-index:10}
-.sticky-col{position:sticky;left:0;background:#fff;z-index:5;text-align:left;min-width:200px;max-width:280px;overflow:hidden;text-overflow:ellipsis}
-.date-header{min-width:60px;font-size:11px}
-.data-cell{min-width:60px}
+.sticky-col{position:sticky;left:0;background:#fff;z-index:5;text-align:left;min-width:120px;max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.sticky-col2{position:sticky;left:120px;background:#fff;z-index:5;text-align:left;min-width:140px;max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:11px}
+.sticky-col2b{position:sticky;left:260px;background:#fff;z-index:5;text-align:left;min-width:160px;max-width:220px;overflow:hidden;text-overflow:ellipsis;font-size:11px}
+.sticky-col3{position:sticky;left:420px;background:#fff;z-index:5;text-align:left;min-width:180px;max-width:260px;overflow:hidden;text-overflow:ellipsis;font-size:11px}
+.cust-cell{vertical-align:middle;border-right:2px solid #d1d5db}
+.date-header{min-width:52px;font-size:11px}
+.data-cell{min-width:52px}
 .data-cell.has-value{background:#dbeafe;font-weight:600;color:#1e40af}
 .data-cell.has-value.past{background:#fee2e2;color:#991b1b}
 .data-cell.has-value.today{background:#dcfce7;color:#065f46}
 .date-header.past{color:#9ca3af}
 .date-header.today{background:#dcfce7;color:#065f46}
-.total-col{background:#f3f4f6;font-weight:600;min-width:70px;position:sticky;right:0;z-index:5}
+.total-col{background:#f3f4f6;font-weight:600;min-width:60px;position:sticky;right:0;z-index:5}
+#month-select{min-width:120px}
 </style>
 {% endblock %}

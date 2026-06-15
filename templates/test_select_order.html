@@ -1,0 +1,32 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>测试selectOrder函数</title>
+</head>
+<body>
+    <h1>测试selectOrder函数</h1>
+    <button onclick="testSelectOrder()">测试selectOrder</button>
+    <div id="result"></div>
+    
+    <script>
+        // 模拟selectOrder函数
+        function selectOrder(o){
+            console.log("selectOrder called!", o);
+            document.getElementById('result').innerHTML = 'selectOrder called with: ' + JSON.stringify(o);
+            return o;
+        }
+        
+        function testSelectOrder(){
+            var testOrder = {
+                order_no: "TEST001",
+                product_code: "VF009001",
+                product_name: "测试产品",
+                quantity: 100,
+                completed_qty: 50
+            };
+            selectOrder(testOrder);
+        }
+    </script>
+</body>
+</html>

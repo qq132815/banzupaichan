@@ -1,0 +1,187 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<h1>排班图片测试</h1>
+
+<div style="display:flex;gap:20px">
+<div style="flex:1">
+<h3>测试1: loadProductImage 函数</h3>
+<input type="text" id="test-product-code" placeholder="输入产品编码" value="F26-8108010HV">
+<button onclick="testLoadImage()">测试加载图片</button>
+<button onclick="testLoadImage(null)">测试重置图片</button>
+
+<h3>测试2: selectOrder 模拟</h3>
+<input type="text" id="test-order-search" placeholder="搜索工单" oninput="testSearchOrders()">
+<div id="test-order-results"></div>
+<div id="test-selected-order" style="display:none;margin-top:10px;padding:10px;background:#f0f0f0">
+    <p><strong>工单:</strong> <span id="test-order-no"></span></p>
+    <p><strong>产品:</strong> <span id="test-product-name"></span></p>
+</div>
+</div>
+
+<div style="width:300px">
+<h3>产品图片区域</h3>
+<div id="product-image-container" style="border:1px solid #e5e7eb;border-radius:8px;height:300px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f9fafb">
+<div id="product-image-placeholder" style="text-align:center;color:#9ca3af;font-size:13px">
+<div style="font-size:48px;margin-bottom:10px">📦</div>
+<div>选择工单后显示产品图片</div>
+</div>
+<img id="product-image" src="" style="max-width:100%;max-height:100%;object-fit:contain;display:none">
+</div>
+</div>
+</div>
+
+<h3>控制台输出</h3>
+<div id="console-output" style="background:#1e1e1e;color:#00ff00;padding:10px;font-family:monospace;height:200px;overflow-y:auto"></div>
+
+<script>
+// 重写 console.log 显示到页面
+var originalLog = console.log;
+var originalError = console.error;
+console.log = function() {
+    var args = Array.prototype.slice.call(arguments);
+    var output = document.getElementById('console-output');
+    if (output) {
+        output.innerHTML += '<div style="color:#00ff00">' + args.map(function(a) { return typeof a === 'object' ? JSON.stringify(a) : a; }).join(' ') + '</div>';
+        output.scrollTop = output.scrollHeight;
+    }
+    originalLog.apply(console, arguments);
+};
+console.error = function() {
+    var args = Array.prototype.slice.call(arguments);
+    var output = document.getElementById('console-output');
+    if (output) {
+        output.innerHTML += '<div style="color:#ff4444">' + args.map(function(a) { return typeof a === 'object' ? JSON.stringify(a) : a; }).join(' ') + '</div>';
+        output.scrollTop = output.scrollHeight;
+    }
+    originalError.apply(console, arguments);
+};
+
+// loadProductImage 函数 (复制自 schedule.html)
+function loadProductImage(productCode){
+    console.log('loadProductImage called with:', productCode);
+    var img = document.getElementById('product-image');
+    var placeholder = document.getElementById('product-image-placeholder');
+    
+    console.log('Image element:', img);
+    console.log('Placeholder element:', placeholder);
+    
+    if(!productCode){
+        console.log('No product code, showing placeholder');
+        if(img) img.style.display = 'none';
+        if(placeholder) {
+            placeholder.style.display = 'block';
+            placeholder.innerHTML = '<div style="font-size:48px;margin-bottom:10px">📦</div><div>选择工单后显示产品图片</div>';
+        }
+        return;
+    }
+    
+    console.log('Fetching product image for:', productCode);
+    
+    // 优先尝试精确匹配
+    fetch('/api/product-definitions?exact_product_code=' + encodeURIComponent(productCode) + '&page_size=1')
+        .then(function(r){return r.json()})
+        .then(function(resp){
+            console.log('Exact match API response:', resp);
+            var data = resp.data || resp;
+            
+            if(data.length > 0){
+                // 找到精确匹配
+                console.log('Found exact match:', data[0]);
+                if(data[0].image_path){
+                    console.log('Setting image path:', data[0].image_path);
+                    img.src = data[0].image_path;
+                    img.style.display = 'block';
+                    placeholder.style.display = 'none';
+                } else if(data[0].image_url){
+                    console.log('Setting image URL:', data[0].image_url);
+                    img.src = data[0].image_url;
+                    img.style.display = 'block';
+                    placeholder.style.display = 'none';
+                } else {
+                    console.log('Exact match found but no image');
+                    img.style.display = 'none';
+                    placeholder.style.display = 'block';
+                    placeholder.innerHTML = '<div style="font-size:48px;margin-bottom:10px">❌</div><div>产品没有图片</div>';
+                }
+            } else {
+                // 精确匹配失败，尝试模糊匹配
+                console.log('No exact match, trying fuzzy match...');
+                return fetch('/api/product-definitions?q=' + encodeURIComponent(productCode) + '&page_size=1')
+                    .then(function(r){return r.json()})
+                    .then(function(resp){
+                        console.log('Fuzzy match API response:', resp);
+                        var data = resp.data || resp;
+                        if(data.length > 0 && data[0].image_path){
+                            console.log('Setting image path (fuzzy):', data[0].image_path);
+                            img.src = data[0].image_path;
+                            img.style.display = 'block';
+                            placeholder.style.display = 'none';
+                        } else if(data.length > 0 && data[0].image_url){
+                            console.log('Setting image URL (fuzzy):', data[0].image_url);
+                            img.src = data[0].image_url;
+                            img.style.display = 'block';
+                            placeholder.style.display = 'none';
+                        } else {
+                            console.log('No image found (fuzzy)');
+                            img.style.display = 'none';
+                            placeholder.style.display = 'block';
+                            placeholder.innerHTML = '<div style="font-size:48px;margin-bottom:10px">❌</div><div>未找到产品图片</div>';
+                        }
+                    });
+            }
+        })
+        .catch(function(err){
+            console.error('加载产品图片失败:', err);
+            img.style.display = 'none';
+            placeholder.style.display = 'block';
+            placeholder.innerHTML = '<div style="font-size:48px;margin-bottom:10px">⚠️</div><div>加载图片失败</div>';
+        });
+}
+
+// 搜索工单
+function testSearchOrders(){
+    var q=document.getElementById("test-order-search").value;
+    if(q.length<1){document.getElementById("test-order-results").innerHTML="";return;}
+    console.log('Searching orders for:', q);
+    fetch("/api/search-orders?q="+encodeURIComponent(q)).then(function(r){return r.json()}).then(function(d){
+        var box=document.getElementById("test-order-results");box.innerHTML="";
+        if(!d.length){box.innerHTML='<div>无匹配</div>';return;}
+        d.forEach(function(o){
+            var div=document.createElement("div");
+            div.style.cssText = "padding:5px;border-bottom:1px solid #eee;cursor:pointer";
+            div.textContent = o.order_no + ' - ' + (o.product_name||o.product_code||'');
+            div.onclick=function(){
+                console.log('Order selected:', o);
+                selectOrder(o);
+            };
+            box.appendChild(div);
+        });
+    });
+}
+
+// selectOrder 函数
+function selectOrder(o){
+    console.log('selectOrder called with:', o);
+    document.getElementById("test-order-no").textContent=o.order_no;
+    document.getElementById("test-product-name").textContent=o.product_name||o.product_code||"";
+    document.getElementById("test-selected-order").style.display="block";
+    document.getElementById("test-order-results").innerHTML="";
+    
+    // 这是关键：调用 loadProductImage
+    console.log('About to call loadProductImage with product_code:', o.product_code);
+    loadProductImage(o.product_code);
+}
+
+// 直接测试函数
+function testLoadImage(code){
+    if(code === undefined){
+        code = document.getElementById("test-product-code").value;
+    }
+    console.log('Direct test - calling loadProductImage with:', code);
+    loadProductImage(code);
+}
+
+console.log('Test page loaded successfully');
+console.log('Functions defined: loadProductImage, testSearchOrders, selectOrder, testLoadImage');
+</script>
+{% endblock %}

@@ -5,6 +5,7 @@
 <input type="date" id="report-date" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
 <select id="team-filter" onchange="loadData()" style="padding:7px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"><option value="">全部班组</option></select>
 <button class="btn btn-primary" onclick="loadData()">查询</button>
+<button class="btn btn-secondary" onclick="exportData()" style="background:#059669;color:#fff;border-color:#059669">导出Excel</button>
 </div>
 <div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap;align-items:center">
 <span style="font-size:13px;color:#6b7280">快速筛选：</span>
@@ -142,5 +143,14 @@ function renderTable(){
     });
     tb.innerHTML=html;
 }
+
+function exportData(){
+    var date=document.getElementById('report-date').value;
+    var tid=document.getElementById('team-filter').value;
+    var url='/api/reports/daily/export?date='+date;
+    if(tid)url+='&team_id='+tid;
+    window.location.href=url;
+}
 </script>
 {% endblock %}
+

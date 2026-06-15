@@ -61,7 +61,12 @@ def init_database():
     c.execute("CREATE TABLE IF NOT EXISTS production_cycles (id INTEGER PRIMARY KEY AUTOINCREMENT, product_code TEXT NOT NULL, production_days REAL, lead_days REAL)")
 
     c.execute("CREATE TABLE IF NOT EXISTS bom (id INTEGER PRIMARY KEY AUTOINCREMENT, parent_product_code TEXT, parent_product_name TEXT, child_product_code TEXT, child_product_name TEXT, quantity REAL, unit TEXT, process_team TEXT)")
-    c.execute("CREATE TABLE IF NOT EXISTS standard_hours (id INTEGER PRIMARY KEY AUTOINCREMENT, product_code TEXT NOT NULL, product_name TEXT, process_name TEXT NOT NULL, team_name TEXT, standard_hours REAL DEFAULT 0, setup_time REAL DEFAULT 0, remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')), UNIQUE(product_code, process_name))")
+    c.execute("CREATE TABLE IF NOT EXISTS standard_hours (id INTEGER PRIMARY KEY AUTOINCREMENT, product_code TEXT NOT NULL, product_name TEXT, process_name TEXT NOT NULL, team_name TEXT, standard_hours REAL DEFAULT 0, setup_time REAL DEFAULT 0, available_equipment TEXT DEFAULT '', remark TEXT, created_at TEXT DEFAULT (datetime('now','localtime')), UNIQUE(product_code, process_name))")
+    try:
+        c.execute("ALTER TABLE standard_hours ADD COLUMN available_equipment TEXT DEFAULT ''")
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            raise
 
     c.execute("CREATE TABLE IF NOT EXISTS work_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, report_qty REAL, good_qty REAL, bad_qty REAL, report_unit TEXT, good_rate TEXT, operator TEXT, start_time TEXT, end_time TEXT, approve_status TEXT, approver TEXT, approve_time TEXT, creator TEXT, create_time TEXT, process_name TEXT, order_no TEXT, product_code TEXT, product_name TEXT, related_no TEXT, equipment TEXT, report_hours REAL, weld_count REAL, attendance_note TEXT, created_at TEXT DEFAULT (datetime('now','localtime')))")
 

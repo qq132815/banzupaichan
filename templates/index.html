@@ -57,7 +57,7 @@
 }
 .plan-controls button:hover { background: #1e3a5f; }
 .plan-controls button.live-on { background: #1b5e20; color: #00e676; border-color: #00e676; }
-.plan-canvas-wrap { width: 100%; height: 100%; }
+.plan-canvas-wrap { position: relative; width: 100%; height: 100%; }
 #plan-canvas { width: 100%; height: 100%; }
 .plan-info {
     position: absolute; bottom: 8px; left: 8px; z-index: 10;
@@ -69,12 +69,74 @@
     color: #e0f0ff; padding: 10px 14px; border-radius: 4px; font-size: 12px;
     display: none; pointer-events: none; z-index: 100; min-width: 200px;
     box-shadow: 0 0 20px rgba(79,195,247,0.3);
+    transform: translateY(12px);
 }
 .eq-hover-card .hc-title { color: #4fc3f7; font-weight: bold; font-size: 14px; margin-bottom: 6px; border-bottom: 1px solid rgba(79,195,247,0.3); padding-bottom: 4px; }
 .eq-hover-card .hc-row { display: flex; justify-content: space-between; padding: 2px 0; }
 .eq-hover-card .hc-label { color: #8eafc4; }
 .eq-hover-card .hc-val { color: #fff; font-weight: 500; }
 .hc-status { font-size: 11px; padding: 1px 6px; border-radius: 3px; font-weight: normal; }
+
+/* Left: OEE Panel */
+.oee-panel {
+    width: 380px; flex-shrink: 0; overflow-y: auto;
+    background: #0a1929; border-right: 1px solid #1e3a5f;
+    display: flex; flex-direction: column;
+}
+.oee-panel::-webkit-scrollbar { width: 4px; }
+.oee-panel::-webkit-scrollbar-track { background: transparent; }
+.oee-panel::-webkit-scrollbar-thumb { background: rgba(79,195,247,0.2); border-radius: 2px; }
+.oee-section {
+    padding: 14px; border-bottom: 1px solid #1e3a5f;
+}
+.oee-section-title {
+    color: #4fc3f7; font-size: 12px; letter-spacing: 1px;
+    margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+}
+.oee-section-title::before {
+    content: ""; width: 3px; height: 12px; background: #4fc3f7; border-radius: 2px;
+}
+.oee-gauge-wrap {
+    display: flex; align-items: center; gap: 16px; padding: 8px 0;
+}
+.oee-gauge {
+    width: 100px; height: 100px; position: relative; flex-shrink: 0;
+}
+.oee-gauge svg { transform: rotate(-90deg); }
+.oee-gauge-val {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    text-align: center;
+}
+.oee-gauge-val .big { color: #fff; font-size: 22px; font-weight: bold; }
+.oee-gauge-val .unit { color: #8eafc4; font-size: 10px; }
+.oee-factors { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.oee-factor {
+    display: flex; align-items: center; gap: 8px;
+}
+.oee-factor-label { color: #8eafc4; font-size: 11px; min-width: 48px; }
+.oee-factor-bar-bg {
+    flex: 1; height: 6px; background: rgba(79,195,247,0.1); border-radius: 3px; overflow: hidden;
+}
+.oee-factor-bar-fill { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
+.oee-factor-val { color: #fff; font-size: 11px; min-width: 36px; text-align: right; }
+.oee-metric-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.oee-metric {
+    background: rgba(13,33,55,0.5); border: 1px solid rgba(79,195,247,0.08);
+    border-radius: 6px; padding: 10px 12px; text-align: center;
+}
+.oee-metric-val { color: #fff; font-size: 20px; font-weight: bold; line-height: 1.2; }
+.oee-metric-label { color: #8eafc4; font-size: 10px; margin-top: 2px; letter-spacing: 0.5px; }
+.oee-equip-list { max-height: 200px; overflow-y: auto; }
+.oee-equip-item {
+    display: flex; align-items: center; gap: 8px; padding: 5px 0;
+    border-bottom: 1px solid rgba(79,195,247,0.05); font-size: 12px;
+}
+.oee-equip-item:last-child { border-bottom: none; }
+.oee-equip-status { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.oee-equip-name { flex: 1; color: #b0bec5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oee-equip-eff { color: #4fc3f7; font-size: 11px; min-width: 36px; text-align: right; }
 
 /* Right: Charts */
 .charts-area {
@@ -154,8 +216,45 @@
 
     <!-- Main -->
     <div class="main-content">
-        <!-- Left: Floor Plan -->
-        
+        <!-- Left: OEE Panel -->
+        <div class="oee-panel">
+            <div class="oee-section">
+                <div class="oee-section-title">设备 OEE</div>
+                <div class="oee-gauge-wrap">
+                    <div class="oee-gauge">
+                        <svg width="100" height="100" viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(79,195,247,0.1)" stroke-width="8"/>
+                            <circle id="oee-arc" cx="50" cy="50" r="42" fill="none" stroke="#4fc3f7" stroke-width="8" stroke-dasharray="0 264" stroke-linecap="round"/>
+                        </svg>
+                        <div class="oee-gauge-val"><span class="big" id="oee-val">--</span><span class="unit">%</span></div>
+                    </div>
+                    <div class="oee-factors">
+                        <div class="oee-factor"><span class="oee-factor-label">稼动率</span><div class="oee-factor-bar-bg"><div class="oee-factor-bar-fill" id="f-avail" style="width:0%;background:#00e676;"></div></div><span class="oee-factor-val" id="f-avail-val">--%</span></div>
+                        <div class="oee-factor"><span class="oee-factor-label">性能率</span><div class="oee-factor-bar-bg"><div class="oee-factor-bar-fill" id="f-perf" style="width:0%;background:#4fc3f7;"></div></div><span class="oee-factor-val" id="f-perf-val">--%</span></div>
+                        <div class="oee-factor"><span class="oee-factor-label">良品率</span><div class="oee-factor-bar-bg"><div class="oee-factor-bar-fill" id="f-quality" style="width:0%;background:#ffd740;"></div></div><span class="oee-factor-val" id="f-quality-val">--%</span></div>
+                    </div>
+                </div>
+            </div>
+            <div class="oee-section">
+                <div class="oee-section-title">今日生产</div>
+                <div class="oee-metric-grid">
+                    <div class="oee-metric"><div class="oee-metric-val" id="m-output">--</div><div class="oee-metric-label">总产量</div></div>
+                    <div class="oee-metric"><div class="oee-metric-val" id="m-good">--</div><div class="oee-metric-label">良品数</div></div>
+                    <div class="oee-metric"><div class="oee-metric-val" id="m-bad">--</div><div class="oee-metric-label">不良数</div></div>
+                    <div class="oee-metric"><div class="oee-metric-val" id="m-hours">--</div><div class="oee-metric-label">总工时(h)</div></div>
+                    <div class="oee-metric"><div class="oee-metric-val" id="m-eff">--</div><div class="oee-metric-label">平均效率</div></div>
+                    <div class="oee-metric"><div class="oee-metric-val" id="m-reports">--</div><div class="oee-metric-label">报工次数</div></div>
+                </div>
+            </div>
+            <div class="oee-section">
+                <div class="oee-section-title">设备效率TOP榜</div>
+                <div class="oee-equip-list" id="oee-equip-list">
+                    <div class="no-data">暂无数据</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center: Floor Plan -->
         <div class="plan-area">
             <div class="plan-header">
                 <span class="plan-title">| 车间实时监控</span>
@@ -408,8 +507,14 @@ planCanvas.on("mouse:move", function(opt) {
     if(!liveMode) return;
     var card = document.getElementById("hover-card");
     if(card.style.display==="block") {
-        card.style.left = (opt.e.clientX+15)+"px";
-        card.style.top = (opt.e.clientY-60)+"px";
+        var wrap = document.getElementById("plan-wrap");
+        var rect = wrap ? wrap.getBoundingClientRect() : {left:0,top:0};
+        var x = opt.e.clientX - rect.left + 16;
+        var y = opt.e.clientY - rect.top + 16;
+        if(x + 220 > rect.width) x = Math.max(0, x - 236);
+        if(y + 180 > rect.height) y = Math.max(0, y - 196);
+        card.style.left = x + "px";
+        card.style.top = y + "px";
     }
 });
 planCanvas.on("mouse:out", function() {
@@ -465,14 +570,15 @@ function updateCharts(list) {
     var teams = {};
     list.forEach(function(eq) {
         var tid = eq.team_id || "unknown";
-        if(!teams[tid]) teams[tid] = {running:0,idle:0,down:0};
+        var tname = eq.team_name || ("班组"+tid);
+        if(!teams[tid]) teams[tid] = {name:tname,running:0,idle:0,down:0};
         if(eq.status==="running") teams[tid].running++;
         else if(eq.status==="idle") teams[tid].idle++; // kept for team bars
         else if(eq.status==="down") teams[tid].down++;
     });
     var teamNames = [], tRun=[], tIdle=[], tDown=[];
     Object.keys(teams).forEach(function(k) {
-        teamNames.push("班组"+k);
+        teamNames.push(teams[k].name);
         tRun.push(teams[k].running);
         tIdle.push(teams[k].idle);
         tDown.push(teams[k].down);
@@ -554,12 +660,12 @@ function renderWatermarks(list) {
 
         // Build watermark lines
         var lines = [];
-        if(wmSettings.today_output) lines.push("\u4ea7\u91cf:" + (eq.report_qty != null ? eq.report_qty : "--"));
-        if(wmSettings.efficiency) lines.push("\u6548\u7387:" + (eq.efficiency != null ? eq.efficiency + "%" : "--"));
-        if(wmSettings.quality_rate) lines.push("\u826f\u54c1\u7387:" + (eq.good_rate != null ? eq.good_rate + "%" : "--"));
+        if(wmSettings.today_output) lines.push("产量:" + (eq.report_qty != null ? eq.report_qty : "--"));
+        if(wmSettings.efficiency) lines.push("效率:" + (eq.efficiency != null ? eq.efficiency + "%" : "--"));
+        if(wmSettings.quality_rate) lines.push("良品率:" + (eq.good_rate != null ? eq.good_rate + "%" : "--"));
         if(wmSettings.team_name && eq.team_name) lines.push(eq.team_name);
         if(wmSettings.current_order && eq.order_no) lines.push(eq.order_no);
-        if(wmSettings.health_score && eq.report_time) lines.push("\u62a5\u5de5:" + eq.report_time.substring(5, 16));
+        if(wmSettings.health_score && eq.report_time) lines.push("报工:" + eq.report_time.substring(5, 16));
 
         if(lines.length === 0) return;
 
@@ -595,6 +701,86 @@ document.addEventListener('click', function(e) {
     }
 });
 loadWmSettings();
+/* ========== OEE Panel Data ========== */
+function loadOeePanel(){
+    fetch('/api/workshop/3d-status',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(d){
+        if(!d.success) return;
+        var list = d.data || [];
+        var total = list.length;
+        var running = 0, down = 0;
+        var sumEff = 0, effCount = 0;
+        var sumQty = 0, sumGood = 0, sumBad = 0, sumHours = 0, reportCount = 0;
+
+        // Collect equipment with report data for ranking
+        var equipWithEff = [];
+
+        list.forEach(function(eq){
+            if(eq.status === 'running') running++;
+            else if(eq.status === 'down') down++;
+            if(eq.efficiency != null && eq.efficiency > 0) { sumEff += eq.efficiency; effCount++; }
+            if(eq.report_qty != null) { sumQty += eq.report_qty; reportCount++; }
+            if(eq.good_qty != null) sumGood += eq.good_qty;
+            if(eq.bad_qty != null) sumBad += eq.bad_qty;
+            if(eq.report_hours != null) sumHours += eq.report_hours;
+            if(eq.efficiency != null && eq.efficiency > 0) {
+                equipWithEff.push({name: eq.name || eq.code, efficiency: eq.efficiency, status: eq.status});
+            }
+        });
+
+        // OEE ring now directly reflects availability (稼动率)
+        var avail = total > 0 ? Math.round(running / total * 100) : 0;
+        var perf = effCount > 0 ? Math.round(sumEff / effCount) : 0;
+        var quality = sumQty > 0 ? Math.round(sumGood / sumQty * 100) : 0;
+
+        // Update gauge with availability so it is never stuck at 0 when there are running devices
+        var circ = 2 * Math.PI * 42;
+        var arc = circ * avail / 100;
+        var oeeArc = document.getElementById('oee-arc');
+        if(oeeArc) oeeArc.setAttribute('stroke-dasharray', arc + ' ' + (circ - arc));
+        var oeeVal = document.getElementById('oee-val');
+        if(oeeVal) oeeVal.textContent = avail;
+
+        // Update factors
+        var fa = document.getElementById('f-avail');
+        if(fa) fa.style.width = avail + '%';
+        var fav = document.getElementById('f-avail-val');
+        if(fav) fav.textContent = avail + '%';
+        var fp = document.getElementById('f-perf');
+        if(fp) fp.style.width = perf + '%';
+        var fpv = document.getElementById('f-perf-val');
+        if(fpv) fpv.textContent = perf + '%';
+        var fq = document.getElementById('f-quality');
+        if(fq) fq.style.width = quality + '%';
+        var fqv = document.getElementById('f-quality-val');
+        if(fqv) fqv.textContent = quality + '%';
+
+        // Update metrics
+        var mo = document.getElementById('m-output');
+        if(mo) mo.textContent = sumQty;
+        var mg = document.getElementById('m-good');
+        if(mg) mg.textContent = sumGood;
+        var mb = document.getElementById('m-bad');
+        if(mb) mb.textContent = sumBad;
+        var mh = document.getElementById('m-hours');
+        if(mh) mh.textContent = sumHours.toFixed(1);
+        var me = document.getElementById('m-eff');
+        if(me) me.textContent = effCount > 0 ? Math.round(sumEff/effCount) + '%' : '--';
+        var mr = document.getElementById('m-reports');
+        if(mr) mr.textContent = reportCount;
+
+        // Equipment ranking (top 10 by efficiency)
+        equipWithEff.sort(function(a,b){ return b.efficiency - a.efficiency; });
+        var html = '';
+        for(var i = 0; i < Math.min(equipWithEff.length, 10); i++) {
+            var e = equipWithEff[i];
+            var color = e.status === 'running' ? '#00e676' : (e.status === 'down' ? '#ff5252' : '#ffd740');
+            html += '<div class="oee-equip-item"><span class="oee-equip-status" style="background:'+color+'"></span><span class="oee-equip-name" title="'+escHtml(e.name)+'">'+escHtml(e.name)+'</span><span class="oee-equip-eff">'+e.efficiency+'%</span></div>';
+        }
+        var el = document.getElementById('oee-equip-list');
+        if(el) el.innerHTML = html || '<div class="no-data">暂无数据</div>';
+    }).catch(function(){});
+}
+loadOeePanel(); setInterval(loadOeePanel, 30000);
 loadLatestLayout();
 </script>
 {% endblock %}
