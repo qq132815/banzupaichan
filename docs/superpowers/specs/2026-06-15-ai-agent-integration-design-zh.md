@@ -181,7 +181,7 @@ ai_chat_base_url
 ai_embedding_base_url
 ```
 
-MVP 阶段向量数据库明确使用 Chroma。建议配置 `ai_vector_store=chroma`。如果使用本地持久化 Chroma，配置 `ai_chroma_mode=local` 和 `ai_chroma_persist_dir`；如果使用 Chroma Server，配置 `ai_chroma_mode=http`、`ai_chroma_host`、`ai_chroma_port`。知识片段建议存入独立 collection，例如 `production_ai_knowledge`。
+MVP 阶段向量数据库明确使用 Chroma。建议配置 `ai_vector_store=chroma`。默认推荐使用 Chroma Server 模式：`ai_chroma_mode=http`、`ai_chroma_host`、`ai_chroma_port`，因为 Windows/Python 3.12 可以直接使用轻量的 `chromadb-client` 包，不需要编译原生 HNSW 扩展。如果使用本地持久化 Chroma，则配置 `ai_chroma_mode=local` 和 `ai_chroma_persist_dir`，但需要安装完整 `chromadb` 包并具备本机 C++ 编译环境。知识片段建议存入独立 collection，例如 `production_ai_knowledge`。
 
 ## 7. 知识检索设计
 

@@ -20,8 +20,10 @@ def load_ai_settings(include_secrets=False):
     defaults = {
         'ai_enabled': '1',
         'ai_vector_store': 'chroma',
-        'ai_chroma_mode': 'local',
+        'ai_chroma_mode': 'http',
         'ai_chroma_persist_dir': 'data/chroma',
+        'ai_chroma_host': 'localhost',
+        'ai_chroma_port': '8000',
         'ai_chroma_collection': 'production_ai_knowledge',
         'ai_request_timeout_seconds': '60',
         'ai_max_context_chunks': '5',

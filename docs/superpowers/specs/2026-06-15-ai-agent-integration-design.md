@@ -176,7 +176,7 @@ POST {ai_base_url}/embeddings
 
 The service is assumed to be OpenAI-compatible. If the chat model and embedding model are served by different base URLs later, add separate `ai_chat_base_url` and `ai_embedding_base_url` keys.
 
-Chroma is the selected vector database for MVP. Use `ai_vector_store=chroma`. For local persistent Chroma, use `ai_chroma_mode=local` and `ai_chroma_persist_dir`. For Chroma server mode, use `ai_chroma_mode=http`, `ai_chroma_host`, and `ai_chroma_port`. Store indexed chunks in a dedicated collection such as `production_ai_knowledge`.
+Chroma is the selected vector database for MVP. Use `ai_vector_store=chroma`. The recommended default is Chroma Server mode with `ai_chroma_mode=http`, `ai_chroma_host`, and `ai_chroma_port`, because Windows/Python 3.12 can use the lightweight `chromadb-client` package without compiling native HNSW extensions. For local persistent Chroma, use `ai_chroma_mode=local` and `ai_chroma_persist_dir`, but that requires the full `chromadb` package and a working native build environment. Store indexed chunks in a dedicated collection such as `production_ai_knowledge`.
 
 ## 7. Knowledge Retrieval Design
 

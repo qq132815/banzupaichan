@@ -87,7 +87,7 @@ def _load_chroma(settings):
     try:
         import chromadb
     except Exception as exc:
-        raise RuntimeError('chromadb 未安装，请先安装 requirements.txt 中的 chromadb: ' + str(exc))
+        raise RuntimeError('Chroma 客户端未安装，请先安装 requirements.txt 中的 chromadb-client: ' + str(exc))
 
     mode = settings.get('ai_chroma_mode') or 'local'
     collection_name = settings.get('ai_chroma_collection') or DEFAULT_COLLECTION
@@ -100,7 +100,10 @@ def _load_chroma(settings):
         client = chromadb.HttpClient(host=host, port=port)
     else:
         persist_dir = settings.get('ai_chroma_persist_dir') or os.path.join(PROJECT_ROOT, 'data', 'chroma')
-        client = chromadb.PersistentClient(path=persist_dir)
+        try:
+            client = chromadb.PersistentClient(path=persist_dir)
+        except RuntimeError as exc:
+            raise RuntimeError('当前安装的是 chromadb-client，不能使用 local 模式；请改用 ai_chroma_mode=http 连接 Chroma Server，或安装完整 chromadb。原始错误: ' + str(exc))
     return client.get_or_create_collection(name=collection_name), collection_name
 
 
