@@ -151,6 +151,12 @@ ai_base_url
 ai_api_key
 ai_chat_model
 ai_embedding_model
+ai_vector_store
+ai_chroma_mode
+ai_chroma_persist_dir
+ai_chroma_host
+ai_chroma_port
+ai_chroma_collection
 ai_request_timeout_seconds
 ai_max_context_chunks
 ai_max_tool_rows
@@ -169,6 +175,8 @@ POST {ai_base_url}/embeddings
 ```
 
 The service is assumed to be OpenAI-compatible. If the chat model and embedding model are served by different base URLs later, add separate `ai_chat_base_url` and `ai_embedding_base_url` keys.
+
+Chroma is the selected vector database for MVP. Use `ai_vector_store=chroma`. For local persistent Chroma, use `ai_chroma_mode=local` and `ai_chroma_persist_dir`. For Chroma server mode, use `ai_chroma_mode=http`, `ai_chroma_host`, and `ai_chroma_port`. Store indexed chunks in a dedicated collection such as `production_ai_knowledge`.
 
 ## 7. Knowledge Retrieval Design
 
@@ -193,12 +201,26 @@ The embedding model is used for local documentation and rule retrieval, not for 
 
 ### Similarity Search
 
-For MVP, store embeddings as JSON in SQLite and calculate cosine similarity in Python. This is acceptable for a small local document set.
+Chroma is the primary vector store. The retrieval flow is:
 
-Upgrade path if the corpus grows:
+```text
+User question
+  ↓
+Embedding model creates query vector
+  ↓
+Chroma searches the `production_ai_knowledge` collection
+  ↓
+Top matching document chunks are returned with source metadata
+  ↓
+Qwen3.5 uses those chunks as context
+```
 
-- FAISS for local vector search.
-- Chroma for local persistent vector store.
+SQLite should keep document and chunk metadata for traceability, while Chroma stores vectors, searchable chunk content, and source metadata. If Chroma is temporarily unavailable, the assistant can continue answering database-backed production questions and clearly state that document retrieval is unavailable.
+
+Fallback or future alternatives:
+
+- SQLite `embedding_json` plus Python cosine similarity as an emergency fallback only.
+- FAISS for a lightweight local vector index.
 - Milvus or pgvector if deployment becomes larger.
 
 ## 8. Read-Only Tool Design
@@ -281,7 +303,8 @@ CREATE TABLE IF NOT EXISTS ai_knowledge_chunks (
     chunk_index INTEGER NOT NULL,
     title TEXT,
     content TEXT NOT NULL,
-    embedding_json TEXT,
+    chroma_collection TEXT,
+    chroma_id TEXT,
     content_hash TEXT,
     updated_at TEXT DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (doc_id) REFERENCES ai_knowledge_docs(id)
