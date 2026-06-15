@@ -37,6 +37,10 @@ def get_work_order_status(ctx, settings, order_no=None, product_code=None, date_
     c = conn.cursor()
     params = []
     where = []
+    team_id = _ctx_team_id(ctx)
+    if team_id:
+        where.append('EXISTS (SELECT 1 FROM schedules s WHERE s.work_order_no=work_orders.order_no AND s.team_id=?)')
+        params.append(team_id)
     if order_no:
         where.append('order_no LIKE ?')
         params.append('%' + order_no + '%')
@@ -204,6 +208,14 @@ def get_shipping_plan(ctx, settings, date_from=None, date_to=None, product_code=
     c = conn.cursor()
     params = []
     where = []
+    team_id = _ctx_team_id(ctx)
+    if team_id:
+        where.append('''EXISTS (
+            SELECT 1 FROM production_requirements pr
+            JOIN teams t ON pr.team_name=t.name
+            WHERE pr.product_code=shipping_plan.product_code AND t.id=?
+        )''')
+        params.append(team_id)
     if date_from:
         where.append('ship_date >= ?')
         params.append(date_from)
