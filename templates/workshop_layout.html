@@ -357,7 +357,14 @@ var _origMovingHandler = function(opt) {
 canvas.on("object:moving", _origMovingHandler);
 
 // Auto-save undo on changes
-canvas.on("object:added", function() { if (undoStack.length === 0) saveUndo(); });
+canvas.on("object:added", function(opt) {
+    // Strip corner radius from all equipment rects (existing and new)
+    var obj = opt.target;
+    if (obj && (obj._isEqRect || (obj.customType === 'equipment' && obj.type === 'rect'))) {
+        obj.set({ rx: 0, ry: 0 });
+    }
+    if (undoStack.length === 0) saveUndo();
+});
 canvas.on("object:modified", function(opt) {
     var obj = opt.target;
     // When equipment rect is resized, adjust linked label font size proportionally
@@ -366,12 +373,6 @@ canvas.on("object:modified", function(opt) {
         var sy = obj.scaleY || 1;
         var w = (obj.width || 100) * sx;
         var h = (obj.height || 50) * sy;
-        // Scale corner radius to stay proportional (base is 4px at 100x50)
-        var baseRx = obj._baseRx || 4;
-        var baseRy = obj._baseRy || 4;
-        if (!obj._baseRx) { obj._baseRx = 4; obj._baseRy = 4; }
-        obj.set("rx", Math.round(baseRx * Math.min(sx, sy)));
-        obj.set("ry", Math.round(baseRy * Math.min(sx, sy)));
         // Use initial baseline for consistent font scaling
         if (!obj._baseWidth) { obj._baseWidth = 100; obj._baseHeight = 50; }
         var fontScale = Math.min(w / obj._baseWidth, h / obj._baseHeight);
@@ -436,7 +437,7 @@ function addEquipmentToCanvas(eqId){
     var c=sc[eq.status]||sc.normal;
     var posX=100+Math.random()*300, posY=100+Math.random()*200;
     var linkId='eq_'+Date.now()+'_'+Math.random();
-    var rect=new fabric.Rect({left:posX,top:posY,width:100,height:50,rx:4,ry:4,fill:c.fill,stroke:c.stroke,strokeWidth:2,strokeUniform:true,originX:'center',originY:'center',customType:'equipment',customName:eq.equipment_name||'',customCode:eq.equipment_code||'',customStatus:eq.status||'normal',customEqId:eq.id,_linkId:linkId,_isEqRect:true});
+    var rect=new fabric.Rect({left:posX,top:posY,width:100,height:50,rx:4,ry:4,fill:c.fill,stroke:c.stroke,rx:0,ry:0,strokeWidth:2,strokeUniform:true,originX:'center',originY:'center',customType:'equipment',customName:eq.equipment_name||'',customCode:eq.equipment_code||'',customStatus:eq.status||'normal',customEqId:eq.id,_linkId:linkId,_isEqRect:true});
     var label=new fabric.Text(eq.equipment_code||eq.equipment_name||'',{left:posX,top:posY,fontSize:11,fill:'#e0f0ff',originX:'center',originY:'center',fontFamily:'Microsoft YaHei',_linkId:linkId,_isEqLabel:true,selectable:false,evented:false,_baseFontSize:11,_baseWidth:100,_baseHeight:50});
     canvas.add(rect); canvas.add(label);
     canvas.setActiveObject(rect); canvas.renderAll();
