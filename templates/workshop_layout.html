@@ -341,26 +341,28 @@ canvas.on("object:added", function() { if (undoStack.length === 0) saveUndo(); }
 canvas.on("object:modified", function() { saveUndo(); showProps(); });
 canvas.on("object:removed", function() { saveUndo(); });
 
-// During drag-resize: counter-scale text fontSize so it stays proportional.
-// Full normalization (reset group scale, bake into rect dims) happens only on save.
-canvas.on("object:scaling", function(opt) {
-    var obj = opt.target;
+// After drag resize: counter-scale text fontSize to stay proportional
+// Does NOT reset group scale (avoids position drift on rotated groups).
+// Full normalization (reset scale + bake into rect) happens only on save.
+function fixEquipmentTextAfterResize(obj) {
     if (!obj || obj.customType !== "equipment" || obj.type !== "group") return;
     var sx = obj.scaleX || 1;
     var sy = obj.scaleY || 1;
+    if (sx === 1 && sy === 1) return;
     obj.forEachObject(function(child) {
         if (child.type === "text" || child.type === "i-text") {
             var baseSize = child._baseFontSize || child.fontSize || 11;
             if (!child._baseFontSize) child._baseFontSize = baseSize;
-            // Counter the group scale so text looks proportional during drag
             child.set("fontSize", Math.round(baseSize * Math.min(sx, sy)));
-            // Also counter the X/Y stretch on the text object itself
+            child._baseFontSize = child.fontSize;
+            // Counter group stretch on text so it stays undistorted
             child.set({ scaleX: 1 / sx, scaleY: 1 / sy });
         }
     });
-});
+    canvas.requestRenderAll();
+}
+// On mouse up after scaling, lock in the new font size and reset text scale
 canvas.on("mouse:up", function() {
-    // After scaling ends, reset text scale to 1 and snapshot the current font size
     canvas.forEachObject(function(obj) {
         if (obj.customType === "equipment" && obj.type === "group") {
             obj.forEachObject(function(child) {
@@ -372,54 +374,29 @@ canvas.on("mouse:up", function() {
         }
     });
 });
-
-// Full normalization: reset group scale to 1 and bake into rect dimensions.
-// Called on save to produce clean JSON without scale values.
-function fixEquipmentTextAfterResize(obj) {
-    if (!obj || (obj.customType !== "equipment" && obj.customType !== "zone")) return;
+// Normalize on save: bake group scale into rect dims, reset to 1
+function normalizeEquipmentForSave(obj) {
+    if (!obj) return;
     var sx = obj.scaleX || 1;
     var sy = obj.scaleY || 1;
-    if (sx === 1 && sy === 1) return;
-
-    if (obj.type === "group") {
-        // Adjust font size and reset text child
+    if (obj.customType === "equipment" && obj.type === "group") {
         obj.forEachObject(function(child) {
-            if (child.type === "text" || child.type === "i-text") {
-                child._baseFontSize = child.fontSize;
-                child.set({ scaleX: 1, scaleY: 1 });
-            }
+            if (child.type === "text") { child._baseFontSize = child.fontSize; child.set({ scaleX: 1, scaleY: 1 }); }
+            if (child.type === "rect") { child.set({ width: child.width * sx, height: child.height * sy, scaleX: 1, scaleY: 1 }); }
         });
-        // Scale rect dimensions to absorb the group scale
-        obj.forEachObject(function(child) {
-            if (child.type === "rect") {
-                child.set({
-                    width: child.width * sx,
-                    height: child.height * sy,
-                    scaleX: 1,
-                    scaleY: 1
-                });
-            }
-        });
-        // Reset group scale
         obj.set({ scaleX: 1, scaleY: 1 });
         obj.setCoords();
-    } else {
-        // Non-group shapes
-        obj.set({
-            width: (obj.width || 0) * sx,
-            height: (obj.height || 0) * sy,
-            scaleX: 1,
-            scaleY: 1
-        });
+    } else if (obj.customType === "zone" || (obj.customType === "equipment" && obj.type !== "group")) {
+        obj.set({ width: (obj.width||0)*sx, height: (obj.height||0)*sy, scaleX: 1, scaleY: 1 });
         if (obj.radius) obj.set("radius", obj.radius * Math.max(sx, sy));
         if (obj.strokeDashArray && obj.strokeDashArray.length) {
-            var avgScale = (sx + sy) / 2;
-            obj.set("strokeDashArray", obj.strokeDashArray.map(function(v) { return v * avgScale; }));
+            obj.set("strokeDashArray", obj.strokeDashArray.map(function(v) { return v * (sx+sy)/2; }));
         }
         obj.setCoords();
     }
 }
 canvas.on("object:modified", function(opt) {
+    fixEquipmentTextAfterResize(opt.target);
     saveUndo();
     showProps();
 });
@@ -537,29 +514,22 @@ function updateSize(){
                     if (child.type === "text" || child.type === "i-text") {
                         var baseSize = child._baseFontSize || child.fontSize || 11;
                         if (!child._baseFontSize) child._baseFontSize = baseSize;
+                        // Use W/H ratio relative to default 100x50 to scale font
                         var fontScale = Math.min(w/100, h/50);
                         child.set("fontSize", Math.round(baseSize * fontScale));
                         child._baseFontSize = child.fontSize;
+                        child.set({ scaleX: 1, scaleY: 1 });
                     }
                 });
+                o.set({ scaleX: 1, scaleY: 1 });
+                o.setCoords();
             }
         } else {
-            // Single object: set scale, counter text scaling
+            // Single object: normal resize behavior
             var sx=w/o.width,sy=h/o.height;
-            o.set("scaleX",sx);o.set("scaleY",sy);
-            if (o.type === "group" && o.customType === "equipment") {
-                o.forEachObject(function(child) {
-                    if (child.type === "text" || child.type === "i-text") {
-                        var baseSize = child._baseFontSize || child.fontSize || 11;
-                        if (!child._baseFontSize) child._baseFontSize = baseSize;
-                        child.set("fontSize", Math.round(baseSize * Math.min(sx, sy)));
-                        child.set({ scaleX: 1/sx, scaleY: 1/sy });
-                        child._baseFontSize = child.fontSize;
-                    }
-                });
-            }
+            o.set("scaleX",sx);o.set("scaleY",sy);o.setCoords();
+            fixEquipmentTextAfterResize(o);
         }
-        o.setCoords();
     });
     canvas.requestRenderAll();
 }
@@ -633,11 +603,28 @@ function alignSelected(dir){
 }
 
 // Save/Load
+// Apply uniform font size to all equipment groups, auto-fix aspect ratio
+function applyGlobalFontSize() {
+    var size = parseInt(document.getElementById("global-font-size").value) || 12;
+    canvas.forEachObject(function(obj) {
+        if (obj.customType === "equipment" && obj.type === "group") {
+            obj.forEachObject(function(child) {
+                if (child.type === "text" || child.type === "i-text") {
+                    child.set("fontSize", size);
+                    child._baseFontSize = size;
+                    child.set({ scaleX: 1, scaleY: 1 });
+                }
+            });
+        }
+    });
+    canvas.requestRenderAll();
+    showInfo("?????? " + size + "px");
+}
 function getLayoutJSON(){return JSON.stringify(canvas.toJSON(["customType","customName","customCode","customStatus","customEqId","customRemark","isGrid","lockMovementX","lockMovementY","lockScalingX","lockScalingY","lockRotation","hasControls"]));}
 function saveLayout(){
     var n=document.getElementById("layout-name").value||"默认布局";
     // Fix all equipment groups before saving so text is properly sized
-    canvas.forEachObject(function(o) { fixEquipmentTextAfterResize(o); });
+    canvas.forEachObject(function(o) { normalizeEquipmentForSave(o); });
     var p={id:currentLayoutId,name:n,layout_data:getLayoutJSON()};
     if(window.USER_TEAM_ID)p.team_id=window.USER_TEAM_ID;
     fetch("/api/workshop-layouts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)}).then(function(r){return r.json().then(function(d){return {status:r.status,data:d};});}).then(function(result){var d=result.data;if(d.success){currentLayoutId=d.id;showInfo("已保存: "+n);loadLayouts();}else{alert("保存失败: "+(d.error||"未知错误"));}}).catch(function(e){alert("保存请求失败: "+e);});
