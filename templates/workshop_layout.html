@@ -496,7 +496,39 @@ function showProps(){
 function hideProps(){document.getElementById("no-select-hint").style.display="block";document.getElementById("props-content").style.display="none";}
 function updateProp(f){var objs=getSelectedObjects();if(!objs.length)return;objs.forEach(function(o){if(f==="name")o.customName=document.getElementById("prop-name").value;if(f==="code")o.customCode=document.getElementById("prop-code").value;if(f==="remark")o.customRemark=document.getElementById("prop-remark").value;});canvas.renderAll();}
 function updatePos(){var o=canvas.getActiveObject();if(!o||o.type==="activeSelection")return;o.set("left",parseFloat(document.getElementById("prop-x").value));o.set("top",parseFloat(document.getElementById("prop-y").value));o.setCoords();canvas.renderAll();}
-function updateSize(){var objs=getSelectedObjects();if(!objs.length)return;objs.forEach(function(o){var w=parseFloat(document.getElementById("prop-w").value),h=parseFloat(document.getElementById("prop-h").value);var sx=w/o.width,sy=h/o.height;o.set("scaleX",sx);o.set("scaleY",sy);o.setCoords();fixEquipmentTextAfterResize(o);});canvas.requestRenderAll();}
+function updateSize(){
+    var objs=getSelectedObjects();
+    if(!objs.length)return;
+    var isMulti = objs.length > 1;
+    var w=parseFloat(document.getElementById("prop-w").value),h=parseFloat(document.getElementById("prop-h").value);
+    objs.forEach(function(o){
+        if (isMulti) {
+            // Multi-select: only adjust text font size, keep rect unchanged
+            if (o.type === "group" && o.customType === "equipment") {
+                o.forEachObject(function(child) {
+                    if (child.type === "text" || child.type === "i-text") {
+                        var baseSize = child._baseFontSize || child.fontSize || 11;
+                        if (!child._baseFontSize) child._baseFontSize = baseSize;
+                        // Use W/H ratio relative to default 100x50 to scale font
+                        var fontScale = (w/100 + h/50) / 2;
+                        child.set("fontSize", Math.round(baseSize * fontScale));
+                        child._baseFontSize = child.fontSize;
+                        child.set({ scaleX: 1, scaleY: 1 });
+                    }
+                });
+                o.set({ scaleX: 1, scaleY: 1 });
+                o.addWithUpdate();
+                o.setCoords();
+            }
+        } else {
+            // Single object: normal resize behavior
+            var sx=w/o.width,sy=h/o.height;
+            o.set("scaleX",sx);o.set("scaleY",sy);o.setCoords();
+            fixEquipmentTextAfterResize(o);
+        }
+    });
+    canvas.requestRenderAll();
+}
 function updateAngle(){var objs=getSelectedObjects();if(!objs.length)return;objs.forEach(function(o){o.set("angle",parseFloat(document.getElementById("prop-angle").value));});canvas.renderAll();}
 function updateColor(p){var objs=getSelectedObjects();if(!objs.length)return;var val=document.getElementById(p==="fill"?"prop-fill":"prop-stroke").value;objs.forEach(function(o){o.set(p,val);});canvas.renderAll();}
 function updateStrokeWidth(){var objs=getSelectedObjects();if(!objs.length)return;var val=parseInt(document.getElementById("prop-strokeWidth").value)||1;objs.forEach(function(o){o.set("strokeWidth",val);});canvas.renderAll();}
