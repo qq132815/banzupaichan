@@ -357,7 +357,8 @@ function fixEquipmentTextAfterResize(obj) {
             if (child.type === "text" || child.type === "i-text") {
                 var baseSize = child._baseFontSize || child.fontSize || 11;
                 if (!child._baseFontSize) child._baseFontSize = baseSize;
-                child.set("fontSize", Math.round(baseSize * (sx + sy) / 2));
+                // Use the smaller scale factor so text maintains aspect ratio
+                child.set("fontSize", Math.round(baseSize * Math.min(sx, sy)));
                 child.set({ scaleX: 1, scaleY: 1 });
                 child._baseFontSize = child.fontSize;
             }
@@ -513,7 +514,7 @@ function updateSize(){
                         var baseSize = child._baseFontSize || child.fontSize || 11;
                         if (!child._baseFontSize) child._baseFontSize = baseSize;
                         // Use W/H ratio relative to default 100x50 to scale font
-                        var fontScale = (w/100 + h/50) / 2;
+                        var fontScale = Math.min(w/100, h/50);
                         child.set("fontSize", Math.round(baseSize * fontScale));
                         child._baseFontSize = child.fontSize;
                         child.set({ scaleX: 1, scaleY: 1 });
