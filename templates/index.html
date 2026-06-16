@@ -677,13 +677,21 @@ function renderWatermarks(list) {
 
         if(lines.length === 0) return;
 
-        var bounds = obj.getBoundingRect();
-        // Place watermark text below the object bounding box, accounting for group scaling
-        var baseY = bounds.top + bounds.height + 4;
+        // Calculate object dimensions accounting for scale (more reliable than getBoundingRect for groups)
+        var scaleX = obj.scaleX || 1;
+        var scaleY = obj.scaleY || 1;
+        var objW = (obj.width || 0) * scaleX;
+        var objH = (obj.height || 0) * scaleY;
+        var objLeft = obj.left || 0;
+        var objTop = obj.top || 0;
+        // Center the watermark text horizontally under the object
+        var lineWidth = lines[0] ? lines[0].length * 7 : 0; // approximate text width
+        var centerX = objLeft + objW / 2;
         for(var j=0;j<lines.length;j++) {
             var txt = new fabric.Text(lines[j], {
-                left: bounds.left,
-                top: baseY + j * 14,
+                left: centerX,
+                top: objTop + objH + 4 + j * 14,
+                originX: "center",
                 fontSize: 10,
                 fill: "#8eafc4",
                 fontFamily: "Microsoft YaHei",
