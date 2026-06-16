@@ -361,9 +361,17 @@ canvas.on("object:modified", function(opt) {
     var obj = opt.target;
     // When equipment rect is resized, adjust linked label font size proportionally
     if (obj && obj._isEqRect && obj._linkId) {
-        var w = (obj.width || 100) * (obj.scaleX || 1);
-        var h = (obj.height || 50) * (obj.scaleY || 1);
-        // Use initial baseline for consistent scaling from original size
+        var sx = obj.scaleX || 1;
+        var sy = obj.scaleY || 1;
+        var w = (obj.width || 100) * sx;
+        var h = (obj.height || 50) * sy;
+        // Keep corner radius proportional by normalizing with inverse scale
+        if (sx !== 1 || sy !== 1) {
+            var avgScale = (sx + sy) / 2;
+            if (obj.rx) obj.set("rx", obj.rx / avgScale);
+            if (obj.ry) obj.set("ry", obj.ry / avgScale);
+        }
+        // Use initial baseline for consistent font scaling
         if (!obj._baseWidth) { obj._baseWidth = 100; obj._baseHeight = 50; }
         var fontScale = Math.min(w / obj._baseWidth, h / obj._baseHeight);
         canvas.forEachObject(function(o) {
