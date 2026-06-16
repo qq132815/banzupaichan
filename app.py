@@ -4687,54 +4687,63 @@ def api_workshop_3d_status():
             }
         conn.close()
 
-        # Build normalized index for fuzzy matching (handles Chinese full-width, mixed separators, etc.)
+        # Build normalized index for fuzzy matching
+        # Handles variances in Chinese characters, full-width punctuation, and code formatting
         import unicodedata as _ud
 
         def _norm_eq(s):
             """Normalize equipment name: NFKC, lowercase, strip annotations, unify separators"""
             if not s: return ''
             s = _ud.normalize('NFKC', s).strip().lower()
-            # Strip Chinese annotations like "???8:00-9:10"
-            s = re.split(r'[?,??;?:?(]', s)[0]
+            # Strip parenthetical annotations like (8:00-9:10) or (GB)
+            s = re.split(r'[，,；;：:(]', s)[0]
             s = s.replace('/', '-').replace('.', '-').replace('_', '-')
-            s = s.replace('?', '').replace('?', '').replace('?', '')
+            s = s.replace('（', '').replace('）', '').replace('－', '')
             while '--' in s: s = s.replace('--', '-')
             return s.replace(' ', '')
 
-        def _strip_non_alnum(s):
-            """Keep only a-z and 0-9 for maximum fuzzy matching"""
-            return re.sub(r'[^a-z0-9]', '', _norm_eq(s)) if s else ''
+        def _code_key(s):
+            """Normalize a code-like value: uppercase, strip separators, keep only [A-Z0-9].
+            Returns empty string if the value is purely numeric (no letters) to avoid
+            false matches on Chinese numeric suffixes."""
+            if not s: return ''
+            s = _ud.normalize('NFKC', s).strip().upper()
+            raw = re.sub(r'[^A-Z0-9]', '', s)
+            # Reject all-digit keys (e.g. '1', '15' from Chinese names) to prevent collisions
+            if raw and not raw.isdigit():
+                return raw
+            return ''
 
-        # Build multi-level indexes from report_map
-        norm_report_map = {}     # normalized -> report data
-        stripped_report_map = {} # alphanumeric-only -> report data
+        # Build normalized report indexes
+        norm_report_map = {}      # normalized name -> report data
+        code_report_map = {}      # code-like key -> report data
         for key, val in report_map.items():
             nk = _norm_eq(key)
             if nk and nk not in norm_report_map:
                 norm_report_map[nk] = val
-            sk = _strip_non_alnum(key)
-            if sk and sk not in stripped_report_map:
-                stripped_report_map[sk] = val
+            ck = _code_key(key)
+            if ck and ck not in code_report_map:
+                code_report_map[ck] = val
 
         # Attach report data to equipments with 3-level fuzzy matching
-        # Prefill team names from teams table for every equipment
         for eq in equipments:
             eq['team_name'] = teams_map.get(eq['team_id'], '')
 
         for eq in equipments:
             rpt = None
-            # Level 1: Exact match by name or code
+            # Level 1: Exact match by equipment name or code
             rpt = report_map.get(eq['name']) or report_map.get(eq['code'])
             if not rpt:
-                # Level 2: Normalized match (handles ?/?, full-width, separators)
+                # Level 2: Normalized name match (handles full-width chars, parentheses)
                 n_name = _norm_eq(eq['name'])
                 n_code = _norm_eq(eq['code'])
                 rpt = norm_report_map.get(n_name) or norm_report_map.get(n_code)
             if not rpt:
-                # Level 3: Alphanumeric-only match (handles DJ?Dw8?2 -> djxdw82)
-                s_name = _strip_non_alnum(eq['name'])
-                s_code = _strip_non_alnum(eq['code'])
-                rpt = stripped_report_map.get(s_name) or stripped_report_map.get(s_code)
+                # Level 3: Code-based match (for equipment codes like DXW1-7, WG7-12 etc.)
+                # Require the equipment code to have at least one letter to qualify
+                c_code = _code_key(eq['code'])
+                if c_code:
+                    rpt = code_report_map.get(c_code)
             if rpt:
                 eq['report_qty'] = rpt['report_qty']
                 eq['efficiency'] = rpt['efficiency']
