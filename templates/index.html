@@ -455,11 +455,19 @@ function updatePlanVisuals() {
             obj.forEachObject(function(ch){
                 if(ch.type==="rect") { ch.set("fill",sc.fill); ch.set("stroke",sc.stroke); }
             });
-        } else {
+        } else if (obj._isEqRect) {
+            // Independent rect (not in a group)
             obj.set("fill",sc.fill); obj.set("stroke",sc.stroke);
         }
         obj._liveEq = eq;
-        // Update text labels to show device name
+        // Update linked label text
+        if(obj._isEqRect && obj._linkId) {
+            planCanvas.forEachObject(function(ch) {
+                if(ch._isEqLabel && ch._linkId === obj._linkId) {
+                    ch.set("text", eq.name || eq.code || "");
+                }
+            });
+        }
         if(obj.type==="group"){
             obj.forEachObject(function(ch){
                 if(ch.type==="text") ch.set("text", eq.name || eq.code || "");
@@ -471,7 +479,7 @@ function updatePlanVisuals() {
 
 function resetVisuals() {
     planCanvas.forEachObject(function(obj){
-        if(obj.customEqId && obj.customStatus) {
+        if(obj.customEqId && obj.customStatus && !obj._isEqLabel) {
             var sc = statusColors[obj.customStatus] || statusColors.normal;
             if(obj.type==="group") {
                 obj.forEachObject(function(ch){ if(ch.type==="rect"){ch.set("fill",sc.fill);ch.set("stroke",sc.stroke);} });

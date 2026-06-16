@@ -334,10 +334,26 @@ canvas.on("mouse:up", function() { if (isPanning) { isPanning = false; canvas.se
 document.getElementById("fabric-canvas").addEventListener("mousedown", function(e) { if (e.button === 1) e.preventDefault(); });
 
 // Snap to grid (hold Shift)
+// Sync label position with equipment rect when rect is moved
 canvas.on("object:moving", function(opt) {
+    var obj = opt.target;
+    if (obj && obj._isEqRect && obj._linkId) {
+        var cx = obj.left, cy = obj.top;
+        if (obj.originX === 'center') { cx = obj.left; cy = obj.top; }
+        canvas.forEachObject(function(o) {
+            if (o._isEqLabel && o._linkId === obj._linkId) {
+                o.set({ left: cx, top: cy });
+            }
+        });
+    }
+});
+
+// Also snap to grid when shift is held
+var _origMovingHandler = function(opt) {
     if (!opt.e.shiftKey) return;
     opt.target.set({ left: Math.round(opt.target.left/GRID_SIZE)*GRID_SIZE, top: Math.round(opt.target.top/GRID_SIZE)*GRID_SIZE });
-});
+};
+canvas.on("object:moving", _origMovingHandler);
 
 // Auto-save undo on changes
 canvas.on("object:added", function() { if (undoStack.length === 0) saveUndo(); });
@@ -390,9 +406,12 @@ function addEquipmentToCanvas(eqId){
     if(!eq)return;
     var sc={running:{fill:"#1b5e20",stroke:"#00e676"},idle:{fill:"#4a4100",stroke:"#ffd740"},down:{fill:"#4a1a1a",stroke:"#ff5252"},normal:{fill:"#1565c0",stroke:"#4fc3f7"}};
     var c=sc[eq.status]||sc.normal;
-    var rect=new fabric.Rect({width:100,height:50,rx:4,ry:4,fill:c.fill,stroke:c.stroke,strokeWidth:2,originX:"center",originY:"center"});
-    var label=new fabric.Text(eq.equipment_code||eq.equipment_name||"",{fontSize:11,fill:"#e0f0ff",originX:"center",originY:"center",fontFamily:"Microsoft YaHei"});
-    addShape(new fabric.Group([rect,label],{left:100+Math.random()*300,top:100+Math.random()*200,customType:"equipment",customName:eq.equipment_name||"",customCode:eq.equipment_code||"",customStatus:eq.status||"normal",customEqId:eq.id}));
+    var posX=100+Math.random()*300, posY=100+Math.random()*200;
+    var linkId='eq_'+Date.now()+'_'+Math.random();
+    var rect=new fabric.Rect({left:posX,top:posY,width:100,height:50,rx:4,ry:4,fill:c.fill,stroke:c.stroke,strokeWidth:2,originX:'center',originY:'center',customType:'equipment',customName:eq.equipment_name||'',customCode:eq.equipment_code||'',customStatus:eq.status||'normal',customEqId:eq.id,_linkId:linkId,_isEqRect:true});
+    var label=new fabric.Text(eq.equipment_code||eq.equipment_name||'',{left:posX,top:posY,fontSize:11,fill:'#e0f0ff',originX:'center',originY:'center',fontFamily:'Microsoft YaHei',_linkId:linkId,_isEqLabel:true,selectable:false,evented:false});
+    canvas.add(rect); canvas.add(label);
+    canvas.setActiveObject(rect); canvas.renderAll();
 }
 
 // Bind equipment
@@ -476,8 +495,17 @@ function selectAll(){canvas.discardActiveObject();var sel=new fabric.ActiveSelec
 // Delete
 function deleteSelected(){
     var o=canvas.getActiveObject();if(!o)return;
-    if(o.type==="activeSelection"){o.forEachObject(function(x){canvas.remove(x);});canvas.discardActiveObject();}else{canvas.remove(o);}
+    if(o.type==="activeSelection"){o.forEachObject(function(x){removeWithLabel(x);});canvas.discardActiveObject();}else{removeWithLabel(o);}
     canvas.renderAll();
+}
+function removeWithLabel(obj) {
+    canvas.remove(obj);
+    // Also remove linked label if this is an equipment rect
+    if (obj._isEqRect && obj._linkId) {
+        canvas.forEachObject(function(o) {
+            if (o._isEqLabel && o._linkId === obj._linkId) { canvas.remove(o); }
+        });
+    }
 }
 
 // Layer
