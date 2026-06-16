@@ -542,6 +542,8 @@ function alignSelected(dir){
 function getLayoutJSON(){return JSON.stringify(canvas.toJSON(["customType","customName","customCode","customStatus","customEqId","customRemark","isGrid","lockMovementX","lockMovementY","lockScalingX","lockScalingY","lockRotation","hasControls"]));}
 function saveLayout(){
     var n=document.getElementById("layout-name").value||"默认布局";
+    // Fix all equipment groups before saving so text is properly sized
+    canvas.forEachObject(function(o) { fixEquipmentTextAfterResize(o); });
     var p={id:currentLayoutId,name:n,layout_data:getLayoutJSON()};
     if(window.USER_TEAM_ID)p.team_id=window.USER_TEAM_ID;
     fetch("/api/workshop-layouts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)}).then(function(r){return r.json().then(function(d){return {status:r.status,data:d};});}).then(function(result){var d=result.data;if(d.success){currentLayoutId=d.id;showInfo("已保存: "+n);loadLayouts();}else{alert("保存失败: "+(d.error||"未知错误"));}}).catch(function(e){alert("保存请求失败: "+e);});
