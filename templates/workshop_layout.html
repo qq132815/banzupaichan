@@ -433,7 +433,7 @@ function populateBindDropdown(){
 function addEquipmentToCanvas(eqId){
     var eq=allEquipments.find(function(e){return e.id===eqId;});
     if(!eq)return;
-    var sc={running:{fill:"#1b5e20",stroke:"#00e676"},idle:{fill:"#4a4100",stroke:"#ffd740"},down:{fill:"#4a1a1a",stroke:"#ff5252"},normal:{fill:"#1565c0",stroke:"#4fc3f7"}};
+    var sc={running:{fill:"#0d4a1a",stroke:"#00e676"},idle:{fill:"#4a4100",stroke:"#ffd740"},down:{fill:"#4a1a1a",stroke:"#ff5252"},normal:{fill:"#1565c0",stroke:"#4fc3f7"}};
     var c=sc[eq.status]||sc.normal;
     var posX=100+Math.random()*300, posY=100+Math.random()*200;
     var linkId='eq_'+Date.now()+'_'+Math.random();
@@ -489,7 +489,7 @@ function updateColor(p){var o=canvas.getActiveObject();if(!o)return;o.set(p,docu
 function updateStrokeWidth(){var o=canvas.getActiveObject();if(!o)return;o.set("strokeWidth",parseInt(document.getElementById("prop-strokeWidth").value)||1);canvas.renderAll();}
 function updateOpacity(){var o=canvas.getActiveObject();if(!o)return;o.set("opacity",parseFloat(document.getElementById("prop-opacity").value));canvas.renderAll();}
 function updateFontSize(){var o=canvas.getActiveObject();if(!o)return;var fs=parseInt(document.getElementById("prop-fontSize").value)||11;if(o._isEqRect&&o._linkId){o._baseWidth=(o.width||100)*(o.scaleX||1);o._baseHeight=(o.height||50)*(o.scaleY||1);canvas.forEachObject(function(ch){if(ch._isEqLabel&&ch._linkId===o._linkId){ch.set('fontSize',fs);ch._baseFontSize=fs;}});}canvas.renderAll();}
-function updateStatus(){var o=canvas.getActiveObject();if(!o)return;var s=document.getElementById("prop-status").value;o.customStatus=s;var sc={running:{fill:"#1b5e20",stroke:"#00e676"},idle:{fill:"#4a4100",stroke:"#ffd740"},down:{fill:"#4a1a1a",stroke:"#ff5252"},normal:{fill:"#1565c0",stroke:"#4fc3f7"}};var c=sc[s]||sc.normal;o.set("fill",c.fill);o.set("stroke",c.stroke);canvas.renderAll();}
+function updateStatus(){var o=canvas.getActiveObject();if(!o)return;var s=document.getElementById("prop-status").value;o.customStatus=s;var sc={running:{fill:"#0d4a1a",stroke:"#00e676"},idle:{fill:"#4a4100",stroke:"#ffd740"},down:{fill:"#4a1a1a",stroke:"#ff5252"},normal:{fill:"#1565c0",stroke:"#4fc3f7"}};var c=sc[s]||sc.normal;o.set("fill",c.fill);o.set("stroke",c.stroke);canvas.renderAll();}
 
 // Keyboard shortcuts
 document.addEventListener("keydown",function(e){
@@ -665,7 +665,7 @@ function fetchLiveData() {
 function updateLiveVisuals() {
     if (!liveMode) return;
     var sColors = {
-        running: { fill: "#1b5e20", stroke: "#00e676" },
+        running: { fill: "#0d4a1a", stroke: "#00e676" },
         idle: { fill: "#4a4100", stroke: "#ffd740" },
         down: { fill: "#4a1a1a", stroke: "#ff5252" },
         normal: { fill: "#263238", stroke: "#546e7a" }
