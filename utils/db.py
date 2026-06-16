@@ -5,13 +5,28 @@ from datetime import datetime
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "production.db")
 
-def get_connection():
-    conn = sqlite3.connect(DB_PATH)
+def get_connection(readonly=False):
+    if readonly:
+        uri = "file:" + DB_PATH + "?mode=ro"
+        conn = sqlite3.connect(uri, uri=True)
+    else:
+        conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA foreign_keys=ON')
+    conn.execute('PRAGMA busy_timeout=5000')
     return conn
 
+
+
+import threading
+_write_lock = threading.Lock()
+
+def write_with_lock(func):
+    def wrapper(*args, **kwargs):
+        with _write_lock:
+            return func(*args, **kwargs)
+    return wrapper
 def init_database():
     conn = get_connection()
     c = conn.cursor()
@@ -239,7 +254,7 @@ def init_database():
 
 # ========== User functions ==========
 def authenticate_user(username, password):
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     c.execute("SELECT u.*, t.name as team_name FROM users u LEFT JOIN teams t ON u.team_id=t.id WHERE u.username=? AND u.password=? AND u.is_active=1", (username, password))
     user = c.fetchone()
@@ -247,13 +262,14 @@ def authenticate_user(username, password):
     return dict(user) if user else None
 
 def get_all_users():
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     c.execute("SELECT u.*, t.name as team_name FROM users u LEFT JOIN teams t ON u.team_id=t.id ORDER BY u.role, u.id")
     r = [dict(row) for row in c.fetchall()]
     conn.close()
     return r
 
+@write_with_lock
 def create_user(username, password, display_name, role, team_id=None):
     conn = get_connection()
     c = conn.cursor()
@@ -267,6 +283,7 @@ def create_user(username, password, display_name, role, team_id=None):
     finally:
         conn.close()
 
+@write_with_lock
 def update_user(uid, display_name, role, team_id=None, is_active=1):
     conn = get_connection()
     c = conn.cursor()
@@ -275,6 +292,7 @@ def update_user(uid, display_name, role, team_id=None, is_active=1):
     conn.commit()
     conn.close()
 
+@write_with_lock
 def delete_user(uid):
     conn = get_connection()
     c = conn.cursor()
@@ -282,6 +300,7 @@ def delete_user(uid):
     conn.commit()
     conn.close()
 
+@write_with_lock
 def reset_password(uid, new_password):
     conn = get_connection()
     c = conn.cursor()
@@ -290,6 +309,7 @@ def reset_password(uid, new_password):
     conn.close()
 
 # ========== Daily Plan functions ==========
+@write_with_lock
 def get_or_create_daily_plan(team_id, plan_date):
     conn = get_connection()
     c = conn.cursor()
@@ -307,7 +327,7 @@ def get_or_create_daily_plan(team_id, plan_date):
     return plan
 
 def get_daily_plan_by_id(plan_id):
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     c.execute("SELECT dp.*, t.name as team_name FROM daily_plans dp LEFT JOIN teams t ON dp.team_id=t.id WHERE dp.id=?", (plan_id,))
     plan = c.fetchone()
@@ -315,7 +335,7 @@ def get_daily_plan_by_id(plan_id):
     return dict(plan) if plan else None
 
 def get_all_daily_plans(date=None, team_id=None, date_from=None, date_to=None):
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     q = "SELECT dp.*, t.name as team_name FROM daily_plans dp LEFT JOIN teams t ON dp.team_id=t.id WHERE 1=1"
     params = []
@@ -337,6 +357,7 @@ def get_all_daily_plans(date=None, team_id=None, date_from=None, date_to=None):
     conn.close()
     return r
 
+@write_with_lock
 def submit_daily_plan(plan_id, user_id):
     conn = get_connection()
     c = conn.cursor()
@@ -344,6 +365,7 @@ def submit_daily_plan(plan_id, user_id):
     conn.commit()
     conn.close()
 
+@write_with_lock
 def approve_daily_plan(plan_id, user_id):
     conn = get_connection()
     c = conn.cursor()
@@ -351,6 +373,7 @@ def approve_daily_plan(plan_id, user_id):
     conn.commit()
     conn.close()
 
+@write_with_lock
 def reject_daily_plan(plan_id, user_id, reason=''):
     conn = get_connection()
     c = conn.cursor()
@@ -358,6 +381,7 @@ def reject_daily_plan(plan_id, user_id, reason=''):
     conn.commit()
     conn.close()
 
+@write_with_lock
 def return_daily_plan(plan_id, user_id, reason=''):
     conn = get_connection()
     c = conn.cursor()
@@ -367,7 +391,7 @@ def return_daily_plan(plan_id, user_id, reason=''):
 
 # ========== Team & Equipment functions ==========
 def get_all_teams():
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     c.execute("SELECT * FROM teams ORDER BY id")
     r = [dict(row) for row in c.fetchall()]
@@ -375,7 +399,7 @@ def get_all_teams():
     return r
 
 def get_all_equipments(team_id=None, q=None):
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     sql = "SELECT * FROM equipments WHERE 1=1"
     params = []
@@ -394,7 +418,7 @@ def get_all_equipments(team_id=None, q=None):
 
 # ========== Alert functions ==========
 def get_alerts(level=None, limit=50):
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     if level:
         c.execute("SELECT * FROM alerts WHERE alert_level=? AND status=? ORDER BY due_date LIMIT ?", (level, "active", limit))
@@ -405,7 +429,7 @@ def get_alerts(level=None, limit=50):
     return r
 
 def get_dashboard_stats():
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     stats = {}
     c.execute("SELECT COUNT(*) FROM alerts WHERE alert_level=? AND status=?", ("red", "active"))

@@ -33,7 +33,7 @@ def _rows(cursor):
 
 
 def get_work_order_status(ctx, settings, order_no=None, product_code=None, date_from=None, date_to=None):
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     params = []
     where = []
@@ -69,7 +69,7 @@ def get_work_order_status(ctx, settings, order_no=None, product_code=None, date_
 def get_schedule_summary(ctx, settings, date=None, team_id=None, equipment_id=None):
     date = date or _today()
     team_id = _effective_team(ctx, team_id)
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     params = [date]
     where = ['s.schedule_date=?']
@@ -97,7 +97,7 @@ def get_schedule_summary(ctx, settings, date=None, team_id=None, equipment_id=No
 def get_equipment_load(ctx, settings, date=None, team_id=None, equipment_code=None):
     date = date or _today()
     team_id = _effective_team(ctx, team_id)
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     params = [date]
     where = ['s.schedule_date=?']
@@ -127,7 +127,7 @@ def get_equipment_load(ctx, settings, date=None, team_id=None, equipment_code=No
 def get_active_alerts(ctx, settings, level=None, team_id=None):
     # Existing alerts are product/order based and may not contain team_id, so team users get non-global rows only when linked through schedules.
     team_id = _effective_team(ctx, team_id)
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     params = []
     where = ["COALESCE(a.status,'') NOT IN ('closed','done')"]
@@ -152,7 +152,7 @@ def get_active_alerts(ctx, settings, level=None, team_id=None):
 
 def get_material_alerts(ctx, settings, status=None, team_id=None):
     team_id = _effective_team(ctx, team_id)
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     params = []
     where = []
@@ -180,7 +180,7 @@ def get_work_report_summary(ctx, settings, date_from=None, date_to=None, team_id
     date_to = date_to or _today()
     date_from = date_from or date_to
     team_id = _effective_team(ctx, team_id)
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     params = [date_from + ' 00:00:00', date_to + ' 23:59:59']
     where = ['wr.start_time BETWEEN ? AND ?']
@@ -204,7 +204,7 @@ def get_work_report_summary(ctx, settings, date_from=None, date_to=None, team_id
 
 
 def get_shipping_plan(ctx, settings, date_from=None, date_to=None, product_code=None):
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     params = []
     where = []
@@ -239,7 +239,7 @@ def get_shipping_plan(ctx, settings, date_from=None, date_to=None, product_code=
 
 def get_production_requirements(ctx, settings, date_from=None, date_to=None, team_id=None):
     team_id = _effective_team(ctx, team_id)
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     params = []
     where = []

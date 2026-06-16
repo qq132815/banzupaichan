@@ -4775,7 +4775,7 @@ def workshop_layout_page():
 def api_get_workshop_layouts():
     try:
         team_id = request.args.get('team_id')
-        conn = get_connection()
+        conn = get_connection(readonly=True)
         c = conn.cursor()
         if team_id:
             c.execute("SELECT * FROM workshop_layouts WHERE team_id=? ORDER BY updated_at DESC", (team_id,))
@@ -5147,6 +5147,13 @@ def _check_material_alerts():
                 parent_started.add(order_no)
             break
     auto_closed = 0
+    # Also close any pending alerts whose parent order has any process progress
+    c.execute("UPDATE material_alerts SET status='auto_closed', closed_at=datetime('now','localtime'), "
+              "closed_by='system' WHERE status='pending' AND parent_order_no IN ("
+              "SELECT order_no FROM work_orders WHERE process_progress IS NOT NULL AND process_progress != '' "
+              "AND process_progress != '' AND status IN ('in_progress','pending')"
+              ")")
+    auto_closed += c.rowcount
     if parent_started:
         ph = ','.join(['?' for _ in parent_started])
         c.execute(
@@ -5320,11 +5327,11 @@ def api_material_alerts():
     conditions = []
     params = []
     if status == 'closed':
-        conditions.append("ma.status='closed'")
+        conditions.append("ma.status IN ('closed','auto_closed')")
     elif status == 'all':
         pass  # no filter
     else:
-        conditions.append("ma.status='pending'")
+        conditions.append("ma.status IN ('pending')")
         conditions.append("ma.child_order_no NOT IN (SELECT order_no FROM work_orders WHERE status='completed')")
         conditions.append("ma.parent_order_no NOT IN (SELECT order_no FROM work_orders WHERE status='completed')")
 

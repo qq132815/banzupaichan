@@ -11,7 +11,7 @@ SECRET_KEYS = set(['ai_api_key', 'ai_bot_feishu_secret', 'ai_bot_wechat_secret']
 
 
 def load_ai_settings(include_secrets=False):
-    conn = get_connection()
+    conn = get_connection(readonly=True)
     c = conn.cursor()
     c.execute("SELECT key, value FROM system_settings WHERE key LIKE 'ai_%'")
     rows = c.fetchall()
@@ -102,6 +102,16 @@ def run_chat(question, ctx, channel='web'):
         if not question:
             raise AIClientError('问题不能为空')
 
+        # Fast pass for non-production questions: skip tools and knowledge retrieval
+        _SIMPLE_MARKS = ['你好', '名字', '1+1', '等于', '等于几', 'hello', 'hi', '你是谁', '你叫什么', 'help', '介绍']
+        _is_simple = any(m in question.lower() or m in question for m in _SIMPLE_MARKS)
+        if _is_simple:
+            client = OpenAICompatibleClient(settings)
+            answer = client.chat([{'role': 'system', 'content': '你是班组排产系统的 AI 助手，用中文简洁回答。'}, {'role': 'user', 'content': question}])
+            latency = int((time.time() - started) * 1000)
+            _log_chat(ctx, channel, question, answer, [], [], settings.get('ai_chat_model'), True, '', latency)
+            return {'ok': True, 'answer': answer, 'tools_used': [], 'knowledge_sources': [], 'latency_ms': latency}
+
         knowledge = search_knowledge(question, settings)
         chunks = knowledge.get('chunks') or []
         knowledge_warning = knowledge.get('warning') or ''
@@ -160,3 +170,4 @@ def get_chat_logs(limit=100):
     rows = [dict(row) for row in c.fetchall()]
     conn.close()
     return rows
+
