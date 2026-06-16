@@ -339,20 +339,17 @@ canvas.on("object:added", function() { if (undoStack.length === 0) saveUndo(); }
 canvas.on("object:modified", function() { saveUndo(); showProps(); });
 canvas.on("object:removed", function() { saveUndo(); });
 
-// Equipment group resize: keep text readable by counter-scaling font
-// after resize finishes. Rect can be freely resized, text stays proportional.
-canvas.on("object:modified", function(opt) {
-    var obj = opt.target;
+// Fix equipment group text after resize (called from both drag-resize and property panel)
+function fixEquipmentTextAfterResize(obj) {
     if (!obj || obj.customType !== "equipment" || obj.type !== "group") return;
     var sx = obj.scaleX || 1;
     var sy = obj.scaleY || 1;
-    // Find text child and save/adjust its fontSize
+    if (sx === 1 && sy === 1) return;
+    // Adjust text fontSize proportionally
     obj.forEachObject(function(child) {
         if (child.type === "text" || child.type === "i-text") {
-            // Use the smaller scale factor so text never looks stretched
             var baseSize = child._baseFontSize || child.fontSize || 11;
             if (!child._baseFontSize) child._baseFontSize = baseSize;
-            // Counter the distortion: divide by the average scale, keeping text proportional
             child.set("fontSize", Math.round(baseSize * (sx + sy) / 2));
         }
     });
@@ -375,10 +372,14 @@ canvas.on("object:modified", function(opt) {
             child.set({ scaleX: 1, scaleY: 1 });
         }
     });
-    // Force recalculation of all coordinates
     obj.addWithUpdate();
     obj.setCoords();
     canvas.requestRenderAll();
+}
+canvas.on("object:modified", function(opt) {
+    fixEquipmentTextAfterResize(opt.target);
+    saveUndo();
+    showProps();
 });
 function defaultOpts() {
     return { left: 100+Math.random()*200, top: 100+Math.random()*200, fill:"#1565c0", stroke:"#4fc3f7", strokeWidth:2, strokeUniform:true, cornerColor:"#4fc3f7", cornerStrokeColor:"#0288d1", borderColor:"#4fc3f7", transparentCorners:false, cornerSize:8, padding:4 };
@@ -469,7 +470,7 @@ function showProps(){
 function hideProps(){document.getElementById("no-select-hint").style.display="block";document.getElementById("props-content").style.display="none";}
 function updateProp(f){var o=canvas.getActiveObject();if(!o)return;if(f==="name")o.customName=document.getElementById("prop-name").value;if(f==="code")o.customCode=document.getElementById("prop-code").value;if(f==="remark")o.customRemark=document.getElementById("prop-remark").value;canvas.renderAll();}
 function updatePos(){var o=canvas.getActiveObject();if(!o)return;o.set("left",parseFloat(document.getElementById("prop-x").value));o.set("top",parseFloat(document.getElementById("prop-y").value));o.setCoords();canvas.renderAll();}
-function updateSize(){var o=canvas.getActiveObject();if(!o)return;var w=parseFloat(document.getElementById("prop-w").value),h=parseFloat(document.getElementById("prop-h").value);o.set("scaleX",w/o.width);o.set("scaleY",h/o.height);o.setCoords();canvas.renderAll();}
+function updateSize(){var o=canvas.getActiveObject();if(!o)return;var w=parseFloat(document.getElementById("prop-w").value),h=parseFloat(document.getElementById("prop-h").value);var sx=w/o.width,sy=h/o.height;o.set("scaleX",sx);o.set("scaleY",sy);o.setCoords();fixEquipmentTextAfterResize(o);canvas.requestRenderAll();}
 function updateAngle(){var o=canvas.getActiveObject();if(!o)return;o.set("angle",parseFloat(document.getElementById("prop-angle").value));canvas.renderAll();}
 function updateColor(p){var o=canvas.getActiveObject();if(!o)return;o.set(p,document.getElementById(p==="fill"?"prop-fill":"prop-stroke").value);canvas.renderAll();}
 function updateStrokeWidth(){var o=canvas.getActiveObject();if(!o)return;o.set("strokeWidth",parseInt(document.getElementById("prop-strokeWidth").value)||1);canvas.renderAll();}
