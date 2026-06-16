@@ -357,7 +357,26 @@ canvas.on("object:moving", _origMovingHandler);
 
 // Auto-save undo on changes
 canvas.on("object:added", function() { if (undoStack.length === 0) saveUndo(); });
-canvas.on("object:modified", function() { saveUndo(); showProps(); });
+canvas.on("object:modified", function(opt) {
+    var obj = opt.target;
+    // When equipment rect is resized, adjust linked label font size proportionally
+    if (obj && obj._isEqRect && obj._linkId) {
+        var w = (obj.width || 100) * (obj.scaleX || 1);
+        var h = (obj.height || 50) * (obj.scaleY || 1);
+        var baseW = obj._baseWidth || 100;
+        var baseH = obj._baseHeight || 50;
+        var fontScale = Math.min(w / baseW, h / baseH);
+        canvas.forEachObject(function(o) {
+            if (o._isEqLabel && o._linkId === obj._linkId) {
+                var baseFontSize = o._baseFontSize || o.fontSize || 11;
+                if (!o._baseFontSize) { o._baseFontSize = baseFontSize; o._baseWidth = 100; o._baseHeight = 50; }
+                o.set("fontSize", Math.round(baseFontSize * fontScale));
+            }
+        });
+    }
+    saveUndo();
+    showProps();
+});
 canvas.on("object:removed", function() { saveUndo(); });
 
 function defaultOpts() {
@@ -409,7 +428,7 @@ function addEquipmentToCanvas(eqId){
     var posX=100+Math.random()*300, posY=100+Math.random()*200;
     var linkId='eq_'+Date.now()+'_'+Math.random();
     var rect=new fabric.Rect({left:posX,top:posY,width:100,height:50,rx:4,ry:4,fill:c.fill,stroke:c.stroke,strokeWidth:2,originX:'center',originY:'center',customType:'equipment',customName:eq.equipment_name||'',customCode:eq.equipment_code||'',customStatus:eq.status||'normal',customEqId:eq.id,_linkId:linkId,_isEqRect:true});
-    var label=new fabric.Text(eq.equipment_code||eq.equipment_name||'',{left:posX,top:posY,fontSize:11,fill:'#e0f0ff',originX:'center',originY:'center',fontFamily:'Microsoft YaHei',_linkId:linkId,_isEqLabel:true,selectable:false,evented:false});
+    var label=new fabric.Text(eq.equipment_code||eq.equipment_name||'',{left:posX,top:posY,fontSize:11,fill:'#e0f0ff',originX:'center',originY:'center',fontFamily:'Microsoft YaHei',_linkId:linkId,_isEqLabel:true,selectable:false,evented:false,_baseFontSize:11,_baseWidth:100,_baseHeight:50});
     canvas.add(rect); canvas.add(label);
     canvas.setActiveObject(rect); canvas.renderAll();
 }
