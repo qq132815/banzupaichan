@@ -280,12 +280,12 @@ function saveUndo() {
 function undoAction() {
     if (undoStack.length < 2) { showInfo("没有可撤销的操作"); return; }
     redoStack.push(undoStack.pop());
-    canvas.loadFromJSON(undoStack[undoStack.length-1], function() { canvas.renderAll(); showInfo("已撤销"); });
+    canvas.loadFromJSON(undoStack[undoStack.length-1], function() { canvas.forEachObject(function(o){if(o.customType==="equipment"){o.set({rx:0,ry:0});if(o.type==="group"){o.forEachObject(function(ch){if(ch.type==="rect")ch.set({rx:0,ry:0});});}}});  canvas.renderAll(); showInfo("已撤销"); });
 }
 function redoAction() {
     if (redoStack.length === 0) { showInfo("没有可重做的操作"); return; }
     var next = redoStack.pop(); undoStack.push(next);
-    canvas.loadFromJSON(next, function() { canvas.renderAll(); showInfo("已重做"); });
+    canvas.loadFromJSON(next, function() { canvas.forEachObject(function(o){if(o.customType==="equipment"){o.set({rx:0,ry:0});if(o.type==="group"){o.forEachObject(function(ch){if(ch.type==="rect")ch.set({rx:0,ry:0});});}}});  canvas.renderAll(); showInfo("已重做"); });
 }
 
 function drawGrid() {
@@ -437,7 +437,7 @@ function addEquipmentToCanvas(eqId){
     var c=sc[eq.status]||sc.normal;
     var posX=100+Math.random()*300, posY=100+Math.random()*200;
     var linkId='eq_'+Date.now()+'_'+Math.random();
-    var rect=new fabric.Rect({left:posX,top:posY,width:100,height:50,rx:4,ry:4,fill:c.fill,stroke:c.stroke,rx:0,ry:0,strokeWidth:2,strokeUniform:true,originX:'center',originY:'center',customType:'equipment',customName:eq.equipment_name||'',customCode:eq.equipment_code||'',customStatus:eq.status||'normal',customEqId:eq.id,_linkId:linkId,_isEqRect:true});
+    var rect=new fabric.Rect({left:posX,top:posY,width:100,height:50,rx:0,ry:0,fill:c.fill,stroke:c.stroke,strokeWidth:2,strokeUniform:true,originX:'center',originY:'center',customType:'equipment',customName:eq.equipment_name||'',customCode:eq.equipment_code||'',customStatus:eq.status||'normal',customEqId:eq.id,_linkId:linkId,_isEqRect:true});
     var label=new fabric.Text(eq.equipment_code||eq.equipment_name||'',{left:posX,top:posY,fontSize:11,fill:'#e0f0ff',originX:'center',originY:'center',fontFamily:'Microsoft YaHei',_linkId:linkId,_isEqLabel:true,selectable:false,evented:false,_baseFontSize:11,_baseWidth:100,_baseHeight:50});
     canvas.add(rect); canvas.add(label);
     canvas.setActiveObject(rect); canvas.renderAll();
@@ -599,7 +599,7 @@ function renderLayoutList(ls){
 function loadLayout(lid){
     fetch("/api/workshop-layouts").then(function(r){return r.json();}).then(function(d){
         if(d.success){var l=d.data.find(function(x){return x.id===lid;});
-        if(l&&l.layout_data){canvas.loadFromJSON(l.layout_data,function(){canvas.renderAll();currentLayoutId=l.id;document.getElementById("layout-name").value=l.name||"";showInfo("已加载: "+l.name);undoStack=[];redoStack=[];});}}
+        if(l&&l.layout_data){canvas.loadFromJSON(l.layout_data, function(){ canvas.forEachObject(function(o){if(o.customType==="equipment"){o.set({rx:0,ry:0});if(o.type==="group"){o.forEachObject(function(ch){if(ch.type==="rect")ch.set({rx:0,ry:0});});}}}); canvas.renderAll();currentLayoutId=l.id;document.getElementById("layout-name").value=l.name||"";showInfo("已加载: "+l.name);undoStack=[];redoStack=[];});}}
     });
 }
 function deleteLayout(lid){
@@ -623,7 +623,7 @@ function clearCanvas(){if(!confirm("确定清空?"))return;canvas.clear();canvas
 function exportImage(){var a=document.createElement("a");a.download="workshop-layout.png";a.href=canvas.toDataURL({format:"png",quality:1,multiplier:2});a.click();}
 function exportJSON(){var b=new Blob([getLayoutJSON()],{type:"application/json"});var a=document.createElement("a");a.download="workshop-layout.json";a.href=URL.createObjectURL(b);a.click();}
 function importJSON(){document.getElementById("json-file-input").click();}
-function handleJSONImport(e){var f=e.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(ev){canvas.loadFromJSON(ev.target.result,function(){canvas.renderAll();showInfo("已导入");});};r.readAsText(f);e.target.value="";}
+function handleJSONImport(e){var f=e.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(ev){canvas.loadFromJSON(ev.target.result, function(){ canvas.forEachObject(function(o){if(o.customType==="equipment"){o.set({rx:0,ry:0});if(o.type==="group"){o.forEachObject(function(ch){if(ch.type==="rect")ch.set({rx:0,ry:0});});}}}); canvas.renderAll();showInfo("已导入");});};r.readAsText(f);e.target.value="";}
 
 function showInfo(m){document.getElementById("canvas-info").textContent=m;setTimeout(function(){document.getElementById("canvas-info").textContent="就绪 | 中键平移 | 滚轮缩放 | Del删除 | Shift+拖拽吸附网格";},3000);}
 

@@ -353,7 +353,7 @@ function loadLatestLayout() {
     fetch("/api/workshop-layouts").then(function(r){return r.json();}).then(function(d){
         if(d.success && d.data && d.data.length > 0) {
             var layout = d.data[0];
-            planCanvas.loadFromJSON(layout.layout_data, function() {
+            planCanvas.loadFromJSON(layout.layout_data, function() { planCanvas.forEachObject(function(o){if(o.customType==="equipment"){o.set({rx:0,ry:0});if(o.type==="group"){o.forEachObject(function(ch){if(ch.type==="rect")ch.set({rx:0,ry:0});});}}}); 
                 // Strip corners from all equipment
                 planCanvas.forEachObject(function(obj){
                     if(obj.customType==='equipment'){obj.set({rx:0,ry:0});if(obj.type==='group'){obj.forEachObject(function(ch){if(ch.type==='rect')ch.set({rx:0,ry:0});});}}
