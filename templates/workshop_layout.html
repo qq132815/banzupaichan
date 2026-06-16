@@ -474,6 +474,9 @@ function showProps(){
     document.getElementById("prop-status").value=o.customStatus||"normal";
     document.getElementById("prop-remark").value=o.customRemark||"";
     document.getElementById("prop-bind-eq").value=o.customEqId||"";
+    // Show linked label font size
+    var fsEl=document.getElementById("prop-fontSize");
+    if(o._isEqRect&&o._linkId){canvas.forEachObject(function(ch){if(ch._isEqLabel&&ch._linkId===o._linkId){fsEl.value=ch.fontSize||11;}});}else{fsEl.value='';}
 }
 function hideProps(){document.getElementById("no-select-hint").style.display="block";document.getElementById("props-content").style.display="none";}
 function updateProp(f){var o=canvas.getActiveObject();if(!o)return;if(f==="name")o.customName=document.getElementById("prop-name").value;if(f==="code")o.customCode=document.getElementById("prop-code").value;if(f==="remark")o.customRemark=document.getElementById("prop-remark").value;canvas.renderAll();}
@@ -483,6 +486,7 @@ function updateAngle(){var o=canvas.getActiveObject();if(!o)return;o.set("angle"
 function updateColor(p){var o=canvas.getActiveObject();if(!o)return;o.set(p,document.getElementById(p==="fill"?"prop-fill":"prop-stroke").value);canvas.renderAll();}
 function updateStrokeWidth(){var o=canvas.getActiveObject();if(!o)return;o.set("strokeWidth",parseInt(document.getElementById("prop-strokeWidth").value)||1);canvas.renderAll();}
 function updateOpacity(){var o=canvas.getActiveObject();if(!o)return;o.set("opacity",parseFloat(document.getElementById("prop-opacity").value));canvas.renderAll();}
+function updateFontSize(){var o=canvas.getActiveObject();if(!o)return;var fs=parseInt(document.getElementById("prop-fontSize").value)||11;if(o._isEqRect&&o._linkId){canvas.forEachObject(function(ch){if(ch._isEqLabel&&ch._linkId===o._linkId){ch.set('fontSize',fs);ch._baseFontSize=fs;}});}canvas.renderAll();}
 function updateStatus(){var o=canvas.getActiveObject();if(!o)return;var s=document.getElementById("prop-status").value;o.customStatus=s;var sc={running:{fill:"#1b5e20",stroke:"#00e676"},idle:{fill:"#4a4100",stroke:"#ffd740"},down:{fill:"#4a1a1a",stroke:"#ff5252"},normal:{fill:"#1565c0",stroke:"#4fc3f7"}};var c=sc[s]||sc.normal;o.set("fill",c.fill);o.set("stroke",c.stroke);canvas.renderAll();}
 
 // Keyboard shortcuts
