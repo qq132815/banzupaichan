@@ -360,17 +360,25 @@ canvas.on("object:modified", function(opt) {
     obj.set({ scaleX: 1, scaleY: 1 });
     obj.forEachObject(function(child) {
         if (child.type === "rect") {
-            child.set({ width: child.width * sx, height: child.height * sy });
+            child.set({
+                width: child.width * sx,
+                height: child.height * sy,
+                scaleX: 1,
+                scaleY: 1
+            });
         }
     });
     // Reset text baseline for next resize
     obj.forEachObject(function(child) {
         if (child.type === "text" || child.type === "i-text") {
             child._baseFontSize = child.fontSize;
+            child.set({ scaleX: 1, scaleY: 1 });
         }
     });
+    // Force recalculation of all coordinates
+    obj.addWithUpdate();
     obj.setCoords();
-    canvas.renderAll();
+    canvas.requestRenderAll();
 });
 function defaultOpts() {
     return { left: 100+Math.random()*200, top: 100+Math.random()*200, fill:"#1565c0", stroke:"#4fc3f7", strokeWidth:2, strokeUniform:true, cornerColor:"#4fc3f7", cornerStrokeColor:"#0288d1", borderColor:"#4fc3f7", transparentCorners:false, cornerSize:8, padding:4 };
