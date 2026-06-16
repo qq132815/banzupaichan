@@ -344,6 +344,7 @@ canvas.on("object:removed", function() { saveUndo(); });
 // Fix equipment group text after resize (called from both drag-resize and property panel)
 // Normalize any equipment object: reset scale to 1 and bake into width/height.
 // For groups with text, also adjust font size proportionally.
+// NOTE: do NOT use addWithUpdate() on rotated groups - it shifts child positions.
 function fixEquipmentTextAfterResize(obj) {
     if (!obj || (obj.customType !== "equipment" && obj.customType !== "zone")) return;
     var sx = obj.scaleX || 1;
@@ -351,27 +352,29 @@ function fixEquipmentTextAfterResize(obj) {
     if (sx === 1 && sy === 1) return;
 
     if (obj.type === "group") {
-        // Group with rect + text
+        // Group with rect + text: adjust font, scale rect dims, keep positions intact
         obj.forEachObject(function(child) {
             if (child.type === "text" || child.type === "i-text") {
                 var baseSize = child._baseFontSize || child.fontSize || 11;
                 if (!child._baseFontSize) child._baseFontSize = baseSize;
                 child.set("fontSize", Math.round(baseSize * (sx + sy) / 2));
+                child.set({ scaleX: 1, scaleY: 1 });
+                child._baseFontSize = child.fontSize;
             }
         });
-        obj.set({ scaleX: 1, scaleY: 1 });
+        // Scale rect dimensions to absorb the group scale
         obj.forEachObject(function(child) {
             if (child.type === "rect") {
-                child.set({ width: child.width * sx, height: child.height * sy, scaleX: 1, scaleY: 1 });
+                child.set({
+                    width: child.width * sx,
+                    height: child.height * sy,
+                    scaleX: 1,
+                    scaleY: 1
+                });
             }
         });
-        obj.forEachObject(function(child) {
-            if (child.type === "text" || child.type === "i-text") {
-                child._baseFontSize = child.fontSize;
-                child.set({ scaleX: 1, scaleY: 1 });
-            }
-        });
-        obj.addWithUpdate();
+        // Reset group scale without recalculating child positions
+        obj.set({ scaleX: 1, scaleY: 1 });
     } else {
         // Non-group shapes (rect, circle, triangle, roundedRect, diamond, zone, etc.)
         obj.set({
@@ -517,7 +520,6 @@ function updateSize(){
                     }
                 });
                 o.set({ scaleX: 1, scaleY: 1 });
-                o.addWithUpdate();
                 o.setCoords();
             }
         } else {
