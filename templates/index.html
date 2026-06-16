@@ -486,6 +486,8 @@ function resetVisuals() {
 planCanvas.on("mouse:over", function(opt) {
     if(!liveMode) return;
     var obj = opt.target;
+    // Traverse up to group parent for _liveEq (child rects/texts inside groups lack this prop)
+    while(obj && !obj._liveEq && obj.group) { obj = obj.group; }
     if(!obj || !obj._liveEq) return;
     var eq = obj._liveEq;
     var st = {running:"运行中",idle:"待机",down:"故障",normal:"待机"};
@@ -641,6 +643,12 @@ function saveWmSettings() {
         if(el) wmSettings[k] = el.checked;
     }
     localStorage.setItem('wm_settings', JSON.stringify(wmSettings));
+    // Immediately re-render watermarks so toggles take effect without waiting for poll
+    if(liveMode && liveEqData) {
+        var list = [];
+        for(var id in liveEqData) { if(liveEqData.hasOwnProperty(id)) list.push(liveEqData[id]); }
+        renderWatermarks(list);
+    }
 }
 
 function renderWatermarks(list) {
@@ -670,10 +678,11 @@ function renderWatermarks(list) {
         if(lines.length === 0) return;
 
         var bounds = obj.getBoundingRect();
-        var baseY = obj.top + obj.height + 4;
+        // Place watermark text below the object bounding box, accounting for group scaling
+        var baseY = bounds.top + bounds.height + 4;
         for(var j=0;j<lines.length;j++) {
             var txt = new fabric.Text(lines[j], {
-                left: obj.left,
+                left: bounds.left,
                 top: baseY + j * 14,
                 fontSize: 10,
                 fill: "#8eafc4",
