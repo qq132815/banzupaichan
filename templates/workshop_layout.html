@@ -363,13 +363,13 @@ canvas.on("object:modified", function(opt) {
     if (obj && obj._isEqRect && obj._linkId) {
         var w = (obj.width || 100) * (obj.scaleX || 1);
         var h = (obj.height || 50) * (obj.scaleY || 1);
-        var baseW = obj._baseWidth || 100;
-        var baseH = obj._baseHeight || 50;
-        var fontScale = Math.min(w / baseW, h / baseH);
+        // Use initial baseline for consistent scaling from original size
+        if (!obj._baseWidth) { obj._baseWidth = 100; obj._baseHeight = 50; }
+        var fontScale = Math.min(w / obj._baseWidth, h / obj._baseHeight);
         canvas.forEachObject(function(o) {
             if (o._isEqLabel && o._linkId === obj._linkId) {
-                var baseFontSize = o._baseFontSize || o.fontSize || 11;
-                if (!o._baseFontSize) { o._baseFontSize = baseFontSize; o._baseWidth = 100; o._baseHeight = 50; }
+                var baseFontSize = o._baseFontSize || 11;
+                if (!o._baseFontSize) o._baseFontSize = baseFontSize;
                 o.set("fontSize", Math.round(baseFontSize * fontScale));
             }
         });
