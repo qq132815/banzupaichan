@@ -343,7 +343,7 @@ canvas.on("object:removed", function() { saveUndo(); });
 // Normalize any equipment object: reset scale to 1 and bake into width/height.
 // For groups with text, also adjust font size proportionally.
 function fixEquipmentTextAfterResize(obj) {
-    if (!obj || obj.customType !== "equipment") return;
+    if (!obj || (obj.customType !== "equipment" && obj.customType !== "zone")) return;
     var sx = obj.scaleX || 1;
     var sy = obj.scaleY || 1;
     if (sx === 1 && sy === 1) return;
@@ -371,7 +371,7 @@ function fixEquipmentTextAfterResize(obj) {
         });
         obj.addWithUpdate();
     } else {
-        // Non-group shapes (rect, circle, triangle, roundedRect, diamond, etc.)
+        // Non-group shapes (rect, circle, triangle, roundedRect, diamond, zone, etc.)
         obj.set({
             width: (obj.width || 0) * sx,
             height: (obj.height || 0) * sy,
@@ -379,6 +379,11 @@ function fixEquipmentTextAfterResize(obj) {
             scaleY: 1
         });
         if (obj.radius) obj.set("radius", obj.radius * Math.max(sx, sy));
+        // Scale dash array so dashed lines keep proper proportions
+        if (obj.strokeDashArray && obj.strokeDashArray.length) {
+            var avgScale = (sx + sy) / 2;
+            obj.set("strokeDashArray", obj.strokeDashArray.map(function(v) { return v * avgScale; }));
+        }
     }
     obj.setCoords();
     canvas.requestRenderAll();
