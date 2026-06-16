@@ -339,17 +339,38 @@ canvas.on("object:added", function() { if (undoStack.length === 0) saveUndo(); }
 canvas.on("object:modified", function() { saveUndo(); showProps(); });
 canvas.on("object:removed", function() { saveUndo(); });
 
-// Equipment group resize: lock uniform scaling so dragging corners
-// maintains aspect ratio. Text scales naturally with the group.
-// Applied on object:added for groups loaded from layout JSON.
-canvas.on("object:added", function(opt) {
+// Equipment group resize: keep text readable by counter-scaling font
+// after resize finishes. Rect can be freely resized, text stays proportional.
+canvas.on("object:modified", function(opt) {
     var obj = opt.target;
-    if (obj && obj.customType === "equipment" && obj.type === "group") {
-        if (!obj.lockUniScaling) {
-            obj.lockUniScaling = true;
-            obj.lockUniScalingFlip = true;
+    if (!obj || obj.customType !== "equipment" || obj.type !== "group") return;
+    var sx = obj.scaleX || 1;
+    var sy = obj.scaleY || 1;
+    // Find text child and save/adjust its fontSize
+    obj.forEachObject(function(child) {
+        if (child.type === "text" || child.type === "i-text") {
+            // Use the smaller scale factor so text never looks stretched
+            var baseSize = child._baseFontSize || child.fontSize || 11;
+            if (!child._baseFontSize) child._baseFontSize = baseSize;
+            // Counter the distortion: divide by the average scale, keeping text proportional
+            child.set("fontSize", Math.round(baseSize * (sx + sy) / 2));
         }
-    }
+    });
+    // Reset group scale to 1, apply to rect dimensions
+    obj.set({ scaleX: 1, scaleY: 1 });
+    obj.forEachObject(function(child) {
+        if (child.type === "rect") {
+            child.set({ width: child.width * sx, height: child.height * sy });
+        }
+    });
+    // Reset text baseline for next resize
+    obj.forEachObject(function(child) {
+        if (child.type === "text" || child.type === "i-text") {
+            child._baseFontSize = child.fontSize;
+        }
+    });
+    obj.setCoords();
+    canvas.renderAll();
 });
 function defaultOpts() {
     return { left: 100+Math.random()*200, top: 100+Math.random()*200, fill:"#1565c0", stroke:"#4fc3f7", strokeWidth:2, strokeUniform:true, cornerColor:"#4fc3f7", cornerStrokeColor:"#0288d1", borderColor:"#4fc3f7", transparentCorners:false, cornerSize:8, padding:4 };
@@ -399,7 +420,7 @@ function addEquipmentToCanvas(eqId){
     var c=sc[eq.status]||sc.normal;
     var rect=new fabric.Rect({width:100,height:50,rx:4,ry:4,fill:c.fill,stroke:c.stroke,strokeWidth:2,originX:"center",originY:"center"});
     var label=new fabric.Text(eq.equipment_code||eq.equipment_name||"",{fontSize:11,fill:"#e0f0ff",originX:"center",originY:"center",fontFamily:"Microsoft YaHei"});
-    var group = new fabric.Group([rect,label],{left:100+Math.random()*300,top:100+Math.random()*200,customType:"equipment",customName:eq.equipment_name||"",customCode:eq.equipment_code||"",customStatus:eq.status||"normal",customEqId:eq.id,lockUniScaling:true,lockUniScalingFlip:true});
+    var group = new fabric.Group([rect,label],{left:100+Math.random()*300,top:100+Math.random()*200,customType:"equipment",customName:eq.equipment_name||"",customCode:eq.equipment_code||"",customStatus:eq.status||"normal",customEqId:eq.id});
     addShape(group);
 }
 
