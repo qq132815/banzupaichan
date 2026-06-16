@@ -689,9 +689,8 @@ function renderWatermarks(list) {
         var centerX = objLeft + objW / 2;
         for(var j=0;j<lines.length;j++) {
             var txt = new fabric.Text(lines[j], {
-                left: centerX,
+                left: objLeft,
                 top: objTop + objH + 4 + j * 14,
-                originX: "center",
                 fontSize: 10,
                 fill: "#8eafc4",
                 fontFamily: "Microsoft YaHei",
