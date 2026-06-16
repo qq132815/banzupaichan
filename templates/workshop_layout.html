@@ -366,7 +366,12 @@ canvas.on("object:modified", function(opt) {
         var sy = obj.scaleY || 1;
         var w = (obj.width || 100) * sx;
         var h = (obj.height || 50) * sy;
-
+        // Scale corner radius to stay proportional (base is 4px at 100x50)
+        var baseRx = obj._baseRx || 4;
+        var baseRy = obj._baseRy || 4;
+        if (!obj._baseRx) { obj._baseRx = 4; obj._baseRy = 4; }
+        obj.set("rx", Math.round(baseRx * Math.min(sx, sy)));
+        obj.set("ry", Math.round(baseRy * Math.min(sx, sy)));
         // Use initial baseline for consistent font scaling
         if (!obj._baseWidth) { obj._baseWidth = 100; obj._baseHeight = 50; }
         var fontScale = Math.min(w / obj._baseWidth, h / obj._baseHeight);
