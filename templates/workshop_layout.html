@@ -325,7 +325,7 @@ canvas.on("mouse:move", function(opt) {
         canvas.requestRenderAll(); panX = opt.e.clientX; panY = opt.e.clientY;
     }
 });
-canvas.on("mouse:up", function() { if (isPanning) { isPanning = false; canvas.selection = true; } });
+canvas.on("mouse:up", function() { if (isPanning) { isPanning = false; canvas.selection = true; } _eqScaleSnapshots = {}; });
 document.getElementById("fabric-canvas").addEventListener("mousedown", function(e) { if (e.button === 1) e.preventDefault(); });
 
 // Snap to grid (hold Shift)
@@ -339,6 +339,37 @@ canvas.on("object:added", function() { if (undoStack.length === 0) saveUndo(); }
 canvas.on("object:modified", function() { saveUndo(); showProps(); });
 canvas.on("object:removed", function() { saveUndo(); });
 
+// Keep equipment group text from distorting during resize:
+// counter-scale text fontSize so it stays readable, lock aspect ratio on equipment groups
+var _eqScaleSnapshots = {};
+canvas.on("object:scaling", function(opt) {
+    var obj = opt.target;
+    if (!obj || obj.customType !== "equipment" || obj.type !== "group") return;
+    // Lock uniform scaling for equipment groups (maintain aspect ratio)
+    if (!obj.lockUniScaling) {
+        obj.lockUniScaling = true;
+        obj.lockUniScalingFlip = true;
+    }
+    // Counter-scale each text child so font stays at readable size
+    var scaleX = obj.scaleX || 1;
+    var scaleY = obj.scaleY || 1;
+    var snapKey = obj.customEqId || obj.customName || "";
+    if (!_eqScaleSnapshots[snapKey]) {
+        _eqScaleSnapshots[snapKey] = [];
+        obj.forEachObject(function(child) {
+            if (child.type === "text" || child.type === "i-text") {
+                _eqScaleSnapshots[snapKey].push({ child: child, baseFontSize: child.fontSize });
+            }
+        });
+    }
+    var snapshots = _eqScaleSnapshots[snapKey] || [];
+    for (var i = 0; i < snapshots.length; i++) {
+        var s = snapshots[i];
+        if (s.child && s.baseFontSize) {
+            s.child.set("fontSize", Math.round(s.baseFontSize / Math.max(scaleX, scaleY)));
+        }
+    }
+});
 function defaultOpts() {
     return { left: 100+Math.random()*200, top: 100+Math.random()*200, fill:"#1565c0", stroke:"#4fc3f7", strokeWidth:2, strokeUniform:true, cornerColor:"#4fc3f7", cornerStrokeColor:"#0288d1", borderColor:"#4fc3f7", transparentCorners:false, cornerSize:8, padding:4 };
 }
