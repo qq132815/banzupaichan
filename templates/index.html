@@ -40,7 +40,7 @@
 .wm-panel label:hover { color:#4fc3f7; }
 .wm-panel input[type="checkbox"] { accent-color:#4fc3f7; }
 .plan-area {
-    flex: 1; position: relative; border-right: 1px solid #1e3a5f;
+    flex: 1; position: relative; border-left: 1px solid #1e3a5f;
     min-width: 0;
 }
 .plan-header {
@@ -79,7 +79,7 @@
 
 /* Left: OEE Panel */
 .oee-panel {
-    width: 380px; flex-shrink: 0; overflow-y: auto;
+    flex: 1; overflow-y: auto;
     background: #0a1929; border-right: 1px solid #1e3a5f;
     display: flex; flex-direction: column;
 }
@@ -252,9 +252,23 @@
                     <div class="no-data">暂无数据</div>
                 </div>
             </div>
+            <div class="oee-section">
+                <div class="oee-section-title">??????</div>
+                <div class="chart-container" id="chart-status" style="height:200px;"></div>
+            </div>
+            <div class="oee-section">
+                <div class="oee-section-title">??????</div>
+                <div class="chart-container" id="chart-team" style="height:200px;"></div>
+            </div>
+            <div class="oee-section">
+                <div class="oee-section-title">????</div>
+                <div class="alert-list" id="alert-list">
+                    <div class="no-data">????</div>
+                </div>
+            </div>
         </div>
 
-        <!-- Center: Floor Plan -->
+        <!-- Right: Floor Plan -->
         <div class="plan-area">
             <div class="plan-header">
                 <span class="plan-title">| 车间实时监控</span>
