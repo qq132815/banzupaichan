@@ -325,7 +325,7 @@ canvas.on("mouse:move", function(opt) {
         canvas.requestRenderAll(); panX = opt.e.clientX; panY = opt.e.clientY;
     }
 });
-canvas.on("mouse:up", function() { if (isPanning) { isPanning = false; canvas.selection = true; } _eqScaleSnapshots = {}; });
+canvas.on("mouse:up", function() { if (isPanning) { isPanning = false; canvas.selection = true; } });
 document.getElementById("fabric-canvas").addEventListener("mousedown", function(e) { if (e.button === 1) e.preventDefault(); });
 
 // Snap to grid (hold Shift)
@@ -339,36 +339,27 @@ canvas.on("object:added", function() { if (undoStack.length === 0) saveUndo(); }
 canvas.on("object:modified", function() { saveUndo(); showProps(); });
 canvas.on("object:removed", function() { saveUndo(); });
 
-// Keep equipment group text from distorting during resize:
-// counter-scale text fontSize so it stays readable, lock aspect ratio on equipment groups
-var _eqScaleSnapshots = {};
-canvas.on("object:scaling", function(opt) {
+// Equipment group resize: keep text from distorting
+// After scaling finishes, reset group scaleX/scaleY to 1 and apply
+// the scale to rect dimensions directly, leaving text unchanged.
+canvas.on("object:modified", function(opt) {
     var obj = opt.target;
     if (!obj || obj.customType !== "equipment" || obj.type !== "group") return;
-    // Lock uniform scaling for equipment groups (maintain aspect ratio)
-    if (!obj.lockUniScaling) {
-        obj.lockUniScaling = true;
-        obj.lockUniScalingFlip = true;
-    }
-    // Counter-scale each text child so font stays at readable size
-    var scaleX = obj.scaleX || 1;
-    var scaleY = obj.scaleY || 1;
-    var snapKey = obj.customEqId || obj.customName || "";
-    if (!_eqScaleSnapshots[snapKey]) {
-        _eqScaleSnapshots[snapKey] = [];
-        obj.forEachObject(function(child) {
-            if (child.type === "text" || child.type === "i-text") {
-                _eqScaleSnapshots[snapKey].push({ child: child, baseFontSize: child.fontSize });
-            }
-        });
-    }
-    var snapshots = _eqScaleSnapshots[snapKey] || [];
-    for (var i = 0; i < snapshots.length; i++) {
-        var s = snapshots[i];
-        if (s.child && s.baseFontSize) {
-            s.child.set("fontSize", Math.round(s.baseFontSize / Math.max(scaleX, scaleY)));
+    var sx = obj.scaleX || 1;
+    var sy = obj.scaleY || 1;
+    if (sx === 1 && sy === 1) return;
+    // Reset group scale to 1
+    obj.set({ scaleX: 1, scaleY: 1 });
+    // Scale the rect child dimensions, keep text size
+    obj.forEachObject(function(child) {
+        if (child.type === "rect") {
+            child.set({ width: child.width * sx, height: child.height * sy });
         }
-    }
+        // text stays at original size - no change needed
+    });
+    // Update group size to match new rect
+    obj.setCoords();
+    canvas.renderAll();
 });
 function defaultOpts() {
     return { left: 100+Math.random()*200, top: 100+Math.random()*200, fill:"#1565c0", stroke:"#4fc3f7", strokeWidth:2, strokeUniform:true, cornerColor:"#4fc3f7", cornerStrokeColor:"#0288d1", borderColor:"#4fc3f7", transparentCorners:false, cornerSize:8, padding:4 };
@@ -418,7 +409,10 @@ function addEquipmentToCanvas(eqId){
     var c=sc[eq.status]||sc.normal;
     var rect=new fabric.Rect({width:100,height:50,rx:4,ry:4,fill:c.fill,stroke:c.stroke,strokeWidth:2,originX:"center",originY:"center"});
     var label=new fabric.Text(eq.equipment_code||eq.equipment_name||"",{fontSize:11,fill:"#e0f0ff",originX:"center",originY:"center",fontFamily:"Microsoft YaHei"});
-    addShape(new fabric.Group([rect,label],{left:100+Math.random()*300,top:100+Math.random()*200,customType:"equipment",customName:eq.equipment_name||"",customCode:eq.equipment_code||"",customStatus:eq.status||"normal",customEqId:eq.id}));
+    var group = new fabric.Group([rect,label],{left:100+Math.random()*300,top:100+Math.random()*200,customType:"equipment",customName:eq.equipment_name||"",customCode:eq.equipment_code||"",customStatus:eq.status||"normal",customEqId:eq.id,lockUniScaling:true,lockUniScalingFlip:true});
+    // Store original font size for anti-distortion
+    group._origFontSize = label.fontSize;
+    addShape(group);
 }
 
 // Bind equipment
