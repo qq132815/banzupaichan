@@ -175,6 +175,7 @@
                 <div class="prop-group"><label class="prop-label">填充颜色</label><input type="color" class="prop-input" id="prop-fill" style="height:30px;padding:2px;" onchange="updateColor('fill')"></div>
                 <div class="prop-group"><label class="prop-label">边框颜色</label><input type="color" class="prop-input" id="prop-stroke" style="height:30px;padding:2px;" onchange="updateColor('stroke')"></div>
                 <div class="prop-group"><label class="prop-label">边框宽度</label><input class="prop-input" id="prop-strokeWidth" type="number" min="0" max="10" onchange="updateStrokeWidth()"></div>
+                <div class="prop-group"><label class="prop-label">字体大小</label><input class="prop-input" id="prop-fontSize" type="number" min="6" max="72" onchange="updateFontSize()"></div>
                 <div class="prop-group"><label class="prop-label">透明度</label><input class="prop-input" id="prop-opacity" type="range" min="0" max="1" step="0.05" onchange="updateOpacity()"></div>
                 <div class="prop-group"><label class="prop-label">状态</label><select class="prop-input" id="prop-status" onchange="updateStatus()"><option value="normal">未排班</option><option value="running">运行中</option><option value="idle">待机</option><option value="down">故障</option></select></div>
                 <div class="prop-group"><label class="prop-label">备注</label><input class="prop-input" id="prop-remark" onchange="updateProp('remark')"></div>
@@ -365,12 +366,7 @@ canvas.on("object:modified", function(opt) {
         var sy = obj.scaleY || 1;
         var w = (obj.width || 100) * sx;
         var h = (obj.height || 50) * sy;
-        // Keep corner radius proportional by normalizing with inverse scale
-        if (sx !== 1 || sy !== 1) {
-            var avgScale = (sx + sy) / 2;
-            if (obj.rx) obj.set("rx", obj.rx / avgScale);
-            if (obj.ry) obj.set("ry", obj.ry / avgScale);
-        }
+
         // Use initial baseline for consistent font scaling
         if (!obj._baseWidth) { obj._baseWidth = 100; obj._baseHeight = 50; }
         var fontScale = Math.min(w / obj._baseWidth, h / obj._baseHeight);
