@@ -126,6 +126,9 @@
             <button onclick="alignSelected('h')">居中H</button>
             <button onclick="alignSelected('v')">居中V</button>
             <span class="sep"></span>
+            <input type="number" id="global-font-size" value="11" min="6" max="48" style="width:40px;padding:2px 4px;background:#0d2137;border:1px solid #1e3a5f;border-radius:3px;color:#e0f0ff;font-size:11px;text-align:center;" title="统一字体大小">
+            <button onclick="applyGlobalFontSize()" title="应用字体大小">字号</button>
+            <span class="sep"></span>
             <button onclick="exportImage()">导出图片</button>
             <button onclick="exportJSON()">导出JSON</button>
             <button onclick="importJSON()">导入JSON</button>
@@ -341,33 +344,6 @@ canvas.on("object:added", function() { if (undoStack.length === 0) saveUndo(); }
 canvas.on("object:modified", function() { saveUndo(); showProps(); });
 canvas.on("object:removed", function() { saveUndo(); });
 
-// Normalize on save: bake group scale into rect dims, reset to 1.
-// During editing, Fabric.js native scaling handles visuals - we only
-// fix things on save to produce clean JSON.
-function normalizeEquipmentForSave(obj) {
-    if (!obj) return;
-    var sx = obj.scaleX || 1;
-    var sy = obj.scaleY || 1;
-    if (obj.customType === "equipment" && obj.type === "group") {
-        obj.forEachObject(function(child) {
-            if (child.type === "text") { child._baseFontSize = child.fontSize; child.set({ scaleX: 1, scaleY: 1 }); }
-            if (child.type === "rect") { child.set({ width: child.width * sx, height: child.height * sy, scaleX: 1, scaleY: 1 }); }
-        });
-        obj.set({ scaleX: 1, scaleY: 1 });
-        obj.setCoords();
-    } else if (obj.customType === "zone" || (obj.customType === "equipment" && obj.type !== "group")) {
-        obj.set({ width: (obj.width||0)*sx, height: (obj.height||0)*sy, scaleX: 1, scaleY: 1 });
-        if (obj.radius) obj.set("radius", obj.radius * Math.max(sx, sy));
-        if (obj.strokeDashArray && obj.strokeDashArray.length) {
-            obj.set("strokeDashArray", obj.strokeDashArray.map(function(v) { return v * (sx+sy)/2; }));
-        }
-        obj.setCoords();
-    }
-}
-canvas.on("object:modified", function(opt) {
-    saveUndo();
-    showProps();
-});
 function defaultOpts() {
     return { left: 100+Math.random()*200, top: 100+Math.random()*200, fill:"#1565c0", stroke:"#4fc3f7", strokeWidth:2, strokeUniform:true, cornerColor:"#4fc3f7", cornerStrokeColor:"#0288d1", borderColor:"#4fc3f7", transparentCorners:false, cornerSize:8, padding:4 };
 }
@@ -416,8 +392,7 @@ function addEquipmentToCanvas(eqId){
     var c=sc[eq.status]||sc.normal;
     var rect=new fabric.Rect({width:100,height:50,rx:4,ry:4,fill:c.fill,stroke:c.stroke,strokeWidth:2,originX:"center",originY:"center"});
     var label=new fabric.Text(eq.equipment_code||eq.equipment_name||"",{fontSize:11,fill:"#e0f0ff",originX:"center",originY:"center",fontFamily:"Microsoft YaHei"});
-    var group = new fabric.Group([rect,label],{left:100+Math.random()*300,top:100+Math.random()*200,customType:"equipment",customName:eq.equipment_name||"",customCode:eq.equipment_code||"",customStatus:eq.status||"normal",customEqId:eq.id});
-    addShape(group);
+    addShape(new fabric.Group([rect,label],{left:100+Math.random()*300,top:100+Math.random()*200,customType:"equipment",customName:eq.equipment_name||"",customCode:eq.equipment_code||"",customStatus:eq.status||"normal",customEqId:eq.id}));
 }
 
 // Bind equipment
@@ -434,22 +409,10 @@ function bindEquipment(){
 canvas.on("selection:created",showProps);
 canvas.on("selection:updated",showProps);
 canvas.on("selection:cleared",hideProps);
-
-// Get all selected objects (works for single object or multi-selection)
-function getSelectedObjects() {
-    var sel = canvas.getActiveObject();
-    if (!sel) return [];
-    if (sel.type === "activeSelection") {
-        return sel.getObjects();
-    }
-    return [sel];
-}
 function showProps(){
     document.getElementById("no-select-hint").style.display="none";
     document.getElementById("props-content").style.display="block";
     var o=canvas.getActiveObject();if(!o)return;
-    var isMulti = o.type === "activeSelection";
-    if (isMulti) { o = o.getObjects()[0]; }
     document.getElementById("prop-name").value=o.customName||"";
     document.getElementById("prop-code").value=o.customCode||"";
     document.getElementById("prop-x").value=Math.round(o.left);
@@ -467,45 +430,14 @@ function showProps(){
     document.getElementById("prop-bind-eq").value=o.customEqId||"";
 }
 function hideProps(){document.getElementById("no-select-hint").style.display="block";document.getElementById("props-content").style.display="none";}
-function updateProp(f){var objs=getSelectedObjects();if(!objs.length)return;objs.forEach(function(o){if(f==="name")o.customName=document.getElementById("prop-name").value;if(f==="code")o.customCode=document.getElementById("prop-code").value;if(f==="remark")o.customRemark=document.getElementById("prop-remark").value;});canvas.renderAll();}
-function updatePos(){var o=canvas.getActiveObject();if(!o||o.type==="activeSelection")return;o.set("left",parseFloat(document.getElementById("prop-x").value));o.set("top",parseFloat(document.getElementById("prop-y").value));o.setCoords();canvas.renderAll();}
-function updateSize(){
-    var objs=getSelectedObjects();
-    if(!objs.length)return;
-    var isMulti = objs.length > 1;
-    var w=parseFloat(document.getElementById("prop-w").value),h=parseFloat(document.getElementById("prop-h").value);
-    objs.forEach(function(o){
-        if (isMulti) {
-            // Multi-select: only adjust text font size, keep rect unchanged
-            if (o.type === "group" && o.customType === "equipment") {
-                o.forEachObject(function(child) {
-                    if (child.type === "text" || child.type === "i-text") {
-                        var baseSize = child._baseFontSize || child.fontSize || 11;
-                        if (!child._baseFontSize) child._baseFontSize = baseSize;
-                        // Use W/H ratio relative to default 100x50 to scale font
-                        var fontScale = Math.min(w/100, h/50);
-                        child.set("fontSize", Math.round(baseSize * fontScale));
-                        child._baseFontSize = child.fontSize;
-                        child.set({ scaleX: 1, scaleY: 1 });
-                    }
-                });
-                o.set({ scaleX: 1, scaleY: 1 });
-                o.setCoords();
-            }
-        } else {
-            // Single object: normal resize behavior
-            var sx=w/o.width,sy=h/o.height;
-            o.set("scaleX",sx);o.set("scaleY",sy);o.setCoords();
-            fixEquipmentTextAfterResize(o);
-        }
-    });
-    canvas.requestRenderAll();
-}
-function updateAngle(){var objs=getSelectedObjects();if(!objs.length)return;objs.forEach(function(o){o.set("angle",parseFloat(document.getElementById("prop-angle").value));});canvas.renderAll();}
-function updateColor(p){var objs=getSelectedObjects();if(!objs.length)return;var val=document.getElementById(p==="fill"?"prop-fill":"prop-stroke").value;objs.forEach(function(o){o.set(p,val);});canvas.renderAll();}
-function updateStrokeWidth(){var objs=getSelectedObjects();if(!objs.length)return;var val=parseInt(document.getElementById("prop-strokeWidth").value)||1;objs.forEach(function(o){o.set("strokeWidth",val);});canvas.renderAll();}
-function updateOpacity(){var objs=getSelectedObjects();if(!objs.length)return;var val=parseFloat(document.getElementById("prop-opacity").value);objs.forEach(function(o){o.set("opacity",val);});canvas.renderAll();}
-function updateStatus(){var objs=getSelectedObjects();if(!objs.length)return;var s=document.getElementById("prop-status").value;var sc={running:{fill:"#1b5e20",stroke:"#00e676"},idle:{fill:"#4a4100",stroke:"#ffd740"},down:{fill:"#4a1a1a",stroke:"#ff5252"},normal:{fill:"#1565c0",stroke:"#4fc3f7"}};var c=sc[s]||sc.normal;objs.forEach(function(o){o.customStatus=s;o.set("fill",c.fill);o.set("stroke",c.stroke);});canvas.renderAll();}
+function updateProp(f){var o=canvas.getActiveObject();if(!o)return;if(f==="name")o.customName=document.getElementById("prop-name").value;if(f==="code")o.customCode=document.getElementById("prop-code").value;if(f==="remark")o.customRemark=document.getElementById("prop-remark").value;canvas.renderAll();}
+function updatePos(){var o=canvas.getActiveObject();if(!o)return;o.set("left",parseFloat(document.getElementById("prop-x").value));o.set("top",parseFloat(document.getElementById("prop-y").value));o.setCoords();canvas.renderAll();}
+function updateSize(){var o=canvas.getActiveObject();if(!o)return;var w=parseFloat(document.getElementById("prop-w").value),h=parseFloat(document.getElementById("prop-h").value);o.set("scaleX",w/o.width);o.set("scaleY",h/o.height);o.setCoords();canvas.renderAll();}
+function updateAngle(){var o=canvas.getActiveObject();if(!o)return;o.set("angle",parseFloat(document.getElementById("prop-angle").value));canvas.renderAll();}
+function updateColor(p){var o=canvas.getActiveObject();if(!o)return;o.set(p,document.getElementById(p==="fill"?"prop-fill":"prop-stroke").value);canvas.renderAll();}
+function updateStrokeWidth(){var o=canvas.getActiveObject();if(!o)return;o.set("strokeWidth",parseInt(document.getElementById("prop-strokeWidth").value)||1);canvas.renderAll();}
+function updateOpacity(){var o=canvas.getActiveObject();if(!o)return;o.set("opacity",parseFloat(document.getElementById("prop-opacity").value));canvas.renderAll();}
+function updateStatus(){var o=canvas.getActiveObject();if(!o)return;var s=document.getElementById("prop-status").value;o.customStatus=s;var sc={running:{fill:"#1b5e20",stroke:"#00e676"},idle:{fill:"#4a4100",stroke:"#ffd740"},down:{fill:"#4a1a1a",stroke:"#ff5252"},normal:{fill:"#1565c0",stroke:"#4fc3f7"}};var c=sc[s]||sc.normal;o.set("fill",c.fill);o.set("stroke",c.stroke);canvas.renderAll();}
 
 // Keyboard shortcuts
 document.addEventListener("keydown",function(e){
@@ -571,15 +503,13 @@ function alignSelected(dir){
 }
 
 // Save/Load
-// Apply uniform font size to all equipment groups, auto-fix aspect ratio
 function applyGlobalFontSize() {
-    var size = parseInt(document.getElementById("global-font-size").value) || 12;
+    var size = parseInt(document.getElementById("global-font-size").value) || 11;
     canvas.forEachObject(function(obj) {
         if (obj.customType === "equipment" && obj.type === "group") {
             obj.forEachObject(function(child) {
                 if (child.type === "text" || child.type === "i-text") {
                     child.set("fontSize", size);
-                    child._baseFontSize = size;
                     child.set({ scaleX: 1, scaleY: 1 });
                 }
             });
@@ -591,8 +521,6 @@ function applyGlobalFontSize() {
 function getLayoutJSON(){return JSON.stringify(canvas.toJSON(["customType","customName","customCode","customStatus","customEqId","customRemark","isGrid","lockMovementX","lockMovementY","lockScalingX","lockScalingY","lockRotation","hasControls"]));}
 function saveLayout(){
     var n=document.getElementById("layout-name").value||"默认布局";
-    // Fix all equipment groups before saving so text is properly sized
-    canvas.forEachObject(function(o) { normalizeEquipmentForSave(o); });
     var p={id:currentLayoutId,name:n,layout_data:getLayoutJSON()};
     if(window.USER_TEAM_ID)p.team_id=window.USER_TEAM_ID;
     fetch("/api/workshop-layouts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)}).then(function(r){return r.json().then(function(d){return {status:r.status,data:d};});}).then(function(result){var d=result.data;if(d.success){currentLayoutId=d.id;showInfo("已保存: "+n);loadLayouts();}else{alert("保存失败: "+(d.error||"未知错误"));}}).catch(function(e){alert("保存请求失败: "+e);});
