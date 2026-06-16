@@ -2,13 +2,10 @@
 {% block content %}
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-#dashboard { display: flex; flex-direction: column; height: calc(100vh - 60px); overflow: hidden; font-family: "Microsoft YaHei", sans-serif; background: #060e18; }
+#dashboard { display: flex; flex-direction: row; height: calc(100vh - 60px); overflow: hidden; font-family: "Microsoft YaHei", sans-serif; background: #060e18; }
 
 
 /* ========== Main Content ========== */
-.main-content {
-    flex: 1; display: flex; overflow: hidden;
-}
 
 /* Left: Floor Plan */
 
@@ -17,7 +14,7 @@
 .wm-panel input[type="checkbox"] { accent-color:#4fc3f7; }
 .plan-area {
     flex: 1; position: relative; border-left: 1px solid #1e3a5f;
-    min-width: 0;
+    min-width: 0; min-width: 400px;
 }
 .plan-header {
     position: absolute; top: 0; left: 0; right: 0; z-index: 10;
@@ -191,7 +188,6 @@
     </div>
 
     <!-- Main -->
-    <div class="main-content">
         <!-- Left: Data Panel -->
         <div class="oee-panel">
             <div class="oee-section" style="display:flex;gap:8px;flex-wrap:wrap;padding:10px 14px;">
@@ -313,7 +309,6 @@
                 </div>
             </div>
         </div>
-    </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
