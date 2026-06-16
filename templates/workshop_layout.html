@@ -533,6 +533,8 @@ function deleteSelected(){
 // Layer
 function bringForward(){var o=canvas.getActiveObject();if(o){canvas.bringForward(o);canvas.renderAll();}}
 function sendBackward(){var o=canvas.getActiveObject();if(o){canvas.sendBackwards(o);canvas.renderAll();}}
+function bringToFront(){var o=canvas.getActiveObject();if(o){canvas.bringToFront(o);canvas.renderAll();}}
+function sendToBack(){var o=canvas.getActiveObject();if(o){canvas.sendToBack(o);canvas.renderAll();}}
 
 // Lock
 function lockToggle(){
