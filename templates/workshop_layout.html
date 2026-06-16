@@ -341,10 +341,40 @@ canvas.on("object:added", function() { if (undoStack.length === 0) saveUndo(); }
 canvas.on("object:modified", function() { saveUndo(); showProps(); });
 canvas.on("object:removed", function() { saveUndo(); });
 
-// Fix equipment group text after resize (called from both drag-resize and property panel)
-// Normalize any equipment object: reset scale to 1 and bake into width/height.
-// For groups with text, also adjust font size proportionally.
-// NOTE: do NOT use addWithUpdate() on rotated groups - it shifts child positions.
+// During drag-resize: counter-scale text fontSize so it stays proportional.
+// Full normalization (reset group scale, bake into rect dims) happens only on save.
+canvas.on("object:scaling", function(opt) {
+    var obj = opt.target;
+    if (!obj || obj.customType !== "equipment" || obj.type !== "group") return;
+    var sx = obj.scaleX || 1;
+    var sy = obj.scaleY || 1;
+    obj.forEachObject(function(child) {
+        if (child.type === "text" || child.type === "i-text") {
+            var baseSize = child._baseFontSize || child.fontSize || 11;
+            if (!child._baseFontSize) child._baseFontSize = baseSize;
+            // Counter the group scale so text looks proportional during drag
+            child.set("fontSize", Math.round(baseSize * Math.min(sx, sy)));
+            // Also counter the X/Y stretch on the text object itself
+            child.set({ scaleX: 1 / sx, scaleY: 1 / sy });
+        }
+    });
+});
+canvas.on("mouse:up", function() {
+    // After scaling ends, reset text scale to 1 and snapshot the current font size
+    canvas.forEachObject(function(obj) {
+        if (obj.customType === "equipment" && obj.type === "group") {
+            obj.forEachObject(function(child) {
+                if (child.type === "text" || child.type === "i-text") {
+                    child._baseFontSize = child.fontSize;
+                    child.set({ scaleX: 1, scaleY: 1 });
+                }
+            });
+        }
+    });
+});
+
+// Full normalization: reset group scale to 1 and bake into rect dimensions.
+// Called on save to produce clean JSON without scale values.
 function fixEquipmentTextAfterResize(obj) {
     if (!obj || (obj.customType !== "equipment" && obj.customType !== "zone")) return;
     var sx = obj.scaleX || 1;
@@ -352,15 +382,11 @@ function fixEquipmentTextAfterResize(obj) {
     if (sx === 1 && sy === 1) return;
 
     if (obj.type === "group") {
-        // Group with rect + text: adjust font, scale rect dims, keep positions intact
+        // Adjust font size and reset text child
         obj.forEachObject(function(child) {
             if (child.type === "text" || child.type === "i-text") {
-                var baseSize = child._baseFontSize || child.fontSize || 11;
-                if (!child._baseFontSize) child._baseFontSize = baseSize;
-                // Use the smaller scale factor so text maintains aspect ratio
-                child.set("fontSize", Math.round(baseSize * Math.min(sx, sy)));
-                child.set({ scaleX: 1, scaleY: 1 });
                 child._baseFontSize = child.fontSize;
+                child.set({ scaleX: 1, scaleY: 1 });
             }
         });
         // Scale rect dimensions to absorb the group scale
@@ -374,10 +400,11 @@ function fixEquipmentTextAfterResize(obj) {
                 });
             }
         });
-        // Reset group scale without recalculating child positions
+        // Reset group scale
         obj.set({ scaleX: 1, scaleY: 1 });
+        obj.setCoords();
     } else {
-        // Non-group shapes (rect, circle, triangle, roundedRect, diamond, zone, etc.)
+        // Non-group shapes
         obj.set({
             width: (obj.width || 0) * sx,
             height: (obj.height || 0) * sy,
@@ -385,17 +412,14 @@ function fixEquipmentTextAfterResize(obj) {
             scaleY: 1
         });
         if (obj.radius) obj.set("radius", obj.radius * Math.max(sx, sy));
-        // Scale dash array so dashed lines keep proper proportions
         if (obj.strokeDashArray && obj.strokeDashArray.length) {
             var avgScale = (sx + sy) / 2;
             obj.set("strokeDashArray", obj.strokeDashArray.map(function(v) { return v * avgScale; }));
         }
+        obj.setCoords();
     }
-    obj.setCoords();
-    canvas.requestRenderAll();
 }
 canvas.on("object:modified", function(opt) {
-    fixEquipmentTextAfterResize(opt.target);
     saveUndo();
     showProps();
 });
@@ -513,22 +537,29 @@ function updateSize(){
                     if (child.type === "text" || child.type === "i-text") {
                         var baseSize = child._baseFontSize || child.fontSize || 11;
                         if (!child._baseFontSize) child._baseFontSize = baseSize;
-                        // Use W/H ratio relative to default 100x50 to scale font
                         var fontScale = Math.min(w/100, h/50);
                         child.set("fontSize", Math.round(baseSize * fontScale));
                         child._baseFontSize = child.fontSize;
-                        child.set({ scaleX: 1, scaleY: 1 });
                     }
                 });
-                o.set({ scaleX: 1, scaleY: 1 });
-                o.setCoords();
             }
         } else {
-            // Single object: normal resize behavior
+            // Single object: set scale, counter text scaling
             var sx=w/o.width,sy=h/o.height;
-            o.set("scaleX",sx);o.set("scaleY",sy);o.setCoords();
-            fixEquipmentTextAfterResize(o);
+            o.set("scaleX",sx);o.set("scaleY",sy);
+            if (o.type === "group" && o.customType === "equipment") {
+                o.forEachObject(function(child) {
+                    if (child.type === "text" || child.type === "i-text") {
+                        var baseSize = child._baseFontSize || child.fontSize || 11;
+                        if (!child._baseFontSize) child._baseFontSize = baseSize;
+                        child.set("fontSize", Math.round(baseSize * Math.min(sx, sy)));
+                        child.set({ scaleX: 1/sx, scaleY: 1/sy });
+                        child._baseFontSize = child.fontSize;
+                    }
+                });
+            }
         }
+        o.setCoords();
     });
     canvas.requestRenderAll();
 }
