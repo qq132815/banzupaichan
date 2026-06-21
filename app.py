@@ -265,6 +265,26 @@ def planner_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def external_api_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        api_key = request.headers.get('X-API-Key', '').strip()
+        expected_key = os.environ.get('EXTERNAL_API_KEY', '').strip()
+        if not expected_key:
+            try:
+                conn = get_connection()
+                c = conn.cursor()
+                c.execute("SELECT value FROM system_settings WHERE key='external_api_key'")
+                row = c.fetchone()
+                conn.close()
+                expected_key = (row[0] if row else '') or 'mes-external-2026'
+            except Exception:
+                expected_key = 'mes-external-2026'
+        if not api_key or api_key != expected_key:
+            return jsonify({'error': 'unauthorized'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
 # ========== Login/Logout ==========
 @app.route('/login')
 def login_page():
@@ -2255,6 +2275,70 @@ def api_work_reports():
     sql += " ORDER BY r.create_time DESC"
     return jsonify(paginate_query(sql, params, page, page_size))
 
+@app.route('/api/work-reports/export')
+@login_required
+def api_work_reports_export():
+    import io
+    import openpyxl
+    from flask import send_file
+
+    q = request.args.get('q', '').strip()
+    sql = """SELECT r.order_no, r.product_code, r.process_name, r.report_qty,
+                    r.good_qty, r.bad_qty, r.good_rate, r.operator, r.equipment,
+                    r.start_time, r.end_time, r.report_hours, r.efficiency,
+                    r.approve_status
+             FROM work_reports r
+             LEFT JOIN personnel p ON r.operator = p.name
+             LEFT JOIN teams t ON p.team_id = t.id
+             WHERE 1=1"""
+    params = []
+    date = request.args.get('date', '').strip()
+    if date:
+        sql += " AND r.create_time LIKE ?"
+        params.append(date + '%')
+    else:
+        date_from = request.args.get('date_from', '').strip()
+        date_to = request.args.get('date_to', '').strip()
+        if date_from:
+            sql += " AND r.create_time >= ?"
+            params.append(date_from + ' 00:00:00')
+        if date_to:
+            sql += " AND r.create_time <= ?"
+            params.append(date_to + ' 23:59:59')
+    team_filter = request.args.get('team', '').strip()
+    if team_filter:
+        sql += " AND t.name = ?"
+        params.append(team_filter)
+    if q:
+        like = "%" + q + "%"
+        sql += " AND (r.order_no LIKE ? OR r.product_code LIKE ? OR r.product_name LIKE ? OR r.process_name LIKE ? OR r.operator LIKE ?)"
+        params.extend([like, like, like, like, like])
+    sql += " ORDER BY r.create_time DESC"
+
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(sql, params)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = '报工数据'
+    ws.append(['工单编号', '产品编号', '工序', '报工数', '良品数', '不良数', '良品率',
+               '生产人员', '设备', '开始时间', '结束时间', '时长', '生产效率', '状态'])
+    for row in c.fetchall():
+        values = list(row)
+        if values[12] and values[12] > 0:
+            values[12] = str(values[12]) + '%'
+        else:
+            values[12] = ''
+        ws.append(values)
+    conn.close()
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name='报工数据导出.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
 @app.route('/api/work-reports', methods=['DELETE'])
 @login_required
 @planner_required
@@ -3221,6 +3305,47 @@ def api_report_daily():
         })
     
     return jsonify({'date': date, 'data': rows})
+
+@app.route('/api/external/production-efficiency')
+@external_api_required
+def api_external_production_efficiency():
+    date = request.args.get('date', '').strip()
+    person_id = request.args.get('person_id', '').strip()
+    if not date:
+        return jsonify({'error': 'date is required'}), 400
+    try:
+        datetime.strptime(date, '%Y-%m-%d')
+    except ValueError:
+        return jsonify({'error': 'date must be YYYY-MM-DD'}), 400
+
+    conn = get_connection()
+    c = conn.cursor()
+    if person_id:
+        c.execute("SELECT id, name FROM personnel WHERE id=?", (person_id,))
+    else:
+        c.execute("SELECT id, name FROM personnel WHERE is_active=1 ORDER BY id")
+    personnel_rows = c.fetchall()
+    conn.close()
+
+    if person_id and not personnel_rows:
+        return jsonify({'error': 'person_id not found'}), 404
+
+    report_data = _expand_reports_with_attendance_note(date, date)
+    result = []
+    for person in personnel_rows:
+        rd = report_data.get(person['name'], {'qty': 0, 'hours': 0, 'good_qty': 0, 'efficiency': 0})
+        qty = rd.get('qty') or 0
+        good_qty = rd.get('good_qty') or 0
+        result.append({
+            'person_id': person['id'],
+            'person_name': person['name'],
+            'date': date,
+            'production_efficiency': round(rd.get('efficiency') or 0, 1),
+            'good_rate': round(good_qty / qty * 100, 1) if qty > 0 else 0,
+            'effective_hours': round(rd.get('hours') or 0, 1)
+        })
+
+    return jsonify({'date': date, 'data': result})
 
 @app.route('/api/reports/personal')
 @login_required
@@ -5119,6 +5244,33 @@ def ai_assistant_page():
 
 # ========== Material Alerts API ==========
 
+def _material_progress_started(progress_str, skip_kw=None):
+    """Return True when any non-skipped process has reported progress."""
+    import re as _re
+
+    if not progress_str:
+        return False
+    skip_kw = skip_kw or []
+
+    for step in str(progress_str).split('->'):
+        step = step.strip()
+        if not step:
+            continue
+        m = _re.match(r'^(.+?)[【\[\（(]', step)
+        name = m.group(1).strip() if m else step
+        if any(kw in name for kw in skip_kw):
+            continue
+
+        qty_match = _re.search(r'[【\[]\s*(\d+(?:\.\d*)?)\s*/\s*(\d+(?:\.\d*)?)\s*[】\]]', step)
+        if qty_match and float(qty_match.group(1)) > 0:
+            return True
+
+        pct_match = _re.search(r'[（(]\s*(\d+(?:\.\d*)?)\s*%\s*[）)]', step)
+        if pct_match and float(pct_match.group(1)) > 0:
+            return True
+
+    return False
+
 def _check_material_alerts():
     """Scan for material alerts using BOM product hierarchy.
 
@@ -5143,26 +5295,9 @@ def _check_material_alerts():
               "AND status IN ('in_progress','pending')")
     parent_started = set()
     for order_no, prog in c.fetchall():
-        for step in prog.split('->'):
-            step = step.strip()
-            if not step:
-                continue
-            m = _re.match(r'^(.+?)[【（]', step)
-            name = m.group(1).strip() if m else step
-            if any(kw in name for kw in skip_kw):
-                continue
-            m2 = _re.search(r'【(\d+\.?\d*)/(\d+\.?\d*)】', step)
-            if m2 and float(m2.group(1)) > 0:
-                parent_started.add(order_no)
-            break
+        if _material_progress_started(prog):
+            parent_started.add(order_no)
     auto_closed = 0
-    # Also close any pending alerts whose parent order has any process progress
-    c.execute("UPDATE material_alerts SET status='auto_closed', closed_at=datetime('now','localtime'), "
-              "closed_by='system' WHERE status='pending' AND parent_order_no IN ("
-              "SELECT order_no FROM work_orders WHERE process_progress IS NOT NULL AND process_progress != '' "
-              "AND process_progress != '' AND status IN ('in_progress','pending')"
-              ")")
-    auto_closed += c.rowcount
     if parent_started:
         ph = ','.join(['?' for _ in parent_started])
         c.execute(
@@ -5170,7 +5305,7 @@ def _check_material_alerts():
             "closed_by='system' WHERE status='pending' AND parent_order_no IN (" + ph + ")",
             list(parent_started)
         )
-        auto_closed = c.rowcount
+        auto_closed += c.rowcount
 
     # Step 2: Build work_reports index
     c.execute("SELECT order_no, process_name, COUNT(*), MAX(create_time), MAX(good_qty) "
@@ -5424,6 +5559,9 @@ def api_material_alerts():
             row = c.fetchone()
             parent_progress_cache[p_order] = row[0] if row and row[0] else ''
         alert['parent_progress'] = parent_progress_cache[p_order]
+
+    if status not in ('closed', 'all'):
+        alerts = [a for a in alerts if not _material_progress_started(a.get('parent_progress'))]
 
     # Add child order progress
     child_progress_cache = {}
