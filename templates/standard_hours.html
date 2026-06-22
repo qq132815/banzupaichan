@@ -8,8 +8,8 @@
 <div style="margin-left:auto;display:flex;gap:8px">
 <button class="btn btn-outline readonly-hide" onclick="initFromRoutes()">从工艺路线初始化</button>
 <button class="btn btn-danger readonly-hide" onclick="downloadShTpl()">模板</button>
-<button class="btn btn-outline" onclick="doExport()">导出</button>
-<button class="btn btn-outline" onclick="doExportCapacity()">导出产能数据</button>
+<button class="btn btn-outline" onclick="doExport()">📤 导出</button>
+<button class="btn btn-outline readonly-hide" onclick="refreshCache()">🔄 刷新缓存</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/standard_hours', function(){setTimeout(function(){loadData();}, 500);})">导入</button>
 <button class="btn btn-primary readonly-hide" onclick="showAdd()">新增</button>
 </div>
@@ -116,7 +116,7 @@ function loadRoutes(){
 }
 
 document.addEventListener('DOMContentLoaded', function(){
-    if(USER_ROLE !== 'planner'){
+    if(USER_ROLE !== 'planner' && USER_ROLE !== 'admin'){
         var hidden=document.querySelectorAll('.readonly-hide');
         for(var i=0;i<hidden.length;i++) hidden[i].style.display='none';
     }
@@ -337,23 +337,9 @@ function initFromRoutes(){
 
 function doExport(){
     var q=document.getElementById('search').value;
-    var url='/api/standard-hours-capacity';
+    var url='/api/export/standard_hours';
     if(q) url+='?q='+encodeURIComponent(q);
-    fetchAllPages(url, function(d){
-        if(!d.length){toast('无数据可导出','warning');return;}
-        var headers=['产品编号','产品名称','工序','班组','标准工时(分)','换线时间(分)','可用设备','备注'];
-        var csv=headers.join(',')+'\n';
-        for(var i=0;i<d.length;i++){
-            var r=d[i];
-            var row=['"'+(r.product_code||'')+'"','"'+(r.product_name||'')+'"','"'+(r.process_name||'')+'"','"'+(r.team_name||'')+'"',r.standard_hours||0,r.setup_time||0,'"'+(r.available_equipment||'')+'"','"'+(r.remark||'')+'"'];
-            csv+=row.join(',')+'\n';
-        }
-        var blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
-        var a=document.createElement('a');
-        a.href=URL.createObjectURL(blob);
-        a.download='标准工时.csv';
-        a.click();
-    });
+    window.location.href=url;
 }
 
 function csvCell(v){
@@ -371,37 +357,17 @@ function formatCapacityValue(r){
 
 function doExportCapacity(){
     var q=document.getElementById('search').value;
-    var url='/api/standard-hours-capacity';
+    var url='/api/export/standard_hours';
     if(q) url+='?q='+encodeURIComponent(q);
-    fetchAllPages(url, function(d){
-        if(!d.length){toast('无数据可导出','warning');return;}
-        var headers=['产品编号','产品名称','工序','班组','标准工时(分)','换线时间(分)','可用设备','排班产能(H)','报工平均产能(H)','报工最高产能(H)','报工最低产能(H)','报工样本数','备注'];
-        var csv=headers.join(',')+'\n';
-        for(var i=0;i<d.length;i++){
-            var r=d[i];
-            var row=[
-                csvCell(r.product_code||''),
-                csvCell(r.product_name||''),
-                csvCell(r.process_name||''),
-                csvCell(r.team_name||''),
-                r.standard_hours||0,
-                r.setup_time||0,
-                csvCell(r.available_equipment||''),
-                csvCell(formatCapacityValue(r)),
-                r.report_avg||0,
-                r.report_max||0,
-                r.report_min||0,
-                r.report_count||0,
-                csvCell(r.remark||'')
-            ];
-            csv+=row.join(',')+'\n';
-        }
-        var blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
-        var a=document.createElement('a');
-        a.href=URL.createObjectURL(blob);
-        a.download='标准工时产能数据.csv';
-        a.click();
-    });
+    window.location.href=url;
+}
+
+function refreshCache(){
+    toast('正在刷新缓存，请稍候...','info');
+    api('/api/standard-hours/refresh-cache',{method:'POST'}).then(function(d){
+        toast(d.message||'缓存已刷新','success');
+        loadData();
+    }).catch(function(e){toast(e.error||'刷新失败','error');});
 }
 
 function loadConfig(){

@@ -196,6 +196,21 @@ def _sync_scheduler():
             except Exception as e:
                 print(f"Equipment status refresh error: {e}")
 
+            # Standard hours cache auto-refresh at 01:00 AM daily
+            try:
+                now_dt = datetime.now()
+                today_1am = now_dt.replace(hour=1, minute=0, second=0, microsecond=0)
+                last_cache = last_run.get('std_hours_cache', 0)
+                if now_dt >= today_1am and now_dt < today_1am.replace(minute=5):
+                    if time.time() - last_cache > 3600:
+                        last_run['std_hours_cache'] = time.time()
+                        t = threading.Thread(target=_refresh_standard_hours_cache)
+                        t.daemon = True
+                        t.start()
+                        print("[standard-hours-cache] Auto-refresh triggered at %s" % now_dt.strftime('%H:%M'))
+            except Exception as e:
+                print(f"Standard hours cache refresh error: {e}")
+
             time.sleep(60)
         except Exception as e:
             print(f"Scheduler error: {e}")
@@ -2708,7 +2723,7 @@ def _build_standard_equipment_maps(cursor):
     cursor.execute("SELECT equipment_code, equipment_name FROM equipments")
     exact_map = {}
     norm_map = {}
-    strip_map = {}
+    strip_multi = {}  # strip_key -> list of display_names (保留所有候选)
     for code, name in cursor.fetchall():
         display_name = name or code or ''
         for key in (code, name):
@@ -2719,14 +2734,17 @@ def _build_standard_equipment_maps(cursor):
             if nk and nk not in norm_map:
                 norm_map[nk] = display_name
             sk = _strip_equipment_key(key)
-            if sk and sk not in strip_map:
-                strip_map[sk] = display_name
-    return exact_map, norm_map, strip_map
+            if sk:
+                if sk not in strip_multi:
+                    strip_multi[sk] = []
+                if display_name not in strip_multi[sk]:
+                    strip_multi[sk].append(display_name)
+    return exact_map, norm_map, strip_multi
 
 def _standard_equipment_name(raw_name, equipment_maps):
     if not raw_name:
         return ''
-    exact_map, norm_map, strip_map = equipment_maps
+    exact_map, norm_map, strip_multi = equipment_maps
     raw_name = str(raw_name).strip()
     if raw_name in exact_map:
         return exact_map[raw_name]
@@ -2734,11 +2752,51 @@ def _standard_equipment_name(raw_name, equipment_maps):
     if nk in norm_map:
         return norm_map[nk]
     sk = _strip_equipment_key(raw_name)
-    if sk in strip_map:
-        return strip_map[sk]
+    if sk in strip_multi:
+        candidates = strip_multi[sk]
+        if len(candidates) == 1:
+            return candidates[0]
+        # 多候选：用中文字符+数字打分选最佳
+        raw_cn = re.findall(r'[\u4e00-\u9fff]+', raw_name)
+        raw_cn_set = set(raw_cn)
+        raw_num = re.findall(r'\d+', raw_name)
+        best = candidates[0]
+        best_score = -1
+        for cand in candidates:
+            score = 0
+            cand_cn = re.findall(r'[\u4e00-\u9fff]+', cand)
+            cand_cn_set = set(cand_cn)
+            # 中文字符重合度
+            common = len(raw_cn_set & cand_cn_set)
+            score += common * 100
+            # 长中文子串包含匹配（如"自动焊" 包含在 "自动焊接" 中）
+            for rc in raw_cn:
+                if len(rc) >= 2:
+                    for cc in cand_cn:
+                        if rc in cc or cc in rc:
+                            score += 30
+            # 数字匹配
+            cand_num = re.findall(r'\d+', cand)
+            if raw_num and cand_num and raw_num[-1] == cand_num[-1]:
+                score += 50
+            # 中文前缀长度匹配（"自动焊" vs "自动焊接" 前缀一样）
+            raw_prefix = ''.join(raw_cn)
+            cand_prefix = ''.join(cand_cn)
+            if raw_prefix and cand_prefix:
+                common_prefix = 0
+                for i in range(min(len(raw_prefix), len(cand_prefix))):
+                    if raw_prefix[i] == cand_prefix[i]:
+                        common_prefix += 1
+                    else:
+                        break
+                score += common_prefix * 20
+            if score > best_score:
+                best_score = score
+                best = cand
+        return best
     return ''
 
-def _sync_available_equipment_for_standard_hour(cursor, row, equipment_maps):
+def _sync_available_equipment_for_standard_hour(cursor, row, equipment_maps, read_only=False):
     product_name = (row.get('product_name') or '').strip()
     product_code = (row.get('product_code') or '').strip()
     process_name = (row.get('process_name') or '').strip()
@@ -2774,53 +2832,66 @@ def _sync_available_equipment_for_standard_hour(cursor, row, equipment_maps):
         names.sort(key=_natural_sort_key)
         available_equipment = ','.join(names)
     row['available_equipment'] = available_equipment
-    cursor.execute("UPDATE standard_hours SET available_equipment=? WHERE id=?", (available_equipment, row['id']))
+    if not read_only:
+        cursor.execute("UPDATE standard_hours SET available_equipment=? WHERE id=?", (available_equipment, row['id']))
     return available_equipment
 
-@app.route('/api/standard-hours-capacity')
-@login_required
-def api_standard_hours_capacity():
-    q = request.args.get('q', '').strip()
-    page = request.args.get('page', 1, type=int)
-    page_size = request.args.get('page_size', 50, type=int)
+# ========== Standard Hours Cache ==========
+_STANDARD_HOURS_CACHE = os.path.join(os.path.dirname(__file__), 'data', 'standard_hours_cache.json')
+
+def _refresh_standard_hours_cache():
+    """Pre-compute standard hours + capacity data and save to JSON cache."""
+    import time as _time
+    start = _time.time()
     conn = get_connection()
     c = conn.cursor()
-    
-    # 过滤条件: 排除半成品入库和含清洗的工序
-    exclude_filter = " AND sh.process_name != '\u534a\u6210\u54c1\u5165\u5e93' AND sh.process_name NOT LIKE '%\u6e05\u6d17%'"
-    
-    # Base query
-    sql = "SELECT sh.* FROM standard_hours sh WHERE 1=1" + exclude_filter
-    params = []
-    if q:
-        like = "%" + q + "%"
-        sql += " AND (sh.product_code LIKE ? OR sh.product_name LIKE ? OR sh.process_name LIKE ?)"
-        params.extend([like, like, like])
-    sql += " ORDER BY sh.product_code, sh.process_name"
-    
-    # Count
-    count_sql = "SELECT COUNT(*) FROM (" + sql + ")"
-    c.execute(count_sql, params)
-    total = c.fetchone()[0]
-    
-    # Paginate
-    page = max(1, int(page or 1))
-    page_size = min(200, max(1, int(page_size or 50)))
-    offset = (page - 1) * page_size
-    c.execute(sql + " LIMIT ? OFFSET ?", params + [page_size, offset])
+    exclude_filter = " AND sh.process_name != '半成品入库' AND sh.process_name NOT LIKE '%清洗%'"
+    sql = "SELECT sh.* FROM standard_hours sh WHERE 1=1" + exclude_filter + " ORDER BY sh.product_code, sh.process_name"
+    c.execute(sql)
     rows = [dict(row) for row in c.fetchall()]
-    
-    equipment_maps = _build_standard_equipment_maps(c)
 
-    # Enrich each row with capacity data
+    # 批量查排班产能
+    sched_map = {}
+    c.execute("SELECT product_code, process_name, capacity_per_hour FROM schedules WHERE capacity_per_hour > 0")
+    for sc_row in c.fetchall():
+        k = (sc_row[0], sc_row[1])
+        if k not in sched_map: sched_map[k] = []
+        val = sc_row[2]
+        if val not in sched_map[k]: sched_map[k].append(val)
+
+    # 批量查报工数据
+    report_map = {}
+    c.execute("SELECT product_code, process_name, report_qty, report_hours FROM work_reports WHERE report_hours > 0")
+    for rpt in c.fetchall():
+        k = (rpt[0], rpt[1])
+        if k not in report_map: report_map[k] = []
+        if rpt[3] > 0 and rpt[2] > 0:
+            report_map[k].append(round(rpt[2] / rpt[3], 1))
+
+    # 批量查可用设备
+    equipment_maps = _build_standard_equipment_maps(c)
+    equip_by_name = {}
+    equip_by_code = {}
+    c.execute("SELECT DISTINCT TRIM(COALESCE(product_name,'')), TRIM(COALESCE(process_name,'')), TRIM(COALESCE(equipment,'')) FROM work_reports WHERE equipment IS NOT NULL AND TRIM(equipment) != '' AND process_name IS NOT NULL")
+    for er in c.fetchall():
+        pn_, proc, eq = er[0], er[1], er[2]
+        if pn_ and proc:
+            k = (pn_, proc)
+            if k not in equip_by_name: equip_by_name[k] = set()
+            equip_by_name[k].add(eq)
+    c.execute("SELECT DISTINCT TRIM(COALESCE(product_code,'')), TRIM(COALESCE(process_name,'')), TRIM(COALESCE(equipment,'')) FROM work_reports WHERE equipment IS NOT NULL AND TRIM(equipment) != '' AND process_name IS NOT NULL AND product_code IS NOT NULL AND TRIM(product_code) != ''")
+    for er in c.fetchall():
+        pc_, proc, eq = er[0], er[1], er[2]
+        if pc_ and proc:
+            k = (pc_, proc)
+            if k not in equip_by_code: equip_by_code[k] = set()
+            equip_by_code[k].add(eq)
+
+    enriched = []
     for row in rows:
-        pc = row['product_code']
-        pn = row['process_name']
-        _sync_available_equipment_for_standard_hour(c, row, equipment_maps)
-        
-        # 排班产能: from schedules
-        c.execute("SELECT DISTINCT capacity_per_hour FROM schedules WHERE product_code=? AND process_name=? AND capacity_per_hour > 0", (pc, pn))
-        sched_caps = [r[0] for r in c.fetchall()]
+        pc, pn = row['product_code'], row['process_name']
+        # 排班产能
+        sched_caps = sched_map.get((pc, pn), [])
         row['schedule_capacities'] = sched_caps
         if len(sched_caps) == 1:
             row['schedule_capacity'] = sched_caps[0]
@@ -2828,59 +2899,133 @@ def api_standard_hours_capacity():
             row['schedule_capacity'] = -1
         else:
             row['schedule_capacity'] = 0
-        
-        # 报工产能: from work_reports
-        c.execute("SELECT report_qty, report_hours, order_no, operator, equipment, start_time, end_time FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0", (pc, pn))
-        reports = c.fetchall()
-        caps = []
-        report_details = []
-        for r in reports:
-            qty, hrs, ono, op, eq, st, et = r
-            if hrs > 0 and qty > 0:
-                cap = round(qty / hrs, 1)
-                caps.append(cap)
-                report_details.append({'qty': qty, 'hours': hrs, 'capacity': cap, 'order_no': ono, 'operator': op, 'equipment': eq, 'start': st, 'end': et})
+        # 报工产能
+        caps = report_map.get((pc, pn), [])
         row['report_avg'] = round(sum(caps) / len(caps), 1) if caps else 0
         row['report_max'] = max(caps) if caps else 0
         row['report_min'] = min(caps) if caps else 0
         row['report_count'] = len(caps)
-    
-    # 优化的进度计算: 用单条SQL统计
+        # 可用设备
+        pn_name = (row.get('product_name') or '').strip()
+        proc_name = (row.get('process_name') or '').strip()
+        raw_equip = set()
+        if pn_name and proc_name: raw_equip.update(equip_by_name.get((pn_name, proc_name), set()))
+        if pc and proc_name: raw_equip.update(equip_by_code.get((pc, proc_name), set()))
+        names = []
+        seen = set()
+        for eq in raw_equip:
+            sn = _standard_equipment_name(eq, equipment_maps)
+            if sn and sn not in seen:
+                seen.add(sn)
+                names.append(sn)
+        names.sort(key=_natural_sort_key)
+        row['available_equipment'] = ','.join(names)
+        enriched.append(row)
+
+    # Progress stats
     progress_sql = """
         SELECT 
             COUNT(DISTINCT sh.product_code || '|' || sh.process_name) as total,
             COUNT(DISTINCT CASE WHEN s.product_code IS NOT NULL OR wr.product_code IS NOT NULL THEN sh.product_code || '|' || sh.process_name END) as completed
         FROM standard_hours sh
         LEFT JOIN (
-            SELECT DISTINCT product_code, process_name 
-            FROM schedules 
-            WHERE capacity_per_hour > 0
+            SELECT DISTINCT product_code, process_name FROM schedules WHERE capacity_per_hour > 0
         ) s ON sh.product_code = s.product_code AND sh.process_name = s.process_name
         LEFT JOIN (
-            SELECT DISTINCT product_code, process_name 
-            FROM work_reports 
-            WHERE report_hours > 0 AND report_qty > 0
+            SELECT DISTINCT product_code, process_name FROM work_reports WHERE report_hours > 0
         ) wr ON sh.product_code = wr.product_code AND sh.process_name = wr.process_name
-        WHERE 1=1""" + exclude_filter.replace("sh.", "sh.")
+        WHERE 1=1""" + exclude_filter
     c.execute(progress_sql)
-    prog = c.fetchone()
-    total_combos = prog[0] or 0
-    has_cap_count = prog[1] or 0
-    
-    conn.commit()
+    prog_row = c.fetchone()
+    total = prog_row[0] if prog_row else 0
+    completed = prog_row[1] if prog_row else 0
     conn.close()
+    cache = {
+        'data': enriched,
+        'total': len(enriched),
+        'progress': {
+            'total': total,
+            'completed': completed,
+            'percent': round(completed / total * 100) if total else 0
+        },
+        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    try:
+        os.makedirs(os.path.dirname(_STANDARD_HOURS_CACHE), exist_ok=True)
+        with open(_STANDARD_HOURS_CACHE, 'w', encoding='utf-8') as f:
+            import json
+            json.dump(cache, f, ensure_ascii=False)
+        elapsed = round(_time.time() - start, 1)
+        print(f"[standard-hours-cache] Refreshed: {len(enriched)} rows, {elapsed}s")
+    except Exception as e:
+        print(f"[standard-hours-cache] Error: {e}")
+
+def _load_standard_hours_cache():
+    """Load cached data, return None if not available."""
+    import json
+    if not os.path.exists(_STANDARD_HOURS_CACHE):
+        return None
+    try:
+        with open(_STANDARD_HOURS_CACHE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+@app.route('/api/standard-hours/refresh-cache', methods=['POST'])
+@login_required
+def api_refresh_standard_hours_cache():
+    """Manually trigger cache refresh."""
+    try:
+        _refresh_standard_hours_cache()
+        return jsonify({'ok': True, 'message': '缓存已刷新'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Initial cache build on startup (background)
+def _startup_cache():
+    try:
+        if not os.path.exists(_STANDARD_HOURS_CACHE):
+            _refresh_standard_hours_cache()
+        else:
+            print("[standard-hours-cache] Cache file exists, skipping initial build")
+    except Exception as e:
+        print(f"[standard-hours-cache] Startup cache error: {e}")
+_cache_thread = threading.Thread(target=_startup_cache)
+_cache_thread.daemon = True
+_cache_thread.start()
+
+@app.route('/api/standard-hours-capacity')
+@login_required
+def api_standard_hours_capacity():
+    q = request.args.get('q', '').strip()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
+
+    cache = _load_standard_hours_cache()
+    all_data = cache['data'] if cache else []
+    progress = cache.get('progress', {}) if cache else {}
+
+    # Filter by search query
+    if q:
+        ql = q.lower()
+        all_data = [r for r in all_data if ql in (r.get('product_code','') or '').lower()
+                    or ql in (r.get('product_name','') or '').lower()
+                    or ql in (r.get('process_name','') or '').lower()]
+
+    total = len(all_data)
+    page = max(1, int(page or 1))
+    page_size = min(200, max(1, int(page_size or 50)))
+    offset = (page - 1) * page_size
+    rows = all_data[offset:offset + page_size]
     total_pages = max(1, (total + page_size - 1) // page_size)
     return jsonify({
-        'data': rows, 
-        'total': total, 
-        'page': page, 
-        'page_size': page_size, 
+        'data': rows,
+        'total': total,
+        'page': page,
+        'page_size': page_size,
         'total_pages': total_pages,
-        'progress': {
-            'total': total_combos,
-            'completed': has_cap_count,
-            'percent': round(has_cap_count / total_combos * 100, 1) if total_combos > 0 else 0
-        }
+        'progress': progress,
+        'cached_at': cache.get('updated_at', '') if cache else ''
     })
 
 # ========== System Config API ==========
@@ -3663,6 +3808,28 @@ def api_export(data_type):
                      FROM products ORDER BY product_code""")
         ws.append(['产品类型', '产品编号', '产品名称', '产品规格', '单位', '工艺路线', 
                    '最小安全库存', '库存数量', '产品来源', '产品图', '客户', '每筐容量'])
+    elif data_type == 'standard_hours':
+        ws.title = '标准工时'
+        cache = _load_standard_hours_cache()
+        all_data = cache['data'] if cache else []
+        q = request.args.get('q', '').strip()
+        if q:
+            ql = q.lower()
+            all_data = [r for r in all_data if ql in (r.get('product_code','') or '').lower()
+                        or ql in (r.get('product_name','') or '').lower()
+                        or ql in (r.get('process_name','') or '').lower()]
+        ws.append(['产品编号','产品名称','工序','班组','标准工时(分)','换线时间(分)','可用设备',
+                    '排班产能(H)','报工平均产能(H)','报工最高产能(H)','报工最低产能(H)','报工样本数','备注'])
+        for row in all_data:
+            sched_caps = row.get('schedule_capacities', [])
+            if len(sched_caps) == 1: sc = sched_caps[0]
+            elif len(sched_caps) > 1: sc = ' / '.join(str(x) for x in sched_caps)
+            else: sc = 0
+            ws.append([row.get('product_code',''), row.get('product_name',''), row.get('process_name',''),
+                        row.get('team_name',''), row.get('standard_hours',0) or 0, row.get('setup_time',0) or 0,
+                        row.get('available_equipment','') or '', sc,
+                        row.get('report_avg',0), row.get('report_max',0), row.get('report_min',0),
+                        row.get('report_count',0), row.get('remark','') or ''])
     elif data_type == 'work_orders':
         ws.title = '工单数据'
         c.execute("SELECT order_no, product_code, product_name, quantity, completed_qty, due_date, priority, status, process_progress, source FROM work_orders ORDER BY order_no")
