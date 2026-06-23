@@ -2760,6 +2760,9 @@ def _standard_equipment_name(raw_name, equipment_maps):
         raw_cn = re.findall(r'[\u4e00-\u9fff]+', raw_name)
         raw_cn_set = set(raw_cn)
         raw_num = re.findall(r'\d+', raw_name)
+        # 输入太短（纯数字或无中文），不做强匹配，避免误匹配
+        if not raw_cn or (len(raw_name) <= 2 and raw_name.isdigit()):
+            return ''
         best = candidates[0]
         best_score = -1
         for cand in candidates:
