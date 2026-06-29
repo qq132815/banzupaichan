@@ -2197,8 +2197,8 @@ def api_standard_hours_create():
     conn = get_connection()
     c = conn.cursor()
     try:
-        c.execute("INSERT INTO standard_hours (product_code, product_name, process_name, team_name, standard_hours, setup_time, remark) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                  (data['product_code'], data.get('product_name',''), data['process_name'], data.get('team_name',''), data.get('standard_hours',0), data.get('setup_time',0), data.get('remark','')))
+        c.execute("INSERT INTO standard_hours (product_code, product_name, process_name, team_name, standard_hours, setup_time, weld_count, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                  (data['product_code'], data.get('product_name',''), data['process_name'], data.get('team_name',''), data.get('standard_hours',0), data.get('setup_time',0), data.get('weld_count',0), data.get('remark','')))
         conn.commit()
     except Exception as e:
         conn.close()
@@ -2212,8 +2212,8 @@ def api_standard_hours_update(sid):
     data = request.json
     conn = get_connection()
     c = conn.cursor()
-    c.execute("UPDATE standard_hours SET product_code=?, product_name=?, process_name=?, team_name=?, standard_hours=?, setup_time=?, remark=? WHERE id=?",
-              (data['product_code'], data.get('product_name',''), data['process_name'], data.get('team_name',''), data.get('standard_hours',0), data.get('setup_time',0), data.get('remark',''), sid))
+    c.execute("UPDATE standard_hours SET product_code=?, product_name=?, process_name=?, team_name=?, standard_hours=?, setup_time=?, weld_count=?, remark=? WHERE id=?",
+              (data['product_code'], data.get('product_name',''), data['process_name'], data.get('team_name',''), data.get('standard_hours',0), data.get('setup_time',0), data.get('weld_count',0), data.get('remark',''), sid))
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -2299,9 +2299,9 @@ def api_work_reports_export():
 
     q = request.args.get('q', '').strip()
     sql = """SELECT r.order_no, r.product_code, r.process_name, r.report_qty,
-                    r.good_qty, r.bad_qty, r.good_rate, r.operator, r.equipment,
+                    r.good_qty, r.bad_qty, r.good_rate, r.weld_count, r.operator, r.equipment,
                     r.start_time, r.end_time, r.report_hours, r.efficiency,
-                    r.approve_status
+                    r.attendance_note, r.approve_status
              FROM work_reports r
              LEFT JOIN personnel p ON r.operator = p.name
              LEFT JOIN teams t ON p.team_id = t.id
@@ -2338,13 +2338,13 @@ def api_work_reports_export():
     ws = wb.active
     ws.title = '报工数据'
     ws.append(['工单编号', '产品编号', '工序', '报工数', '良品数', '不良数', '良品率',
-               '生产人员', '设备', '开始时间', '结束时间', '时长', '生产效率', '状态'])
+               '焊点', '生产人员', '设备', '开始时间', '结束时间', '时长', '生产效率', '出勤人员备注', '状态'])
     for row in c.fetchall():
         values = list(row)
-        if values[12] and values[12] > 0:
-            values[12] = str(values[12]) + '%'
+        if values[13] and values[13] > 0:
+            values[13] = str(values[13]) + '%'
         else:
-            values[12] = ''
+            values[13] = ''
         ws.append(values)
     conn.close()
 
@@ -2890,6 +2890,24 @@ def _refresh_standard_hours_cache():
             if k not in equip_by_code: equip_by_code[k] = set()
             equip_by_code[k].add(eq)
 
+    # 批量查焊点（按产品+工序收集所有不重复值，逗号拼接）
+    weld_by_name = {}
+    weld_by_code = {}
+    c.execute("SELECT TRIM(COALESCE(product_name,'')), TRIM(COALESCE(process_name,'')), weld_count FROM work_reports WHERE process_name IS NOT NULL AND weld_count IS NOT NULL AND weld_count > 0")
+    for er in c.fetchall():
+        pn_, proc, wc = er[0], er[1], er[2]
+        if pn_ and proc:
+            k = (pn_, proc)
+            if k not in weld_by_name: weld_by_name[k] = set()
+            weld_by_name[k].add(str(int(wc)) if wc == int(wc) else str(wc))
+    c.execute("SELECT TRIM(COALESCE(product_code,'')), TRIM(COALESCE(process_name,'')), weld_count FROM work_reports WHERE process_name IS NOT NULL AND weld_count IS NOT NULL AND weld_count > 0 AND product_code IS NOT NULL AND TRIM(product_code) != ''")
+    for er in c.fetchall():
+        pc_, proc, wc = er[0], er[1], er[2]
+        if pc_ and proc:
+            k = (pc_, proc)
+            if k not in weld_by_code: weld_by_code[k] = set()
+            weld_by_code[k].add(str(int(wc)) if wc == int(wc) else str(wc))
+
     enriched = []
     for row in rows:
         pc, pn = row['product_code'], row['process_name']
@@ -2923,6 +2941,15 @@ def _refresh_standard_hours_cache():
                 names.append(sn)
         names.sort(key=_natural_sort_key)
         row['available_equipment'] = ','.join(names)
+        # 焊点（从报工数据按产品+工序聚合所有不重复值，优先手工设定的值）
+        db_weld = row.get('weld_count') or 0
+        weld_set = set()
+        if db_weld: weld_set.add(str(int(db_weld)) if db_weld == int(db_weld) else str(db_weld))
+        name_welds = weld_by_name.get((pn_name, proc_name), set())
+        code_welds = weld_by_code.get((pc, proc_name), set())
+        weld_set.update(name_welds)
+        weld_set.update(code_welds)
+        row['weld_count'] = ','.join(sorted(weld_set)) if weld_set else ''
         enriched.append(row)
 
     # Progress stats
@@ -3821,7 +3848,7 @@ def api_export(data_type):
             all_data = [r for r in all_data if ql in (r.get('product_code','') or '').lower()
                         or ql in (r.get('product_name','') or '').lower()
                         or ql in (r.get('process_name','') or '').lower()]
-        ws.append(['产品编号','产品名称','工序','班组','标准工时(分)','换线时间(分)','可用设备',
+        ws.append(['产品编号','产品名称','工序','班组','标准工时(分)','换线时间(分)','焊点','可用设备',
                     '排班产能(H)','报工平均产能(H)','报工最高产能(H)','报工最低产能(H)','报工样本数','备注'])
         for row in all_data:
             sched_caps = row.get('schedule_capacities', [])
@@ -3830,6 +3857,7 @@ def api_export(data_type):
             else: sc = 0
             ws.append([row.get('product_code',''), row.get('product_name',''), row.get('process_name',''),
                         row.get('team_name',''), row.get('standard_hours',0) or 0, row.get('setup_time',0) or 0,
+                        row.get('weld_count',0) or 0,
                         row.get('available_equipment','') or '', sc,
                         row.get('report_avg',0), row.get('report_max',0), row.get('report_min',0),
                         row.get('report_count',0), row.get('remark','') or ''])

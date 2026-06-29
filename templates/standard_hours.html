@@ -41,7 +41,7 @@
 <div class="card-body">
 <div class="table-wrap" style="max-height:calc(100vh - 320px);overflow-y:auto">
 <table>
-<thead><tr><th>产品名称</th><th>工序</th><th>班组</th><th>标准工时(分)</th><th>可用设备</th><th>排班产能(H)</th><th>报工平均产能(H)</th><th>报工最高产能(H)</th><th>报工最低产能(H)</th><th>备注</th><th>操作</th></tr></thead>
+<thead><tr><th>产品名称</th><th>工序</th><th>班组</th><th>标准工时(分)</th><th>焊点</th><th>可用设备</th><th>排班产能(H)</th><th>报工平均产能(H)</th><th>报工最高产能(H)</th><th>报工最低产能(H)</th><th>备注</th><th>操作</th></tr></thead>
 <tbody id="tbody"></tbody>
 </table>
 <div id="empty-msg" class="table-empty" style="display:none">暂无数据，点击“从工艺路线初始化”生成基础数据</div>
@@ -67,6 +67,7 @@
 <div class="form-group"><label>标准工时(分钟/件)</label><input type="number" class="form-control" id="m-hours" step="0.1" min="0"></div>
 <div class="form-group"><label>换线时间(分钟)</label><input type="number" class="form-control" id="m-setup" step="1" min="0"></div>
 </div>
+<div class="form-group"><label>焊点</label><input type="text" class="form-control" id="m-weld-count" readonly placeholder="由报工数据自动匹配"></div>
 <div class="form-group"><label>可用设备</label><input type="text" class="form-control" id="m-available-equipment" readonly placeholder="由报工数据自动匹配"></div>
 <div class="form-group"><label>备注</label><input type="text" class="form-control" id="m-remark"></div>
 </div>
@@ -268,10 +269,13 @@ function loadData(){
             var minCap=r.report_min>0?escHtml(r.report_min):'<span style="color:#9ca3af">-</span>';
             var equip=escHtml(r.available_equipment||'');
             if(!equip) equip='<span style="color:#9ca3af">-</span>';
+            var weld=escHtml(r.weld_count||'');
+            if(!weld) weld='<span style="color:#9ca3af">-</span>';
             tr.innerHTML='<td>'+escHtml(r.product_name||r.product_code)+'</td>'
                 +'<td>'+escHtml(r.process_name)+'</td>'
                 +'<td>'+escHtml(r.team_name||'')+'</td>'
                 +'<td><strong>'+escHtml(r.standard_hours||0)+'</strong></td>'
+                +'<td>'+weld+'</td>'
                 +'<td style="max-width:220px;white-space:normal">'+equip+'</td>'
                 +'<td>'+schedCap+'</td>'
                 +'<td>'+avgCap+'</td>'
@@ -287,7 +291,7 @@ function loadData(){
 function showAdd(){
     editId=null;
     document.getElementById('m-title').textContent='新增标准工时';
-    var ids=['m-product-code','m-product-name','m-team','m-hours','m-setup','m-remark','m-available-equipment'];
+    var ids=['m-product-code','m-product-name','m-team','m-hours','m-setup','m-weld-count','m-remark','m-available-equipment'];
     for(var i=0;i<ids.length;i++) document.getElementById(ids[i]).value='';
     document.getElementById('m-process').innerHTML='<option value="">-- 先输入产品编号 --</option>';
     document.getElementById('modal').classList.add('show');
@@ -305,6 +309,7 @@ function editItem(id){
     document.getElementById('m-team').value=item.team_name||'';
     document.getElementById('m-hours').value=item.standard_hours||'';
     document.getElementById('m-setup').value=item.setup_time||'';
+    document.getElementById('m-weld-count').value=item.weld_count||'';
     document.getElementById('m-available-equipment').value=item.available_equipment||'';
     document.getElementById('m-remark').value=item.remark||'';
     document.getElementById('modal').classList.add('show');

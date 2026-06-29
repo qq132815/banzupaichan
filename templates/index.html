@@ -229,6 +229,14 @@
             <div class="plan-header">
                 <span class="plan-title">| 车间实时监控</span>
                 <div class="plan-controls">
+                    <div class="product-search-box" style="position:relative;">
+                        <input type="text" id="product-search" placeholder="搜索产品定位设备..." autocomplete="off"
+                            style="background:#0d2137;border:1px solid #1e3a5f;color:#e0f0ff;padding:4px 10px;border-radius:3px;font-size:12px;width:180px;outline:none;"
+                            onfocus="this.style.borderColor='#4fc3f7'" onblur="setTimeout(function(){document.getElementById('product-search-dropdown').style.display='none';},200);this.style.borderColor='#1e3a5f'">
+                        <div id="product-search-dropdown" class="product-search-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:rgba(10,25,41,0.97);border:1px solid #1e3a5f;border-radius:4px;max-height:260px;overflow-y:auto;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,0.4);margin-top:2px;">
+                            <div class="no-data" style="padding:12px;">输入产品名称或工单号搜索</div>
+                        </div>
+                    </div>
                     <button onclick="toggleLive()" id="btn-live">LIVE</button>
                     <button onclick="zoomIn()">+</button>
                     <button onclick="zoomOut()">-</button>
@@ -762,5 +770,201 @@ function loadOeePanel(){
 }
 loadOeePanel(); setInterval(loadOeePanel, 30000);
 loadLatestLayout();
+
+/* ========== Product Search & Locate Equipment ========== */
+(function(){
+    var searchInput = document.getElementById('product-search');
+    var dropdown = document.getElementById('product-search-dropdown');
+    var searchTimer = null;
+
+    searchInput.addEventListener('input', function(){
+        clearTimeout(searchTimer);
+        var keyword = this.value.trim();
+        if(!keyword) {
+            dropdown.style.display = 'none';
+            return;
+        }
+        searchTimer = setTimeout(function(){
+            doProductSearch(keyword);
+        }, 200);
+    });
+
+    searchInput.addEventListener('keydown', function(e){
+        if(e.key === 'Escape') {
+            dropdown.style.display = 'none';
+            this.blur();
+        }
+        if(e.key === 'Enter') {
+            e.preventDefault();
+            var first = dropdown.querySelector('.ps-item');
+            if(first) first.click();
+        }
+    });
+
+    function doProductSearch(keyword) {
+        if(!liveEqData) {
+            dropdown.innerHTML = '<div class="no-data" style="padding:12px;">数据未加载，请等待LIVE启动</div>';
+            dropdown.style.display = 'block';
+            return;
+        }
+
+        var kw = keyword.toLowerCase();
+        var matches = [];
+        for(var id in liveEqData) {
+            if(!liveEqData.hasOwnProperty(id)) continue;
+            var eq = liveEqData[id];
+            var pn = (eq.product_name || '').toLowerCase();
+            var on = (eq.order_no || '').toLowerCase();
+            var en = (eq.name || '').toLowerCase();
+            var ec = (eq.code || '').toLowerCase();
+            var proc = (eq.process_name || '').toLowerCase();
+            if(pn.indexOf(kw) !== -1 || on.indexOf(kw) !== -1 || en.indexOf(kw) !== -1 || ec.indexOf(kw) !== -1 || proc.indexOf(kw) !== -1) {
+                matches.push(eq);
+            }
+        }
+
+        if(matches.length === 0) {
+            dropdown.innerHTML = '<div class="no-data" style="padding:12px;">未找到匹配产品或设备</div>';
+        } else {
+            var html = '';
+            for(var i = 0; i < matches.length; i++) {
+                var m = matches[i];
+                var statusLabel = {running:'运行中',idle:'待机',down:'故障',normal:'待机'}[m.status] || m.status;
+                var statusColor = {running:'#00e676',idle:'#ffd740',down:'#ff5252',normal:'#ffd740'}[m.status] || '#ffd740';
+                html += '<div class="ps-item" style="padding:10px 12px;cursor:pointer;border-bottom:1px solid rgba(79,195,247,0.1);transition:background .15s;" ' +
+                    'data-eq-id="' + m.id + '" ' +
+                    'onmouseenter="this.style.background=\'rgba(79,195,247,0.08)\'" ' +
+                    'onmouseleave="this.style.background=\'transparent\'">' +
+                    '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+                    '<span style="color:#fff;font-weight:600;font-size:12px;">' + escHtml(m.product_name || m.order_no || m.name || '--') + '</span>' +
+                    '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:' + statusColor + '22;color:' + statusColor + ';border:1px solid ' + statusColor + ';">' + statusLabel + '</span>' +
+                    '</div>' +
+                    '<div style="color:#8eafc4;font-size:11px;margin-top:3px;">' +
+                    '设备: ' + escHtml(m.name || m.code || '--') +
+                    '  |  工单: ' + escHtml(m.order_no || '--') +
+                    '  |  工序: ' + escHtml(m.process_name || '--') +
+                    '</div></div>';
+            }
+            dropdown.innerHTML = html;
+        }
+        dropdown.style.display = 'block';
+
+        // Bind click events to locate equipment
+        var items = dropdown.querySelectorAll('.ps-item');
+        for(var j = 0; j < items.length; j++) {
+            items[j].addEventListener('click', function(){
+                var eqId = parseInt(this.getAttribute('data-eq-id'));
+                locateEquipment(eqId);
+                dropdown.style.display = 'none';
+                searchInput.value = '';
+            });
+        }
+    }
+
+    function locateEquipment(eqId) {
+        // Find the fabric object with this customEqId
+        var targetObj = null;
+        planCanvas.forEachObject(function(obj){
+            if(obj.customEqId === eqId) {
+                targetObj = obj;
+            }
+            // Also check _liveEq for live-updated objects
+            if(obj._liveEq && obj._liveEq.id === eqId) {
+                targetObj = obj;
+            }
+        });
+
+        if(!targetObj) {
+            // Fallback: try to find by _liveEq (parent group)
+            planCanvas.forEachObject(function(obj){
+                if(!targetObj && obj._liveEq && obj._liveEq.id === eqId) {
+                    targetObj = obj;
+                }
+            });
+        }
+
+        if(!targetObj) return;
+
+        // Flash highlight the equipment
+        var origFill = null, origStroke = null;
+        if(targetObj.type === 'group') {
+            targetObj.forEachObject(function(ch){
+                if(ch.type === 'rect') {
+                    origFill = ch.fill;
+                    origStroke = ch.stroke;
+                }
+            });
+        }
+
+        // Animate: zoom to target and flash
+        var zoomLevel = Math.max(1.5, planCanvas.getZoom());
+        var vpt = planCanvas.viewportTransform.slice();
+        var canvasW = planCanvas.getWidth();
+        var canvasH = planCanvas.getHeight();
+        vpt[4] = canvasW / 2 - targetObj.left * zoomLevel - (targetObj.width || 80) * zoomLevel / 2;
+        vpt[5] = canvasH / 2 - targetObj.top * zoomLevel - (targetObj.height || 50) * zoomLevel / 2;
+        planCanvas.setViewportTransform([zoomLevel, 0, 0, zoomLevel, vpt[4], vpt[5]]);
+
+        // Flash animation
+        var flashCount = 0;
+        var flashInterval = setInterval(function(){
+            flashCount++;
+            if(flashCount > 6) {
+                clearInterval(flashInterval);
+                // Restore original colors
+                if(targetObj.type === 'group') {
+                    targetObj.forEachObject(function(ch){
+                        if(ch.type === 'rect') {
+                            ch.set({fill: origFill || '#0d4a1a', stroke: origStroke || '#00e676'});
+                        }
+                    });
+                }
+                planCanvas.renderAll();
+                return;
+            }
+            if(flashCount % 2 === 1) {
+                if(targetObj.type === 'group') {
+                    targetObj.forEachObject(function(ch){
+                        if(ch.type === 'rect') {
+                            ch.set({fill: '#1a237e', stroke: '#448aff'});
+                        }
+                    });
+                }
+            } else {
+                if(targetObj.type === 'group') {
+                    targetObj.forEachObject(function(ch){
+                        if(ch.type === 'rect') {
+                            ch.set({fill: origFill || '#0d4a1a', stroke: origStroke || '#00e676'});
+                        }
+                    });
+                }
+            }
+            planCanvas.renderAll();
+        }, 300);
+
+        // Show hover card briefly
+        if(targetObj._liveEq) {
+            var eq = targetObj._liveEq;
+            var st = {running:'运行中',idle:'待机',down:'故障',normal:'待机'};
+            var sc = {running:'#00e676',idle:'#ffd740',down:'#ff5252',normal:'#ffd740'};
+            var card = document.getElementById('hover-card');
+            var sColor = sc[eq.status]||'#546e7a';
+            var sLabel = st[eq.status]||eq.status;
+            card.innerHTML = '<div class="hc-title">'+(eq.name||eq.code||"")+' <span class="hc-status" style="background:'+sColor+'22;color:'+sColor+';border:1px solid '+sColor+';">'+sLabel+'</span></div>' +
+                '<div class="hc-row"><span class="hc-label">班组</span><span class="hc-val">'+(eq.team_name||"--")+'</span></div>' +
+                '<div class="hc-row"><span class="hc-label">产品</span><span class="hc-val">'+(eq.product_name||"--")+'</span></div>' +
+                '<div class="hc-row"><span class="hc-label">工单</span><span class="hc-val">'+(eq.order_no||"--")+'</span></div>' +
+                '<div class="hc-row"><span class="hc-label">工序</span><span class="hc-val">'+(eq.process_name||"--")+'</span></div>' +
+                '<div class="hc-row"><span class="hc-label">产量</span><span class="hc-val">'+(eq.report_qty!=null?eq.report_qty:"--")+'</span></div>' +
+                '<div class="hc-row"><span class="hc-label">效率</span><span class="hc-val">'+(eq.efficiency!=null?eq.efficiency+"%":"--")+'</span></div>';
+            card.style.display = 'block';
+            var wrap = document.getElementById('plan-wrap');
+            var rect = wrap ? wrap.getBoundingClientRect() : {left:0,top:0};
+            card.style.left = (canvasW / 2 + 20) + 'px';
+            card.style.top = (canvasH / 2) + 'px';
+            setTimeout(function(){ card.style.display = 'none'; }, 3000);
+        }
+    }
+})();
 </script>
 {% endblock %}
