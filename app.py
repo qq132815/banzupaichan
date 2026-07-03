@@ -1848,6 +1848,7 @@ def api_semi_finished_output():
                  LEFT JOIN personnel p ON r.operator = p.name
                  LEFT JOIN teams t ON p.team_id = t.id
                  WHERE r.create_time >= ?
+                   AND (r.excluded IS NULL OR r.excluded = 0)
                  ORDER BY r.create_time DESC""", (cutoff,))
     all_reports = c.fetchall()
 
@@ -2287,6 +2288,9 @@ def api_work_reports():
         like = "%" + q + "%"
         sql += " AND (r.order_no LIKE ? OR r.product_code LIKE ? OR r.product_name LIKE ? OR r.process_name LIKE ? OR r.operator LIKE ?)"
         params.extend([like, like, like, like, like])
+    show_excluded = request.args.get('show_excluded', '0') == '1'
+    if not show_excluded:
+        sql += " AND (r.excluded IS NULL OR r.excluded = 0)"
     sql += " ORDER BY r.create_time DESC"
     return jsonify(paginate_query(sql, params, page, page_size))
 
@@ -2328,6 +2332,7 @@ def api_work_reports_export():
         like = "%" + q + "%"
         sql += " AND (r.order_no LIKE ? OR r.product_code LIKE ? OR r.product_name LIKE ? OR r.process_name LIKE ? OR r.operator LIKE ?)"
         params.extend([like, like, like, like, like])
+    sql += " AND (r.excluded IS NULL OR r.excluded = 0)"
     sql += " ORDER BY r.create_time DESC"
 
     conn = get_connection()
@@ -2361,6 +2366,86 @@ def api_work_reports_clear():
     conn = get_connection()
     c = conn.cursor()
     c.execute("DELETE FROM work_reports")
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/work-reports/check-anomalies', methods=['POST'])
+@login_required
+@planner_required
+def api_work_reports_check_anomalies():
+    data = request.json or {}
+    capacity_max = float(data.get('capacity_max', 10000))
+    capacity_min = float(data.get('capacity_min', 0)) if data.get('capacity_min') else None
+    hours_max = float(data.get('hours_max', 24))
+    hours_min = float(data.get('hours_min', 0.01))
+    check_zero_qty = data.get('check_zero_qty', True)
+
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, order_no, product_code, product_name, process_name, report_qty, report_hours, efficiency, equipment, operator, start_time, end_time, good_qty, bad_qty, good_rate, weld_count, attendance_note, create_time FROM work_reports ORDER BY create_time DESC")
+    rows = c.fetchall()
+    cols = [d[0] for d in c.description]
+    conn.close()
+
+    anomalies = []
+    for row in rows:
+        r = dict(zip(cols, row))
+        reasons = []
+        qty = r.get('report_qty') or 0
+        hours = r.get('report_hours') or 0
+
+        # 产能异常
+        if hours > 0 and qty > 0:
+            cap = qty / hours
+            if cap > capacity_max:
+                reasons.append('产能异常(%.0f/H)' % cap)
+            if capacity_min and cap < capacity_min:
+                reasons.append('产能偏低(%.1f/H)' % cap)
+
+        # 工时异常
+        if hours > hours_max:
+            reasons.append('工时异常(%.2fh)' % hours)
+        if hours > 0 and hours < hours_min and qty > 0:
+            reasons.append('工时过短(%.2fh)' % hours)
+
+        # 零产量
+        if check_zero_qty and hours > 0 and qty == 0:
+            reasons.append('有工时无产量')
+
+        if reasons:
+            r['_anomaly_reasons'] = '; '.join(reasons)
+            anomalies.append(r)
+
+    return jsonify({'ok': True, 'total': len(anomalies), 'data': anomalies})
+
+@app.route('/api/work-reports/batch-exclude', methods=['POST'])
+@login_required
+@planner_required
+def api_work_reports_batch_exclude():
+    data = request.json or {}
+    ids = data.get('ids', [])
+    exclude = data.get('exclude', True)
+    if not ids:
+        return jsonify({'error': '未选择记录'}), 400
+    conn = get_connection()
+    c = conn.cursor()
+    placeholders = ','.join('?' * len(ids))
+    c.execute("UPDATE work_reports SET excluded = ? WHERE id IN (%s)" % placeholders, [1 if exclude else 0] + ids)
+    updated = c.rowcount
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True, 'updated': updated})
+
+@app.route('/api/work-reports/<int:rid>/exclude', methods=['POST'])
+@login_required
+@planner_required
+def api_work_report_exclude(rid):
+    data = request.json or {}
+    exclude = data.get('exclude', True)
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE work_reports SET excluded = ? WHERE id = ?", [1 if exclude else 0, rid])
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -2813,16 +2898,18 @@ def _sync_available_equipment_for_standard_hour(cursor, row, equipment_maps, rea
               AND TRIM(COALESCE(process_name, '')) = ?
               AND equipment IS NOT NULL
               AND TRIM(equipment) != ''
+              AND (excluded IS NULL OR excluded = 0)
         """, (product_name, process_name))
         report_rows = cursor.fetchall()
         if not report_rows and product_code:
             cursor.execute("""
                 SELECT DISTINCT equipment
-                FROM work_reports
-                WHERE TRIM(COALESCE(product_code, '')) = ?
-                  AND TRIM(COALESCE(process_name, '')) = ?
-                  AND equipment IS NOT NULL
-                  AND TRIM(equipment) != ''
+            FROM work_reports
+            WHERE TRIM(COALESCE(product_code, '')) = ?
+              AND TRIM(COALESCE(process_name, '')) = ?
+              AND equipment IS NOT NULL
+              AND TRIM(equipment) != ''
+              AND (excluded IS NULL OR excluded = 0)
             """, (product_code, process_name))
             report_rows = cursor.fetchall()
         names = []
@@ -2864,7 +2951,7 @@ def _refresh_standard_hours_cache():
 
     # 批量查报工数据
     report_map = {}
-    c.execute("SELECT product_code, process_name, report_qty, report_hours FROM work_reports WHERE report_hours > 0")
+    c.execute("SELECT product_code, process_name, report_qty, report_hours FROM work_reports WHERE report_hours > 0 AND (excluded IS NULL OR excluded = 0)")
     for rpt in c.fetchall():
         k = (rpt[0], rpt[1])
         if k not in report_map: report_map[k] = []
@@ -2875,14 +2962,14 @@ def _refresh_standard_hours_cache():
     equipment_maps = _build_standard_equipment_maps(c)
     equip_by_name = {}
     equip_by_code = {}
-    c.execute("SELECT DISTINCT TRIM(COALESCE(product_name,'')), TRIM(COALESCE(process_name,'')), TRIM(COALESCE(equipment,'')) FROM work_reports WHERE equipment IS NOT NULL AND TRIM(equipment) != '' AND process_name IS NOT NULL")
+    c.execute("SELECT DISTINCT TRIM(COALESCE(product_name,'')), TRIM(COALESCE(process_name,'')), TRIM(COALESCE(equipment,'')) FROM work_reports WHERE equipment IS NOT NULL AND TRIM(equipment) != '' AND process_name IS NOT NULL AND (excluded IS NULL OR excluded = 0)")
     for er in c.fetchall():
         pn_, proc, eq = er[0], er[1], er[2]
         if pn_ and proc:
             k = (pn_, proc)
             if k not in equip_by_name: equip_by_name[k] = set()
             equip_by_name[k].add(eq)
-    c.execute("SELECT DISTINCT TRIM(COALESCE(product_code,'')), TRIM(COALESCE(process_name,'')), TRIM(COALESCE(equipment,'')) FROM work_reports WHERE equipment IS NOT NULL AND TRIM(equipment) != '' AND process_name IS NOT NULL AND product_code IS NOT NULL AND TRIM(product_code) != ''")
+    c.execute("SELECT DISTINCT TRIM(COALESCE(product_code,'')), TRIM(COALESCE(process_name,'')), TRIM(COALESCE(equipment,'')) FROM work_reports WHERE equipment IS NOT NULL AND TRIM(equipment) != '' AND process_name IS NOT NULL AND product_code IS NOT NULL AND TRIM(product_code) != '' AND (excluded IS NULL OR excluded = 0)")
     for er in c.fetchall():
         pc_, proc, eq = er[0], er[1], er[2]
         if pc_ and proc:
@@ -2893,14 +2980,14 @@ def _refresh_standard_hours_cache():
     # 批量查焊点（按产品+工序收集所有不重复值，逗号拼接）
     weld_by_name = {}
     weld_by_code = {}
-    c.execute("SELECT TRIM(COALESCE(product_name,'')), TRIM(COALESCE(process_name,'')), weld_count FROM work_reports WHERE process_name IS NOT NULL AND weld_count IS NOT NULL AND weld_count > 0")
+    c.execute("SELECT TRIM(COALESCE(product_name,'')), TRIM(COALESCE(process_name,'')), weld_count FROM work_reports WHERE process_name IS NOT NULL AND weld_count IS NOT NULL AND weld_count > 0 AND (excluded IS NULL OR excluded = 0)")
     for er in c.fetchall():
         pn_, proc, wc = er[0], er[1], er[2]
         if pn_ and proc:
             k = (pn_, proc)
             if k not in weld_by_name: weld_by_name[k] = set()
             weld_by_name[k].add(str(int(wc)) if wc == int(wc) else str(wc))
-    c.execute("SELECT TRIM(COALESCE(product_code,'')), TRIM(COALESCE(process_name,'')), weld_count FROM work_reports WHERE process_name IS NOT NULL AND weld_count IS NOT NULL AND weld_count > 0 AND product_code IS NOT NULL AND TRIM(product_code) != ''")
+    c.execute("SELECT TRIM(COALESCE(product_code,'')), TRIM(COALESCE(process_name,'')), weld_count FROM work_reports WHERE process_name IS NOT NULL AND weld_count IS NOT NULL AND weld_count > 0 AND product_code IS NOT NULL AND TRIM(product_code) != '' AND (excluded IS NULL OR excluded = 0)")
     for er in c.fetchall():
         pc_, proc, wc = er[0], er[1], er[2]
         if pc_ and proc:
@@ -2962,7 +3049,7 @@ def _refresh_standard_hours_cache():
             SELECT DISTINCT product_code, process_name FROM schedules WHERE capacity_per_hour > 0
         ) s ON sh.product_code = s.product_code AND sh.process_name = s.process_name
         LEFT JOIN (
-            SELECT DISTINCT product_code, process_name FROM work_reports WHERE report_hours > 0
+            SELECT DISTINCT product_code, process_name FROM work_reports WHERE report_hours > 0 AND (excluded IS NULL OR excluded = 0)
         ) wr ON sh.product_code = wr.product_code AND sh.process_name = wr.process_name
         WHERE 1=1""" + exclude_filter
     c.execute(progress_sql)
@@ -3108,10 +3195,12 @@ def _refresh_equipment_status():
                 FROM work_reports
                 WHERE equipment IS NOT NULL AND equipment != ''
                   AND date(create_time) = date('now','localtime')
+                  AND (excluded IS NULL OR excluded = 0)
                 GROUP BY equipment
             ) latest ON wr.equipment = latest.equipment AND wr.create_time = latest.max_time
             WHERE wr.equipment IS NOT NULL AND wr.equipment != ''
               AND wr.order_no IS NOT NULL AND wr.order_no != ''
+              AND (wr.excluded IS NULL OR wr.excluded = 0)
         """)
         latest_reports = c.fetchall()
         import unicodedata as _ud
@@ -3205,26 +3294,26 @@ def _recalculate_work_report_efficiency():
             caps = [r[0] for r in c.fetchall()]
             cap = sum(caps) / len(caps) if caps else 0
         elif baseline == 2:
-            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0", (pc, pn))
+            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0 AND (excluded IS NULL OR excluded = 0)", (pc, pn))
             reports = c.fetchall()
             if reports:
                 caps = [r[0]/r[1] for r in reports if r[1] > 0]
                 cap = sum(caps) / len(caps) if caps else 0
         elif baseline == 3:
-            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0", (pc, pn))
+            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0 AND (excluded IS NULL OR excluded = 0)", (pc, pn))
             reports = c.fetchall()
             if reports:
                 caps = [r[0]/r[1] for r in reports if r[1] > 0]
                 cap = max(caps) if caps else 0
         elif baseline == 4:
-            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0", (pc, pn))
+            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0 AND (excluded IS NULL OR excluded = 0)", (pc, pn))
             reports = c.fetchall()
             if reports:
                 caps = [r[0]/r[1] for r in reports if r[1] > 0]
                 cap = min(caps) if caps else 0
         if cap > 0:
             capacity_map[(pc, pn)] = cap
-    c.execute("SELECT id, product_code, process_name, report_qty, report_hours FROM work_reports WHERE report_hours > 0 AND report_qty > 0")
+    c.execute("SELECT id, product_code, process_name, report_qty, report_hours FROM work_reports WHERE report_hours > 0 AND report_qty > 0 AND (excluded IS NULL OR excluded = 0)")
     reports = c.fetchall()
     updated = 0
     for rid, pc, pn, qty, hrs in reports:
@@ -3257,26 +3346,26 @@ def api_recalculate_efficiency():
             caps = [r[0] for r in c.fetchall()]
             cap = sum(caps) / len(caps) if caps else 0
         elif baseline == 2:
-            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0", (pc, pn))
+            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0 AND (excluded IS NULL OR excluded = 0)", (pc, pn))
             reports = c.fetchall()
             if reports:
                 caps = [r[0]/r[1] for r in reports if r[1] > 0]
                 cap = sum(caps) / len(caps) if caps else 0
         elif baseline == 3:
-            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0", (pc, pn))
+            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0 AND (excluded IS NULL OR excluded = 0)", (pc, pn))
             reports = c.fetchall()
             if reports:
                 caps = [r[0]/r[1] for r in reports if r[1] > 0]
                 cap = max(caps) if caps else 0
         elif baseline == 4:
-            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0", (pc, pn))
+            c.execute("SELECT report_qty, report_hours FROM work_reports WHERE product_code=? AND process_name=? AND report_hours > 0 AND report_qty > 0 AND (excluded IS NULL OR excluded = 0)", (pc, pn))
             reports = c.fetchall()
             if reports:
                 caps = [r[0]/r[1] for r in reports if r[1] > 0]
                 cap = min(caps) if caps else 0
         if cap > 0:
             capacity_map[(pc, pn)] = cap
-    c.execute("SELECT id, product_code, process_name, report_qty, report_hours FROM work_reports WHERE report_hours > 0 AND report_qty > 0")
+    c.execute("SELECT id, product_code, process_name, report_qty, report_hours FROM work_reports WHERE report_hours > 0 AND report_qty > 0 AND (excluded IS NULL OR excluded = 0)")
     reports = c.fetchall()
     updated = 0
     for rid, pc, pn, qty, hrs in reports:
@@ -3347,7 +3436,7 @@ def _expand_reports_with_attendance_note(date_from, date_to):
     conn = get_connection()
     c = conn.cursor()
     c.execute("""SELECT operator, attendance_note, report_qty, report_hours, good_qty, efficiency, create_time
-        FROM work_reports WHERE create_time BETWEEN ? AND ? AND report_hours > 0""",
+        FROM work_reports WHERE create_time BETWEEN ? AND ? AND report_hours > 0 AND (excluded IS NULL OR excluded = 0)""",
         (date_from + ' 00:00:00', date_to + ' 23:59:59'))
     rows = c.fetchall()
     conn.close()
@@ -3389,7 +3478,7 @@ def _expand_personal_report_by_date(name, date_from, date_to):
     conn = get_connection()
     c = conn.cursor()
     c.execute("""SELECT operator, attendance_note, report_qty, report_hours, good_qty, efficiency, create_time
-        FROM work_reports WHERE create_time BETWEEN ? AND ? AND report_hours > 0""",
+        FROM work_reports WHERE create_time BETWEEN ? AND ? AND report_hours > 0 AND (excluded IS NULL OR excluded = 0)""",
         (date_from + ' 00:00:00', date_to + ' 23:59:59'))
     rows = c.fetchall()
     conn.close()
@@ -3538,7 +3627,7 @@ def api_report_personal():
     # Get work reports with efficiency
     c.execute("""SELECT create_time, SUM(report_qty), SUM(report_hours), SUM(good_qty),
         AVG(CASE WHEN efficiency > 0 THEN efficiency END) as avg_eff
-        FROM work_reports WHERE operator=? AND create_time BETWEEN ? AND ? AND report_hours > 0
+        FROM work_reports WHERE operator=? AND create_time BETWEEN ? AND ? AND report_hours > 0 AND (excluded IS NULL OR excluded = 0)
         GROUP BY SUBSTR(create_time, 1, 10)""",
         (name, date_from + ' 00:00:00', date_to + ' 23:59:59'))
     report_data = {}
@@ -4305,7 +4394,7 @@ def api_statistics():
     all_schedules = c.fetchall()
 
     # 4. Bulk load work_reports for date range
-    c.execute("SELECT product_code, process_name, report_qty, report_hours, create_time FROM work_reports WHERE create_time BETWEEN ? AND ?",
+    c.execute("SELECT product_code, process_name, report_qty, report_hours, create_time FROM work_reports WHERE create_time BETWEEN ? AND ? AND (excluded IS NULL OR excluded = 0)",
               (date_from + ' 00:00:00', date_to + ' 23:59:59'))
     all_reports = c.fetchall()
     conn.close()
@@ -4403,6 +4492,7 @@ def api_plan_today_progress():
         INNER JOIN processes pr ON wr.process_name=pr.process_name
         INNER JOIN teams p ON pr.team_name LIKE '%' || p.name || '%'
         WHERE wr.create_time LIKE ? AND wr.report_hours > 0
+          AND (wr.excluded IS NULL OR wr.excluded = 0)
         GROUP BY p.id""", (today + '%',))
     actual_by_team = {r[0]: {'actual_qty': r[1] or 0, 'actual_hours': r[2] or 0} for r in c.fetchall()}
 
@@ -4466,6 +4556,7 @@ def api_plan_gantt(plan_id):
         INNER JOIN processes pr ON wr.process_name=pr.process_name
         INNER JOIN teams t ON pr.team_name LIKE '%' || t.name || '%'
         WHERE t.id=? AND wr.create_time LIKE ? AND wr.report_hours > 0
+          AND (wr.excluded IS NULL OR wr.excluded = 0)
         GROUP BY wr.process_name, wr.equipment, wr.order_no""",
               (team_id, plan_date + '%'))
     reports = [dict(row) for row in c.fetchall()]
@@ -4511,6 +4602,7 @@ def api_plan_today_gantt(team_id):
         INNER JOIN processes pr ON wr.process_name=pr.process_name
         INNER JOIN teams t ON pr.team_name LIKE '%' || t.name || '%'
         WHERE t.id=? AND wr.create_time LIKE ?
+          AND (wr.excluded IS NULL OR wr.excluded = 0)
         ORDER BY wr.start_time""",
               (team_id, today + '%'))
     reports = [dict(row) for row in c.fetchall()]
@@ -4581,7 +4673,8 @@ def api_plan_completion_list():
                 FROM work_reports wr
                 INNER JOIN processes pr ON wr.process_name=pr.process_name
                 INNER JOIN teams t ON pr.team_name LIKE '%' || t.name || '%'
-                WHERE t.id=? AND wr.create_time LIKE ? AND wr.report_hours > 0""",
+                WHERE t.id=? AND wr.create_time LIKE ? AND wr.report_hours > 0
+                  AND (wr.excluded IS NULL OR wr.excluded = 0)""",
                       (p['team_id'], p['plan_date'] + '%'))
             r = c.fetchone()
             p['completed_qty'] = r[0] or 0 if r else 0
@@ -4689,6 +4782,7 @@ def _build_reports_by_proc_date(date_from, date_to):
         AVG(CASE WHEN efficiency > 0 THEN efficiency END)
         FROM work_reports
         WHERE create_time BETWEEN ? AND ?
+          AND (excluded IS NULL OR excluded = 0)
         GROUP BY process_name, dt""",
               (date_from + ' 00:00:00', date_to + ' 23:59:59'))
     result = {}
@@ -4989,10 +5083,12 @@ def api_workshop_3d_status():
                 FROM work_reports
                 WHERE equipment IS NOT NULL AND TRIM(equipment) != ''
                   AND create_time >= date('now', 'localtime')
+                  AND (excluded IS NULL OR excluded = 0)
                 GROUP BY equipment
             ) latest ON wr.equipment = latest.equipment AND wr.create_time = latest.max_time
             WHERE wr.equipment IS NOT NULL AND TRIM(wr.equipment) != ''
               AND wr.create_time >= date('now', 'localtime')
+              AND (wr.excluded IS NULL OR wr.excluded = 0)
             GROUP BY wr.equipment
         """)
         report_map = {}
@@ -5507,7 +5603,7 @@ def _check_material_alerts():
 
     # Step 2: Build work_reports index
     c.execute("SELECT order_no, process_name, COUNT(*), MAX(create_time), MAX(good_qty) "
-              "FROM work_reports GROUP BY order_no, process_name")
+              "FROM work_reports WHERE (excluded IS NULL OR excluded = 0) GROUP BY order_no, process_name")
     report_map = {}
     for r in c.fetchall():
         report_map[(r[0], r[1])] = {"count": r[2], "latest_time": r[3], "qty": r[4]}

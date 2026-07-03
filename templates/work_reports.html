@@ -1,23 +1,42 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block content %}
 <div class="page-header">
 <h1>📋 报工数据</h1>
 </div>
-<div class="toolbar">
+<div class="toolbar" id="normal-toolbar">
 <input type="text" id="search" placeholder="搜索工单号/产品编号/工序/人员..." oninput="window._page=1;loadData()" style="width:260px">
 <input type="date" id="date-from" onchange="window._page=1;loadData()" title="开始日期">
 <input type="date" id="date-to" onchange="window._page=1;loadData()" title="结束日期">
-<div style="margin-left:auto;display:flex;gap:8px">
+<div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+<label class="readonly-hide" style="font-size:12px;color:#374151;cursor:pointer;white-space:nowrap"><input type="checkbox" id="show-excluded" onchange="window._page=1;loadData()"> 显示已排除</label>
+<button class="btn btn-warning readonly-hide" onclick="showAnomalyPanel()">🔍 异常检测</button>
 <button class="btn btn-outline readonly-hide" onclick="doExport()">📤 导出</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/work-reports', function(){setTimeout(function(){loadData();api('/api/recalculate-efficiency',{method:'POST'}).then(function(d){toast('已重新计算效率，更新 '+d.updated+' 条记录','success');}).catch(function(){});}, 500);})">📥 导入</button>
 <button class="btn btn-danger readonly-hide" onclick="clearData()">🗑️ 清空</button>
+</div>
+</div>
+<div class="toolbar" id="anomaly-toolbar" style="display:none;background:#fff7ed">
+<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <label style="font-weight:600;color:#ea580c;white-space:nowrap">异常检测模式</label>
+    <label style="font-size:12px;color:#374151">产能上限</label><input type="number" id="a-cap-max" value="10000" style="width:80px;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:12px">
+    <label style="font-size:12px;color:#374151">产能下限</label><input type="number" id="a-cap-min" placeholder="空" style="width:60px;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:12px">
+    <label style="font-size:12px;color:#374151">工时上限</label><input type="number" id="a-hours-max" value="24" step="1" style="width:70px;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:12px">
+    <label style="font-size:12px;color:#374151">工时下限</label><input type="number" id="a-hours-min" value="0.01" step="0.01" style="width:70px;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:12px">
+    <label style="font-size:12px;color:#374151;cursor:pointer"><input type="checkbox" id="a-zero-qty" checked> 零产量检查</label>
+    <button class="btn btn-warning btn-sm" onclick="runAnomalyCheck()">开始检测</button>
+    <span id="anomaly-count" style="font-size:12px;color:#ea580c;font-weight:600"></span>
+</div>
+<div style="display:flex;gap:8px;margin-left:auto">
+    <button class="btn btn-danger btn-sm" id="btn-batch-exclude" style="display:none" onclick="batchExclude(true)">🚫 标记排除</button>
+    <button class="btn btn-success btn-sm" id="btn-batch-restore" style="display:none" onclick="batchExclude(false)">✅ 取消排除</button>
+    <button class="btn btn-outline btn-sm" onclick="exitAnomalyMode()">退出检测</button>
 </div>
 </div>
 <div class="card">
 <div class="card-body">
 <div class="table-wrap">
 <table>
-<thead><tr><th>工单编号</th><th>产品编号</th><th>工序</th><th>报工数</th><th>良品数</th><th>不良数</th><th>良品率</th><th>焊点</th><th>生产人员</th><th>设备</th><th>开始时间</th><th>结束时间</th><th>时长</th><th>生产效率</th><th>出勤人员备注</th><th>状态</th></tr></thead>
+<thead><tr id="thead-row"><th>工单编号</th><th>产品编号</th><th>工序</th><th>报工数</th><th>良品数</th><th>不良数</th><th>良品率</th><th>焊点</th><th>生产人员</th><th>设备</th><th>开始时间</th><th>结束时间</th><th>时长</th><th>生产效率</th><th>出勤人员备注</th><th>状态</th><th class="readonly-hide">操作</th></tr></thead>
 <tbody id="tbody"></tbody>
 </table>
 </div>
@@ -28,6 +47,8 @@
 {% block scripts %}
 <script>
 window._page=1;window._pageSize=50;window._total=0;
+var anomalyMode=false;
+var anomalyData=[];
 
 function loadData(){
     var q=document.getElementById("search").value;
@@ -37,6 +58,7 @@ function loadData(){
     if(q)url+="&q="+encodeURIComponent(q);
     if(dateFrom)url+="&date_from="+encodeURIComponent(dateFrom);
     if(dateTo)url+="&date_to="+encodeURIComponent(dateTo);
+    if(document.getElementById("show-excluded").checked)url+="&show_excluded=1";
     fetch(url).then(function(r){return r.json()}).then(function(resp){
         var d=resp.data||resp;window._total=resp.total||d.length;
         renderPagination('wr-pagination',resp.page||1,resp.total_pages||1,'loadData');
@@ -46,7 +68,7 @@ function loadData(){
             var st=r.approve_status==='已通过'?'<span class="badge badge-green">已通过</span>':r.approve_status==='已驳回'?'<span class="badge badge-red">已驳回</span>':'<span class="badge badge-gray">'+(r.approve_status||'-')+'</span>';
             tr.innerHTML='<td>'+(r.order_no||'')+'</td>'
                 +'<td>'+(r.product_code||'')+'</td>'
-                                +'<td>'+(r.process_name||'')+'</td>'
+                +'<td>'+(r.process_name||'')+'</td>'
                 +'<td><strong>'+(r.report_qty||0)+'</strong></td>'
                 +'<td>'+(r.good_qty||0)+'</td>'
                 +'<td>'+(r.bad_qty||0)+'</td>'
@@ -56,15 +78,159 @@ function loadData(){
                 +'<td>'+(r.equipment||'')+'</td>'
                 +'<td>'+(r.start_time||'')+'</td>'
                 +'<td>'+(r.end_time||'')+'</td>'
-                +'<td>'+(r.report_hours||0)+'</td>'+'<td>'+(r.efficiency>0?r.efficiency+'%':'<span style="color:#9ca3af">-</span>')+'</td>'
+                +'<td>'+(r.report_hours||0)+'</td>'
+                +'<td>'+(r.efficiency>0?r.efficiency+'%':'<span style="color:#9ca3af">-</span>')+'</td>'
                 +'<td>'+(r.attendance_note||'')+'</td>'
-                +'<td>'+st+'</td>';
+                +'<td>'+st+'</td>'
+                +'<td class="readonly-hide">'+(r.excluded?'<button class="btn btn-xs" style="background:#dcfce7;color:#16a34a;border:1px solid #86efac;font-size:11px;padding:2px 8px;cursor:pointer" onclick="restoreRow('+r.id+',this)">取消排除</button>':'<button class="btn btn-xs" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:11px;padding:2px 8px;cursor:pointer" onclick="excludeRow('+r.id+',this)">排除</button>')+'</td>';
+            if(r.excluded){tr.style.background='#f3f4f6';tr.style.opacity='0.6';}
             tb.appendChild(tr);
         });
     });
 }
 
+function renderRow(r){
+    var tr=document.createElement("tr");
+    tr.setAttribute("data-id", r.id);
+    var st=r.approve_status==='已通过'?'<span class="badge badge-green">已通过</span>':r.approve_status==='已驳回'?'<span class="badge badge-red">已驳回</span>':'<span class="badge badge-gray">'+(r.approve_status||'-')+'</span>';
+    tr.innerHTML='<td><input type="checkbox" class="anomaly-cb" data-id="'+r.id+'"></td>'
+        +'<td>'+(r.order_no||'')+'</td>'
+        +'<td>'+(r.product_code||'')+'</td>'
+        +'<td>'+(r.process_name||'')+'</td>'
+        +'<td><strong>'+(r.report_qty||0)+'</strong></td>'
+        +'<td>'+(r.good_qty||0)+'</td>'
+        +'<td>'+(r.bad_qty||0)+'</td>'
+        +'<td>'+(r.good_rate||'')+'</td>'
+        +'<td>'+(r.weld_count||'')+'</td>'
+        +'<td>'+(r.operator||'')+'</td>'
+        +'<td>'+(r.equipment||'')+'</td>'
+        +'<td>'+(r.start_time||'')+'</td>'
+        +'<td>'+(r.end_time||'')+'</td>'
+        +'<td>'+(r.report_hours||0)+'</td>'
+        +'<td>'+(r.efficiency>0?r.efficiency+'%':'<span style="color:#9ca3af">-</span>')+'</td>'
+        +'<td>'+(r.attendance_note||'')+'</td>'
+        +'<td>'+st+'</td>'
+        +'<td style="color:#dc2626;font-size:11px;font-weight:600;white-space:nowrap">'+(r._anomaly_reasons||'')+'</td>';
+    return tr;
+}
+
+/* ===== Anomaly Mode ===== */
+function showAnomalyPanel(){
+    anomalyMode=true;
+    document.getElementById("normal-toolbar").style.display="none";
+    document.getElementById("anomaly-toolbar").style.display="flex";
+    document.getElementById("search").style.display="none";
+    document.getElementById("date-from").style.display="none";
+    document.getElementById("date-to").style.display="none";
+    // Update thead with checkbox + reason column
+    document.getElementById("thead-row").innerHTML='<th><input type="checkbox" id="anomaly-select-all"></th><th>工单编号</th><th>产品编号</th><th>工序</th><th>报工数</th><th>良品数</th><th>不良数</th><th>良品率</th><th>焊点</th><th>生产人员</th><th>设备</th><th>开始时间</th><th>结束时间</th><th>时长</th><th>生产效率</th><th>出勤人员备注</th><th>状态</th><th>异常原因</th>';
+    document.getElementById("wr-pagination").innerHTML="";
+    document.getElementById("tbody").innerHTML='<tr><td colspan="18" class="table-empty">请点击"开始检测"查询异常数据</td></tr>';
+}
+
+function exitAnomalyMode(){
+    anomalyMode=false;
+    anomalyData=[];
+    document.getElementById("normal-toolbar").style.display="flex";
+    document.getElementById("anomaly-toolbar").style.display="none";
+    document.getElementById("search").style.display="";
+    document.getElementById("date-from").style.display="";
+    document.getElementById("date-to").style.display="";
+    document.getElementById("btn-batch-exclude").style.display="none";
+    document.getElementById("btn-batch-restore").style.display="none";
+    document.getElementById("anomaly-count").textContent="";
+    document.getElementById("thead-row").innerHTML='<th>工单编号</th><th>产品编号</th><th>工序</th><th>报工数</th><th>良品数</th><th>不良数</th><th>良品率</th><th>焊点</th><th>生产人员</th><th>设备</th><th>开始时间</th><th>结束时间</th><th>时长</th><th>生产效率</th><th>出勤人员备注</th><th>状态</th><th class="readonly-hide">操作</th>';
+    loadData();
+}
+
+function runAnomalyCheck(){
+    var params={
+        capacity_max: document.getElementById("a-cap-max").value,
+        capacity_min: document.getElementById("a-cap-min").value||null,
+        hours_max: document.getElementById("a-hours-max").value,
+        hours_min: document.getElementById("a-hours-min").value,
+        check_zero_qty: document.getElementById("a-zero-qty").checked
+    };
+    document.getElementById("tbody").innerHTML='<tr><td colspan="18" class="table-empty">检测中...</td></tr>';
+    api('/api/work-reports/check-anomalies',{method:'POST',body:params}).then(function(resp){
+        anomalyData=resp.data||[];
+        var tb=document.getElementById("tbody");
+        tb.innerHTML="";
+        document.getElementById("anomaly-count").textContent="共 "+resp.total+" 条异常";
+        document.getElementById("btn-batch-exclude").style.display="";
+        document.getElementById("btn-batch-restore").style.display="";
+        if(anomalyData.length===0){
+            tb.innerHTML='<tr><td colspan="18" class="table-empty">未发现异常数据</td></tr>';
+            return;
+        }
+        for(var i=0;i<anomalyData.length;i++){
+            var tr=renderRow(anomalyData[i]);
+            tr.style.background="#fef2f2";
+            tb.appendChild(tr);
+        }
+        // Select all toggle
+        document.getElementById("anomaly-select-all").onchange=function(){
+            var checked=this.checked;
+            var cbs=document.querySelectorAll(".anomaly-cb");
+            for(var j=0;j<cbs.length;j++) cbs[j].checked=checked;
+        };
+    }).catch(function(e){
+        toast(e.error||'检测失败','error');
+    });
+}
+
+function excludeRow(id, btn){
+    if(!confirm('确定排除这条报工记录？排除后将不参与所有计算。'))return;
+    api('/api/work-reports/'+id+'/exclude',{method:'POST',body:{exclude:true}}).then(function(){
+        toast('已排除','success');
+        var tr=btn.parentNode.parentNode;
+        tr.style.background='#f3f4f6';
+        tr.style.opacity='0.5';
+        btn.textContent='已排除';
+        btn.disabled=true;
+        btn.style.background='#e5e7eb';
+        btn.style.color='#9ca3af';
+        btn.style.borderColor='#d1d5db';
+    }).catch(function(){toast('操作失败','error');});
+}
+
+function restoreRow(id, btn){
+    if(!confirm('确定取消排除这条报工记录？'))return;
+    api('/api/work-reports/'+id+'/exclude',{method:'POST',body:{exclude:false}}).then(function(){
+        toast('已取消排除','success');
+        loadData();
+    }).catch(function(){toast('操作失败','error');});
+}
+
+function batchExclude(exclude){
+    var cbs=document.querySelectorAll(".anomaly-cb:checked");
+    if(cbs.length===0){toast('请先勾选要操作的记录','warning');return;}
+    var ids=[];
+    for(var i=0;i<cbs.length;i++) ids.push(parseInt(cbs[i].getAttribute("data-id")));
+    var action=exclude?'排除':'取消排除';
+    if(!confirm('确定'+action+'选中的 '+ids.length+' 条记录？'))return;
+    api('/api/work-reports/batch-exclude',{method:'POST',body:{ids:ids,exclude:exclude}}).then(function(resp){
+        toast('已'+action+' '+resp.updated+' 条记录','success');
+        anomalyData=anomalyData.filter(function(r){return ids.indexOf(r.id)<0;});
+        // Re-render
+        var tb=document.getElementById("tbody");tb.innerHTML="";
+        document.getElementById("anomaly-count").textContent="共 "+anomalyData.length+" 条异常";
+        if(anomalyData.length===0){
+            tb.innerHTML='<tr><td colspan="18" class="table-empty">所有异常已处理</td></tr>';
+            document.getElementById("btn-batch-exclude").style.display="none";
+            document.getElementById("btn-batch-restore").style.display="none";
+            return;
+        }
+        for(var i=0;i<anomalyData.length;i++){
+            var tr=renderRow(anomalyData[i]);
+            tr.style.background="#fef2f2";
+            tb.appendChild(tr);
+        }
+    }).catch(function(){toast('操作失败','error');});
+}
+
 function doExport(){
+    if(anomalyMode){toast('请先退出异常检测模式再导出','warning');return;}
     var q=document.getElementById("search").value;
     var dateFrom=document.getElementById("date-from").value;
     var dateTo=document.getElementById("date-to").value;
@@ -85,4 +251,3 @@ function clearData(){
 loadData();
 </script>
 {% endblock %}
-
