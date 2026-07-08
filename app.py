@@ -1931,6 +1931,231 @@ def api_process_route_delete(rid):
     conn.close()
     return jsonify({'ok': True})
 
+# ========== Work Hours Summary ==========
+@app.route('/work-hours-summary-page')
+@login_required
+@planner_required
+def work_hours_summary_page():
+    return render_template('work_hours_summary.html')
+
+@app.route('/api/work-hours-summary')
+@login_required
+@planner_required
+def api_work_hours_summary():
+    parent_product = request.args.get('parent_product', '').strip()
+    team_filter = request.args.get('team', '').strip()
+    capacity_type = request.args.get('capacity_type', 'avg').strip()
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
+    conn = get_connection()
+    c = conn.cursor()
+
+    # 1. 获取需要去重的产品编码列表
+    product_codes = []
+    if parent_product:
+        # 模糊匹配：支持输入编码前缀
+        like = '%' + parent_product + '%'
+        c.execute("SELECT DISTINCT child_product_code FROM bom WHERE parent_product_code LIKE ? AND child_product_code IS NOT NULL AND TRIM(child_product_code) != ''", (like,))
+        product_codes = [r[0] for r in c.fetchall()]
+        # 父产品本身也加入
+        c.execute("SELECT DISTINCT parent_product_code FROM bom WHERE parent_product_code LIKE ? LIMIT 1", (like,))
+        row = c.fetchone()
+        if row and row[0] not in product_codes:
+            product_codes.insert(0, row[0])
+    else:
+        # 所有BOM中的产品（父+子，去重）
+        c.execute("""SELECT DISTINCT product_code FROM (
+            SELECT parent_product_code as product_code FROM bom WHERE parent_product_code IS NOT NULL AND TRIM(parent_product_code) != ''
+            UNION
+            SELECT child_product_code as product_code FROM bom WHERE child_product_code IS NOT NULL AND TRIM(child_product_code) != ''
+        )""")
+        product_codes = [r[0] for r in c.fetchall()]
+
+    if not product_codes:
+        conn.close()
+        return jsonify({'ok': True, 'data': [], 'max_processes': 0})
+
+    # 2. 批量获取工艺路线
+    placeholders = ','.join('?' * len(product_codes))
+    c.execute("SELECT product_code, process_list FROM process_routes WHERE product_code IN (%s)" % placeholders, product_codes)
+    route_map = {}
+    for row in c.fetchall():
+        pc, plist = row[0], row[1]
+        if plist:
+            processes = [p.strip() for p in plist.split(',') if p.strip()]
+            route_map[pc] = processes
+
+    # 3. 班组筛选：只保留包含该班组工序的产品
+    if team_filter:
+        # 查询该班组负责的所有工序
+        c.execute("SELECT process_name FROM processes WHERE team_name LIKE ?", ('%' + team_filter + '%',))
+        team_processes = set(r[0].strip() for r in c.fetchall() if r[0])
+        # 筛选工艺路线
+        filtered = {}
+        for pc, processes in route_map.items():
+            for proc in processes:
+                if proc in team_processes:
+                    filtered[pc] = processes
+                    break
+        route_map = filtered
+
+    # 3. 从缓存 JSON 获取产能数据
+    capacity_field = 'report_' + capacity_type if capacity_type in ('avg', 'max', 'min') else 'report_avg'
+    capacity_map = {}
+    try:
+        with open(_STANDARD_HOURS_CACHE, 'r', encoding='utf-8') as f:
+            cache = json.load(f)
+        for item in cache.get('data', []):
+            key = (item.get('product_code'), item.get('process_name'))
+            capacity_map[key] = item.get(capacity_field, 0)
+    except Exception:
+        pass
+
+    # 4. 组装数据
+    data = []
+    max_processes = 0
+    for pc in product_codes:
+        if pc not in route_map:
+            continue
+        processes = route_map[pc]
+        if not processes:
+            continue
+        proc_data = []
+        total_seconds = 0
+        for proc_name in processes:
+            cap = capacity_map.get((pc, proc_name), 0)
+            seconds = round(3600 / cap, 1) if cap and cap > 0 else None
+            if seconds:
+                total_seconds += seconds
+            proc_data.append({'name': proc_name, 'capacity': cap, 'seconds': seconds})
+        if proc_data:
+            max_processes = max(max_processes, len(proc_data))
+            # 获取产品名称
+            c.execute("SELECT DISTINCT parent_product_name FROM bom WHERE parent_product_code = ? LIMIT 1", (pc,))
+            pn_row = c.fetchone()
+            if not pn_row:
+                c.execute("SELECT DISTINCT child_product_name FROM bom WHERE child_product_code = ? LIMIT 1", (pc,))
+                pn_row = c.fetchone()
+            product_name = pn_row[0] if pn_row else pc
+            data.append({
+                'product_code': pc,
+                'product_name': product_name,
+                'total_seconds': round(total_seconds, 1),
+                'processes': proc_data
+            })
+
+    conn.close()
+    total = len(data)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_data = data[start:end]
+    return jsonify({'ok': True, 'data': page_data, 'max_processes': max_processes, 'total': total, 'page': page, 'page_size': page_size, 'total_pages': total_pages})
+
+@app.route('/api/work-hours-summary/bom-expand')
+@login_required
+@planner_required
+def api_work_hours_summary_bom_expand():
+    parent_product = request.args.get('parent_product', '').strip()
+    capacity_type = request.args.get('capacity_type', 'avg').strip()
+    if not parent_product:
+        return jsonify({'ok': True, 'data': [], 'max_processes': 0})
+    conn = get_connection()
+    c = conn.cursor()
+
+    # 1. 递归获取BOM树
+    def get_bom_tree(parent_code, level=0):
+        tree = []
+        c.execute("SELECT DISTINCT child_product_code, child_product_name, quantity, unit FROM bom WHERE parent_product_code = ? AND child_product_code IS NOT NULL AND TRIM(child_product_code) != ''", (parent_code,))
+        for row in c.fetchall():
+            child_code, child_name, qty, unit = row[0], row[1], row[2], row[3]
+            tree.append({'code': child_code, 'name': child_name or child_code, 'quantity': qty, 'unit': unit, 'level': level + 1, 'children': get_bom_tree(child_code, level + 1)})
+        return tree
+
+    # 父产品本身
+    c.execute("SELECT DISTINCT parent_product_name FROM bom WHERE parent_product_code = ? LIMIT 1", (parent_product,))
+    pn_row = c.fetchone()
+    parent_name = pn_row[0] if pn_row else parent_product
+
+    tree = [{'code': parent_product, 'name': parent_name, 'quantity': 1, 'unit': '', 'level': 0, 'children': get_bom_tree(parent_product, 0)}]
+
+    # 2. 获取所有涉及的产品编码的工艺路线和产能
+    all_codes = set()
+    def collect_codes(nodes):
+        for n in nodes:
+            all_codes.add(n['code'])
+            collect_codes(n['children'])
+    collect_codes(tree)
+
+    # 批量获取工艺路线
+    code_list = list(all_codes)
+    placeholders = ','.join('?' * len(code_list))
+    route_map = {}
+    if code_list:
+        c.execute("SELECT product_code, process_list FROM process_routes WHERE product_code IN (%s)" % placeholders, code_list)
+        for row in c.fetchall():
+            pc, plist = row[0], row[1]
+            if plist:
+                route_map[pc] = [p.strip() for p in plist.split(',') if p.strip()]
+
+    # 从缓存获取产能
+    capacity_field = 'report_' + capacity_type if capacity_type in ('avg', 'max', 'min') else 'report_avg'
+    capacity_map = {}
+    try:
+        with open(_STANDARD_HOURS_CACHE, 'r', encoding='utf-8') as f:
+            cache = json.load(f)
+        for item in cache.get('data', []):
+            key = (item.get('product_code'), item.get('process_name'))
+            capacity_map[key] = item.get(capacity_field, 0)
+    except Exception:
+        pass
+
+    # 3. 组装树形数据
+    max_processes = 0
+    def enrich_nodes(nodes):
+        nonlocal max_processes
+        result = []
+        for n in nodes:
+            code = n['code']
+            processes = route_map.get(code, [])
+            proc_data = []
+            total_seconds = 0
+            for proc_name in processes:
+                cap = capacity_map.get((code, proc_name), 0)
+                seconds = round(3600 / cap, 1) if cap and cap > 0 else None
+                if seconds:
+                    total_seconds += seconds
+                proc_data.append({'name': proc_name, 'capacity': cap, 'seconds': seconds})
+            if len(proc_data) > max_processes:
+                max_processes = len(proc_data)
+            result.append({
+                'code': code,
+                'name': n['name'],
+                'quantity': n['quantity'],
+                'unit': n['unit'],
+                'level': n['level'],
+                'total_seconds': round(total_seconds, 1),
+                'processes': proc_data
+            })
+            # 递归处理子件
+            result.extend(enrich_nodes(n['children']))
+        return result
+
+    flat_data = enrich_nodes(tree)
+    conn.close()
+    return jsonify({'ok': True, 'data': flat_data, 'max_processes': max_processes})
+
+@app.route('/api/bom-parent-products')
+@login_required
+@planner_required
+def api_bom_parent_products():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT DISTINCT parent_product_code FROM bom WHERE parent_product_code IS NOT NULL AND TRIM(parent_product_code) != '' ORDER BY parent_product_code")
+    data = [r[0] for r in c.fetchall()]
+    conn.close()
+    return jsonify({'ok': True, 'data': data})
+
 # ========== Production Cycles CRUD ==========
 @app.route('/api/production-cycles')
 @login_required

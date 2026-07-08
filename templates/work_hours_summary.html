@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header"><h1>⏱️ 工时汇总</h1></div>
+<div class="toolbar">
+<input type="text" id="parent-product" placeholder="产品编码（如 ALZWJ43029）" onkeydown="if(event.key==='Enter'){window._page=1;loadData()}" style="width:220px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;background:#fff">
+<select id="team-filter" onchange="window._page=1;loadData()" style="width:140px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;background:#fff">
+    <option value="">全部班组</option>
+</select>
+<select id="capacity-type" onchange="window._page=1;loadData()" style="width:100px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;background:#fff">
+    <option value="avg">平均产能</option>
+    <option value="max">最高产能</option>
+    <option value="min">最低产能</option>
+</select>
+<button class="btn btn-primary" onclick="window._page=1;loadData()">🔍 搜索</button>
+<div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+    <input type="text" id="bom-product" placeholder="输入父产品编码..." onkeydown="if(event.key==='Enter'){}" oninput="showBomSuggestions()" autocomplete="off" style="width:220px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;background:#fff">
+    <button class="btn btn-warning" onclick="loadBomExpand()">📊 按BOM展开</button>
+    <button class="btn btn-outline" onclick="doExport()">📤 导出</button>
+</div>
+</div>
+<div id="bom-suggestions" style="display:none;position:absolute;z-index:100;background:#fff;border:1px solid #d1d5db;border-radius:6px;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.15);min-width:220px"></div>
+<div class="card">
+<div class="card-body" style="padding:0">
+<div id="table-scroll-wrap" style="max-height:70vh;overflow:auto;border:1px solid #e2e8f0;border-radius:8px">
+<table id="summary-table" style="border-collapse:separate;border-spacing:0;width:100%;font-size:13px">
+<thead id="thead"></thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+</div>
+</div>
+<div id="whs-pagination" style="margin-top:12px"></div>
+{% endblock %}
+{% block scripts %}
+<style>
+#summary-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    font-size: 13px;
+}
+#summary-table thead tr:first-child th:first-child {
+    border-top-left-radius: 8px;
+}
+#summary-table thead tr:first-child th:last-child {
+    border-top-right-radius: 8px;
+}
+#summary-table thead th {
+    background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+    color: #fff;
+    font-weight: 600;
+    font-size: 12px;
+    padding: 10px 14px;
+    text-align: center;
+    border-right: 1px solid rgba(255,255,255,0.15);
+    letter-spacing: 0.3px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+#summary-table thead th:last-child {
+    border-right: none;
+}
+#summary-table thead tr:last-child th {
+    background: linear-gradient(180deg, #60a5fa 0%, #3b82f6 100%);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 7px 14px;
+    position: sticky;
+    top: 37px;
+    z-index: 1;
+}
+#summary-table tbody td {
+    padding: 10px 12px;
+    text-align: center;
+    border-bottom: 1px solid #e2e8f0;
+    border-right: 1px solid #f1f5f9;
+    background: #ffffff;
+    transition: background 0.15s;
+}
+#summary-table tbody td:last-child {
+    border-right: none;
+}
+#summary-table tbody tr:hover td {
+    background: #dbeafe !important;
+}
+#summary-table .product-name {
+    text-align: left;
+    font-weight: 600;
+    color: #1e293b;
+    min-width: 140px;
+    max-width: 280px;
+}
+#summary-table .total-time {
+    font-weight: 700;
+    color: #c2410c;
+    font-size: 14px;
+    min-width: 70px;
+}
+#summary-table .proc-name {
+    font-weight: 500;
+    color: #2563eb;
+    min-width: 90px;
+    text-align: center;
+    font-size: 12px;
+}
+#summary-table .proc-seconds {
+    font-weight: 600;
+    color: #059669;
+    min-width: 70px;
+    font-size: 13px;
+}
+#summary-table .empty-cell {
+    background: #ffffff !important;
+    color: #cbd5e1;
+}
+</style>
+<script>
+window._page=1;window._pageSize=50;
+
+function loadTeams(){
+    fetch('/api/teams').then(function(r){return r.json()}).then(function(teams){
+        var sel=document.getElementById('team-filter');
+        var old=sel.value;
+        sel.innerHTML='<option value="">全部班组</option>';
+        (teams||[]).forEach(function(t){
+            var opt=document.createElement('option');
+            opt.value=t.name;
+            opt.textContent=t.name;
+            sel.appendChild(opt);
+        });
+        sel.value=old;
+    }).catch(function(){});
+}
+
+function loadData(){
+    var parent=document.getElementById('parent-product').value;
+    var team=document.getElementById('team-filter').value;
+    var capType=document.getElementById('capacity-type').value;
+    var url='/api/work-hours-summary?page='+window._page+'&page_size='+window._pageSize+'&capacity_type='+capType;
+    if(parent)url+='&parent_product='+encodeURIComponent(parent);
+    if(team)url+='&team='+encodeURIComponent(team);
+    document.getElementById('tbody').innerHTML='<tr><td colspan="100" style="padding:40px;color:#64748b">加载中...</td></tr>';
+    fetch(url).then(function(r){return r.json()}).then(function(resp){
+        var data=resp.data||[];
+        var maxP=resp.max_processes||0;
+        renderTable(data, maxP);
+        window._total=resp.total||0;
+        renderPagination('whs-pagination', resp.page||1, resp.total_pages||1, 'loadData');
+    }).catch(function(e){
+        document.getElementById('tbody').innerHTML='<tr><td colspan="100" style="padding:40px;color:#dc2626">加载失败</td></tr>';
+    });
+}
+
+function renderTable(data, maxP){
+    var thead=document.getElementById('thead');
+    var tbody=document.getElementById('tbody');
+    thead.innerHTML='';
+    tbody.innerHTML='';
+
+    if(!data||data.length===0){
+        tbody.innerHTML='<tr><td colspan="100" style="padding:40px;color:#64748b">暂无数据</td></tr>';
+        return;
+    }
+
+    // Build header: row1 = 产品名称(rowspan2) + 总用时(rowspan2) + 工序1, 工序2...
+    //              row2 = (spanned) + (spanned) + 节拍, 节拍...
+    var h1=document.createElement('tr');
+    var h2=document.createElement('tr');
+    h1.innerHTML='<th class="rowspan-th" rowspan="2" style="min-width:180px">产品名称</th>'
+        +'<th class="rowspan-th" rowspan="2" style="min-width:80px">总用时</th>';
+    for(var i=0;i<maxP;i++){
+        h1.innerHTML+='<th>工序'+(i+1)+'</th>';
+        h2.innerHTML+='<th>节拍(秒/个)</th>';
+    }
+    thead.appendChild(h1);
+    thead.appendChild(h2);
+
+    // Build body
+    for(var j=0;j<data.length;j++){
+        var item=data[j];
+        var tr1=document.createElement('tr');
+        var tr2=document.createElement('tr');
+
+        // Row 1: product name + total + process names
+        tr1.innerHTML='<td class="product-name" rowspan="2">'+escHtml(item.product_name||item.product_code)+'</td>'
+            +'<td class="total-time" rowspan="2">'+(item.total_seconds||0)+'s</td>';
+        for(var k=0;k<maxP;k++){
+            var proc=item.processes[k];
+            if(proc){
+                tr1.innerHTML+='<td class="proc-name">'+escHtml(proc.name)+'</td>';
+            }else{
+                tr1.innerHTML+='<td class="empty-cell"></td>';
+            }
+        }
+
+        // Row 2: process seconds
+        for(var k=0;k<maxP;k++){
+            var proc=item.processes[k];
+            if(proc&&proc.seconds){
+                tr2.innerHTML+='<td class="proc-seconds">'+proc.seconds+'s</td>';
+            }else{
+                tr2.innerHTML+='<td class="empty-cell">'+(proc&&proc.seconds===0?'-':'')+'</td>';
+            }
+        }
+
+        tbody.appendChild(tr1);
+        tbody.appendChild(tr2);
+    }
+}
+
+function escHtml(s){
+    if(!s)return'';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function doExport(){
+    toast('导出功能开发中','info');
+}
+
+/* ===== BOM Expand ===== */
+var bomParentList=[];
+
+function loadBomParentList(){
+    fetch('/api/bom-parent-products').then(function(r){return r.json()}).then(function(resp){
+        bomParentList=resp.data||[];
+    }).catch(function(){});
+}
+
+function showBomSuggestions(){
+    var input=document.getElementById('bom-product');
+    var val=input.value.trim();
+    var box=document.getElementById('bom-suggestions');
+    if(!val){box.style.display='none';return;}
+    var matches=bomParentList.filter(function(p){return p.toLowerCase().indexOf(val.toLowerCase())>=0;}).slice(0,10);
+    if(!matches.length){box.style.display='none';return;}
+    var rect=input.getBoundingClientRect();
+    box.style.left=rect.left+'px';
+    box.style.top=(rect.bottom+2)+'px';
+    box.style.width=rect.width+'px';
+    box.style.display='block';
+    box.innerHTML=matches.map(function(m){
+        return '<div style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9" onmousedown="selectBomProduct(\''+m.replace(/'/g,"\\'")+'\')">'+escHtml(m)+'</div>';
+    }).join('');
+}
+
+function selectBomProduct(val){
+    document.getElementById('bom-product').value=val;
+    document.getElementById('bom-suggestions').style.display='none';
+}
+
+document.addEventListener('click',function(e){
+    if(!e.target.closest('#bom-product')&&!e.target.closest('#bom-suggestions')){
+        document.getElementById('bom-suggestions').style.display='none';
+    }
+});
+
+function loadBomExpand(){
+    var val=document.getElementById('bom-product').value.trim();
+    if(!val){toast('请输入父产品编码','warning');return;}
+    document.getElementById('bom-suggestions').style.display='none';
+    document.getElementById('tbody').innerHTML='<tr><td colspan="100" style="padding:40px;color:#64748b">加载中...</td></tr>';
+    document.getElementById('whs-pagination').innerHTML='';
+    fetch('/api/work-hours-summary/bom-expand?parent_product='+encodeURIComponent(val)+'&capacity_type='+document.getElementById('capacity-type').value).then(function(r){return r.json()}).then(function(resp){
+        var data=resp.data||[];
+        var maxP=resp.max_processes||0;
+        renderBomTree(data, maxP);
+    }).catch(function(){
+        document.getElementById('tbody').innerHTML='<tr><td colspan="100" style="padding:40px;color:#dc2626">加载失败</td></tr>';
+    });
+}
+
+function renderBomTree(data, maxP){
+    var thead=document.getElementById('thead');
+    var tbody=document.getElementById('tbody');
+    thead.innerHTML='';
+    tbody.innerHTML='';
+    if(!data||data.length===0){
+        tbody.innerHTML='<tr><td colspan="100" style="padding:40px;color:#64748b">暂无数据</td></tr>';
+        return;
+    }
+    // Header: 层级 | 产品名称 | 用量 | 总用时 | 工序1... | 节拍行
+    var h1=document.createElement('tr');
+    var h2=document.createElement('tr');
+    h1.innerHTML='<th rowspan="2" style="min-width:30px;width:30px;background:#e2e8f0;font-weight:700;color:#1e293b">层级</th>'
+        +'<th rowspan="2" style="min-width:260px;background:#e2e8f0;font-weight:700;color:#1e293b">产品名称</th>'
+        +'<th rowspan="2" style="min-width:50px;width:50px;background:#e2e8f0;font-weight:700;color:#1e293b">用量</th>'
+        +'<th rowspan="2" style="min-width:70px;width:70px;background:#e2e8f0;font-weight:700;color:#1e293b">总用时</th>';
+    for(var i=0;i<maxP;i++){
+        h1.innerHTML+='<th>工序'+(i+1)+'</th>';
+        h2.innerHTML+='<th>节拍(秒/个)</th>';
+    }
+    thead.appendChild(h1);
+    thead.appendChild(h2);
+
+    for(var j=0;j<data.length;j++){
+        var item=data[j];
+        var tr1=document.createElement('tr');
+        var tr2=document.createElement('tr');
+        var indent=item.level*20;
+        var isParent=item.level===0;
+        var bgStyle=isParent?'background:#eff6ff;':'';
+
+        tr1.innerHTML='<td rowspan="2" style="'+bgStyle+'font-size:12px;color:#64748b">'+(isParent?'':item.level)+'</td>'
+            +'<td class="product-name" rowspan="2" style="padding-left:'+(12+indent)+'px;'+(isParent?'font-weight:700;font-size:14px;':'')+'">'+escHtml(item.name)+'</td>'
+            +'<td rowspan="2" style="'+bgStyle+'font-size:12px">'+(item.quantity||'')+(item.unit?' '+item.unit:'')+'</td>'
+            +'<td class="total-time" rowspan="2">'+(item.total_seconds||0)+'s</td>';
+        for(var k=0;k<maxP;k++){
+            var proc=item.processes[k];
+            if(proc){
+                tr1.innerHTML+='<td class="proc-name">'+escHtml(proc.name)+'</td>';
+            }else{
+                tr1.innerHTML+='<td class="empty-cell"></td>';
+            }
+        }
+        for(var k=0;k<maxP;k++){
+            var proc=item.processes[k];
+            if(proc&&proc.seconds){
+                tr2.innerHTML+='<td class="proc-seconds">'+proc.seconds+'s</td>';
+            }else{
+                tr2.innerHTML+='<td class="empty-cell"></td>';
+            }
+        }
+        tbody.appendChild(tr1);
+        tbody.appendChild(tr2);
+    }
+}
+
+loadBomParentList();
+loadTeams();
+loadData();
+</script>
+{% endblock %}
