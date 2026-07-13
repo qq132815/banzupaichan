@@ -3323,6 +3323,70 @@ def api_refresh_standard_hours_cache():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/standard-hours/report-details')
+@login_required
+def api_standard_hours_report_details():
+    """查询某产品+工序的所有报工记录，标记最高/最低产能来源"""
+    product_code = request.args.get('product_code', '').strip()
+    process_name = request.args.get('process_name', '').strip()
+    if not product_code or not process_name:
+        return jsonify({'ok': True, 'data': [], 'max_capacity': 0, 'min_capacity': 0})
+
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""SELECT id, product_code, product_name, process_name, order_no,
+                 operator, equipment, report_qty, report_hours, good_qty, bad_qty,
+                 start_time, end_time, create_time, excluded, related_no
+                 FROM work_reports
+                 WHERE product_code = ? AND process_name = ?
+                 AND report_hours > 0 AND report_qty > 0
+                 AND (excluded IS NULL OR excluded = 0)
+                 ORDER BY create_time DESC""", (product_code, process_name))
+    rows = c.fetchall()
+    conn.close()
+
+    records = []
+    caps = []
+    for r in rows:
+        cap = round(r[7] / r[8], 1) if r[8] and r[8] > 0 and r[7] and r[7] > 0 else 0
+        if cap > 0:
+            caps.append(cap)
+        records.append({
+            'id': r[0],
+            'product_code': r[1],
+            'product_name': r[2],
+            'process_name': r[3],
+            'order_no': r[4],
+            'operator': r[5],
+            'equipment': r[6],
+            'report_qty': r[7],
+            'report_hours': r[8],
+            'good_qty': r[9],
+            'bad_qty': r[10],
+            'start_time': r[11],
+            'end_time': r[12],
+            'create_time': r[13],
+            'excluded': r[14],
+            'related_no': r[15],
+            'capacity': cap
+        })
+
+    max_cap = max(caps) if caps else 0
+    min_cap = min(caps) if caps else 0
+
+    # 标记最高和最低
+    for rec in records:
+        rec['is_max'] = (rec['capacity'] == max_cap and max_cap > 0)
+        rec['is_min'] = (rec['capacity'] == min_cap and min_cap > 0)
+
+    return jsonify({
+        'ok': True,
+        'data': records,
+        'max_capacity': max_cap,
+        'min_capacity': min_cap,
+        'count': len(records)
+    })
+
 # Initial cache build on startup (background)
 def _startup_cache():
     try:

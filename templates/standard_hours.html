@@ -84,6 +84,12 @@
 <div class="modal-body" id="cap-detail-body" style="max-height:400px;overflow-y:auto"></div>
 </div>
 </div>
+<div class="modal-overlay" id="report-detail-modal">
+<div class="modal" style="max-width:900px">
+<div class="modal-header"><h3 id="rd-title">报工产能明细</h3><button class="modal-close" onclick="document.getElementById('report-detail-modal').classList.remove('show')">&times;</button></div>
+<div class="modal-body" id="report-detail-body" style="max-height:70vh;overflow-y:auto"></div>
+</div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -282,9 +288,69 @@ function loadData(){
                 +'<td>'+maxCap+'</td>'
                 +'<td>'+minCap+'</td>'
                 +'<td>'+escHtml(r.remark||'')+'</td>'
-                +'<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editItem('+r.id+')">编辑</button><button class="btn btn-danger btn-sm" onclick="deleteItem('+r.id+')">删除</button></div></td>';
+                +'<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editItem('+r.id+')">编辑</button><button class="btn btn-primary btn-sm" onclick="showReportDetail(\''+escHtml(r.product_code).replace(/'/g,"\\'")+'\',\''+escHtml(r.process_name).replace(/'/g,"\\'")+'\')">明细</button><button class="btn btn-danger btn-sm" onclick="deleteItem('+r.id+')">删除</button></div></td>';
             tb.appendChild(tr);
         }
+    });
+}
+
+function showReportDetail(productCode, processName){
+    var modal=document.getElementById('report-detail-modal');
+    var body=document.getElementById('report-detail-body');
+    document.getElementById('rd-title').textContent='报工产能明细 - '+productCode+' / '+processName;
+    body.innerHTML='<div style="text-align:center;padding:30px;color:#64748b">加载中...</div>';
+    modal.classList.add('show');
+    var url='/api/standard-hours/report-details?product_code='+encodeURIComponent(productCode)+'&process_name='+encodeURIComponent(processName);
+    fetch(url).then(function(r){return r.json()}).then(function(resp){
+        var data=resp.data||[];
+        if(!data.length){
+            body.innerHTML='<div style="text-align:center;padding:30px;color:#64748b">暂无报工数据</div>';
+            return;
+        }
+        var html='<div style="margin-bottom:12px;display:flex;gap:16px;font-size:13px">'
+            +'<span style="background:#dcfce7;color:#15803d;padding:4px 12px;border-radius:6px;font-weight:600">最高产能: '+resp.max_capacity+' 件/H</span>'
+            +'<span style="background:#fee2e2;color:#b91c1c;padding:4px 12px;border-radius:6px;font-weight:600">最低产能: '+resp.min_capacity+' 件/H</span>'
+            +'<span style="background:#f1f5f9;color:#475569;padding:4px 12px;border-radius:6px">共 '+resp.count+' 条报工</span>'
+            +'</div>';
+        html+='<table style="width:100%;border-collapse:collapse;font-size:12px">'
+            +'<thead><tr style="background:#f1f5f9">'
+            +'<th style="padding:8px;border:1px solid #e2e8f0">标记</th>'
+            +'<th style="padding:8px;border:1px solid #e2e8f0">报工时间</th>'
+            +'<th style="padding:8px;border:1px solid #e2e8f0">操作员</th>'
+            +'<th style="padding:8px;border:1px solid #e2e8f0">工单号</th>'
+            +'<th style="padding:8px;border:1px solid #e2e8f0">设备</th>'
+            +'<th style="padding:8px;border:1px solid #e2e8f0">报工数量</th>'
+            +'<th style="padding:8px;border:1px solid #e2e8f0">报工工时</th>'
+            +'<th style="padding:8px;border:1px solid #e2e8f0">合格/不良</th>'
+            +'<th style="padding:8px;border:1px solid #e2e8f0">产能(件/H)</th>'
+            +'</tr></thead><tbody>';
+        for(var i=0;i<data.length;i++){
+            var r=data[i];
+            var mark='';
+            var rowStyle='';
+            if(r.is_max){
+                mark='<span style="background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:4px;font-weight:600;font-size:11px">最高</span>';
+                rowStyle='background:#f0fdf4;';
+            }else if(r.is_min){
+                mark='<span style="background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:4px;font-weight:600;font-size:11px">最低</span>';
+                rowStyle='background:#fef2f2;';
+            }
+            html+='<tr style="'+rowStyle+'">'
+                +'<td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:center">'+mark+'</td>'
+                +'<td style="padding:6px 8px;border:1px solid #e2e8f0">'+escHtml(r.create_time||'')+'</td>'
+                +'<td style="padding:6px 8px;border:1px solid #e2e8f0">'+escHtml(r.operator||'')+'</td>'
+                +'<td style="padding:6px 8px;border:1px solid #e2e8f0">'+escHtml(r.order_no||'')+'</td>'
+                +'<td style="padding:6px 8px;border:1px solid #e2e8f0">'+escHtml(r.equipment||'')+'</td>'
+                +'<td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:right">'+r.report_qty+'</td>'
+                +'<td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:right">'+r.report_hours+'H</td>'
+                +'<td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:center">'+(r.good_qty||0)+' / '+(r.bad_qty||0)+'</td>'
+                +'<td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:right;font-weight:700;color:#2563eb">'+r.capacity+'</td>'
+                +'</tr>';
+        }
+        html+='</tbody></table>';
+        body.innerHTML=html;
+    }).catch(function(){
+        body.innerHTML='<div style="text-align:center;padding:30px;color:#dc2626">加载失败</div>';
     });
 }
 
