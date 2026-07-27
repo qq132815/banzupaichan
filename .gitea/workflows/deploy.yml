@@ -12,30 +12,15 @@ jobs:
       APP_DIR: D:\OA文件\班组排产系统\班组排产系统
 
     steps:
-      - name: Stop old process
-        shell: powershell
-        run: |
-          $port = $env:PORT
-          $line = netstat -ano | Select-String ":$port" | Select-String "LISTENING"
-          if ($line) {
-            $parts = $line -split '\s+' | Where-Object { $_ }
-            $procId = $parts[-1]
-            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 3
-          }
-
       - name: Git pull
         shell: powershell
         run: |
           $git = "D:\Program Files\Git\bin\git.exe"
-          $repo = "http://10.6.201.11:3001/magj/ProductionSchedulingSystem.git"
           Set-Location $env:APP_DIR
 
           if (-not (Test-Path "$env:APP_DIR\.git")) {
             & $git init
-            & $git remote add origin $repo
-          } else {
-            & $git remote set-url origin $repo
+            & $git remote add origin http://10.6.201.11:3001/magj/ProductionSchedulingSystem.git
           }
 
           & $git fetch origin
@@ -54,9 +39,7 @@ jobs:
           }
 
           if ($localMainExists) {
-            & $git checkout main
-            & $git reset --hard origin/main
-            & $git clean -fd -e "data/production.db" -e "data/production.db-shm" -e "data/production.db-wal"
+            & $git pull origin main --no-edit
           } else {
             & $git config user.email "deploy@local"
             & $git config user.name "Deploy Bot"
@@ -81,22 +64,30 @@ jobs:
           Set-Location $env:APP_DIR
           pip install -r requirements.txt
 
+      - name: Stop old process
+        shell: powershell
+        run: |
+          $port = $env:PORT
+          $line = netstat -ano | Select-String ":$port" | Select-String "LISTENING"
+          if ($line) {
+            $parts = $line -split '\s+' | Where-Object { $_ }
+            $procId = $parts[-1]
+            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+          }
+
       - name: Start new process
         shell: powershell
         run: |
           $dir = $env:APP_DIR
           $port = $env:PORT
           $logFile = Join-Path $dir "server.log"
-          $errFile = Join-Path $dir "server_err.log"
-          $proc = Start-Process python -ArgumentList "$dir\app.py" -WorkingDirectory $dir `
-            -WindowStyle Hidden -RedirectStandardOutput $logFile -RedirectStandardError $errFile -PassThru
-          Start-Sleep -Seconds 8
+          $proc = Start-Process cmd -WorkingDirectory $dir -WindowStyle Hidden `
+            -ArgumentList "/c python $dir\app.py > $logFile 2>&1" -PassThru
+          Start-Sleep -Seconds 5
           if ($proc.HasExited) {
-            Write-Host "=== STDOUT ==="
-            Get-Content $logFile -ErrorAction SilentlyContinue | Write-Host
-            Write-Host "=== STDERR ==="
-            Get-Content $errFile -ErrorAction SilentlyContinue | Write-Host
             Write-Error "Server exited with code $($proc.ExitCode)"
+            Get-Content $logFile -ErrorAction SilentlyContinue | Write-Host
             exit 1
           }
           Write-Host "Server PID $($proc.Id) started on port $port"
