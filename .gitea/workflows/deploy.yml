@@ -87,12 +87,16 @@ jobs:
           $dir = $env:APP_DIR
           $port = $env:PORT
           $logFile = Join-Path $dir "server.log"
-          $proc = Start-Process cmd -WorkingDirectory $dir -WindowStyle Hidden `
-            -ArgumentList "/c python $dir\app.py > $logFile 2>&1" -PassThru
-          Start-Sleep -Seconds 5
+          $errFile = Join-Path $dir "server_err.log"
+          $proc = Start-Process python -ArgumentList "$dir\app.py" -WorkingDirectory $dir `
+            -WindowStyle Hidden -RedirectStandardOutput $logFile -RedirectStandardError $errFile -PassThru
+          Start-Sleep -Seconds 8
           if ($proc.HasExited) {
-            Write-Error "Server exited with code $($proc.ExitCode)"
+            Write-Host "=== STDOUT ==="
             Get-Content $logFile -ErrorAction SilentlyContinue | Write-Host
+            Write-Host "=== STDERR ==="
+            Get-Content $errFile -ErrorAction SilentlyContinue | Write-Host
+            Write-Error "Server exited with code $($proc.ExitCode)"
             exit 1
           }
           Write-Host "Server PID $($proc.Id) started on port $port"
