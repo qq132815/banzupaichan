@@ -2697,7 +2697,71 @@ def api_import_work_reports():
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
+@app.route('/api/import/work-reports-from-path', methods=['POST'])
+@login_required
+@planner_required
+def api_import_work_reports_from_path():
+    """Import work reports from a local file path."""
+    from utils.excel import import_work_reports
+    filepath = request.json.get('filepath', '').strip() if request.json else ''
+    if not filepath or not os.path.exists(filepath):
+        return jsonify({'error': '文件不存在: ' + filepath}), 400
+    try:
+        count = import_work_reports(filepath)
+        _recalculate_work_report_efficiency()
+        try:
+            _refresh_equipment_status()
+        except Exception:
+            pass
+        return jsonify({'ok': True, 'success': True, 'count': count})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
 # ========== AI Assistant API ==========
+@app.route('/api/debug/db-check', methods=['GET'])
+@login_required
+def api_debug_db_check():
+    """Temporary debug endpoint to check frame_qty in database."""
+    conn = get_connection()
+    c = conn.cursor()
+    # Check if column exists
+    c.execute("PRAGMA table_info(work_reports)")
+    cols = [(r[1], r[2]) for r in c.fetchall()]
+    # Count non-zero frame_qty
+    try:
+        c.execute("SELECT COUNT(*) FROM work_reports WHERE frame_qty > 0")
+        non_zero = c.fetchone()[0]
+    except:
+        non_zero = -1
+    try:
+        c.execute("SELECT COUNT(*) FROM work_reports")
+        total = c.fetchone()[0]
+    except:
+        total = -1
+    # Sample rows with frame_qty
+    try:
+        c.execute("SELECT id, product_code, process_name, report_qty, frame_qty FROM work_reports WHERE frame_qty > 0 LIMIT 5")
+        samples = [{'id': r[0], 'product_code': r[1], 'process_name': r[2], 'report_qty': r[3], 'frame_qty': r[4]} for r in c.fetchall()]
+    except:
+        samples = []
+    # Check latest Excel file headers
+    excel_headers = []
+    try:
+        import openpyxl, glob
+        dl_dir = os.path.join(os.path.dirname(__file__), 'downloads')
+        files = sorted(glob.glob(os.path.join(dl_dir, 'work_reports_*.xlsx')), key=os.path.getmtime, reverse=True)
+        if files:
+            wb = openpyxl.load_workbook(files[0], read_only=True)
+            ws = wb.active
+            # Row 1 is merged title, Row 2 is headers
+            headers = [str(c.value or '').strip() for c in ws[2]] if ws.max_row >= 2 else []
+            excel_headers = headers
+            wb.close()
+    except Exception as ex:
+        excel_headers = ['Error: ' + str(ex)]
+    conn.close()
+    return jsonify({'columns': cols, 'non_zero_count': non_zero, 'total': total, 'samples': samples, 'excel_headers': excel_headers})
+
 @app.route('/api/ai/chat', methods=['POST'])
 @login_required
 def api_ai_chat():
@@ -3176,12 +3240,16 @@ def _refresh_standard_hours_cache():
 
     # 批量查报工数据
     report_map = {}
-    c.execute("SELECT product_code, process_name, report_qty, report_hours FROM work_reports WHERE report_hours > 0 AND (excluded IS NULL OR excluded = 0)")
+    frame_qty_map = {}
+    c.execute("SELECT product_code, process_name, report_qty, report_hours, frame_qty FROM work_reports WHERE report_hours > 0 AND (excluded IS NULL OR excluded = 0)")
     for rpt in c.fetchall():
         k = (rpt[0], rpt[1])
         if k not in report_map: report_map[k] = []
         if rpt[3] > 0 and rpt[2] > 0:
             report_map[k].append(round(rpt[2] / rpt[3], 1))
+        if rpt[4] and rpt[4] > 0:
+            if k not in frame_qty_map: frame_qty_map[k] = []
+            frame_qty_map[k].append(rpt[4])
 
     # 批量查可用设备
     equipment_maps = _build_standard_equipment_maps(c)
@@ -3238,6 +3306,9 @@ def _refresh_standard_hours_cache():
         row['report_max'] = max(caps) if caps else 0
         row['report_min'] = min(caps) if caps else 0
         row['report_count'] = len(caps)
+        # 装框量（取平均值）
+        frames = frame_qty_map.get((pc, pn), [])
+        row['frame_qty'] = round(sum(frames) / len(frames), 1) if frames else 0
         # 可用设备
         pn_name = (row.get('product_name') or '').strip()
         proc_name = (row.get('process_name') or '').strip()
@@ -3336,7 +3407,7 @@ def api_standard_hours_report_details():
     c = conn.cursor()
     c.execute("""SELECT id, product_code, product_name, process_name, order_no,
                  operator, equipment, report_qty, report_hours, good_qty, bad_qty,
-                 start_time, end_time, create_time, excluded, related_no
+                 start_time, end_time, create_time, excluded, related_no, frame_qty
                  FROM work_reports
                  WHERE product_code = ? AND process_name = ?
                  AND report_hours > 0 AND report_qty > 0
@@ -3368,6 +3439,7 @@ def api_standard_hours_report_details():
             'create_time': r[13],
             'excluded': r[14],
             'related_no': r[15],
+            'frame_qty': r[16],
             'capacity': cap
         })
 

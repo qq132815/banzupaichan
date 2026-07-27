@@ -94,6 +94,11 @@ def init_database():
     except sqlite3.OperationalError as e:
         if "duplicate column" not in str(e).lower():
             raise
+    try:
+        c.execute("ALTER TABLE work_reports ADD COLUMN frame_qty REAL DEFAULT 0")
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            raise
 
     c.execute("CREATE TABLE IF NOT EXISTS attendance (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, name TEXT NOT NULL, work_date TEXT NOT NULL, check_in TEXT, check_out TEXT, work_hours REAL DEFAULT 0, plan_hours REAL DEFAULT 8, is_overtime INTEGER DEFAULT 0, leave_type TEXT, created_at TEXT DEFAULT (datetime('now','localtime')), UNIQUE(user_id, work_date))")
 

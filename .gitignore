@@ -4,16 +4,22 @@ _tmp_*.py
 __pycache__/
 
 # Downloads (debug files, exported data)
-downloads/*.xlsx
-downloads/*.png
-downloads/*.html
-downloads/*.json
-downloads/*.txt
-downloads/*.xlsx
+downloads/
+exports/
+*.zip
 
-# Database
+# Database & runtime data
 data/production.db
+data/production_backup*.db
 data/chroma/
+data/download_progress.json
+data/standard_hours_cache.json
+data.db
+
+# Logs
+*.log
+server_stderr.log
+server_stdout.log
 
 # IDE
 .vscode/
@@ -25,16 +31,27 @@ scripts/debug_*.py
 scripts/tmp_*.py
 test_*.py
 tmp_*.ps1
+tmp_*.py
 schedule_backup.html
+patch_*.py
+noop.py
+temp_schedule.js
+screenshot_temp.js
 
 # Imported Excel files
 imports/*.xlsx
 
 # Screenshots
 screenshots/
+screenshot*.png
+debug_*.png
 
-# Backup databases
-data/production_backup*.db
+# Cookies / sessions
+cookie.txt
 
-# Temp scripts
-tmp_*.py
+# Excel data files (not part of source)
+*.xlsx
+
+# Test files
+test_modal.html
+模型测试/

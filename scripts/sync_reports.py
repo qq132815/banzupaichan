@@ -43,6 +43,7 @@ COL_RELATED_NO = 17      # 关联单据号
 COL_EQUIPMENT = 18       # 设备机台
 COL_WELD_COUNT = 19      # 焊点数量
 COL_ATTENDANCE_NOTE = 20 # 出勤人员备注
+COL_FRAME_QTY = 21       # 每（筐/车）容量
 
 
 def get_connection():
@@ -222,8 +223,8 @@ def parse_and_import(filepath):
             "INSERT INTO work_reports (order_no,product_code,product_name,process_name,"
             "report_qty,good_qty,bad_qty,report_unit,good_rate,operator,"
             "start_time,end_time,approve_status,approver,approve_time,"
-            "creator,create_time,related_no,equipment,report_hours,weld_count,attendance_note)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "creator,create_time,related_no,equipment,report_hours,weld_count,attendance_note,frame_qty)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (order_no,
              safe_str(row[COL_PRODUCT_CODE]),
              safe_str(row[COL_PRODUCT_NAME]),
@@ -245,7 +246,8 @@ def parse_and_import(filepath):
              safe_str(row[COL_EQUIPMENT]),
              report_hours,
              safe_float(row[COL_WELD_COUNT]),
-             safe_str(row[COL_ATTENDANCE_NOTE])))
+             safe_str(row[COL_ATTENDANCE_NOTE]),
+             safe_float(row[COL_FRAME_QTY]) if len(row) > COL_FRAME_QTY else 0))
         inserted += 1
 
     conn.commit()

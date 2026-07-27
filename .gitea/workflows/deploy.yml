@@ -1,0 +1,65 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, windows]
+    env:
+      APP_DIR: f:\Codex项目文件\班组排产系统
+      APP_PORT: "6002"
+      GIT_REMOTE: http://10.6.201.11:3001/magj/ProductionSchedulingSystem.git
+
+    steps:
+      - name: Git pull
+        shell: powershell
+        run: |
+          $git = "git"
+          if (Test-Path "$env:APP_DIR\.git") {
+            Set-Location $env:APP_DIR
+            & $git fetch origin
+            & $git reset --hard origin/main
+          } else {
+            New-Item -ItemType Directory -Force -Path $env:APP_DIR
+            Set-Location $env:APP_DIR
+            & $git init
+            & $git remote add origin $env:GIT_REMOTE
+            & $git fetch origin
+            & $git reset --hard origin/main
+            & $git branch --set-upstream-to=origin/main main
+          }
+
+      - name: Install dependencies
+        shell: powershell
+        run: |
+          Set-Location $env:APP_DIR
+          pip install -r requirements.txt
+
+      - name: Stop old process
+        shell: powershell
+        run: |
+          $port = $env:APP_PORT
+          $line = netstat -ano | Select-String ":$port" | Select-String "LISTENING"
+          if ($line) {
+            $parts = $line -split '\s+' | Where-Object { $_ }
+            $procId = $parts[-1]
+            Write-Host "Stopping process $procId on port $port"
+            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+          } else {
+            Write-Host "No process found on port $port"
+          }
+
+      - name: Start new process
+        shell: powershell
+        run: |
+          Set-Location $env:APP_DIR
+          $proc = Start-Process pythonw -WorkingDirectory $env:APP_DIR -ArgumentList "app.py" -PassThru
+          Start-Sleep -Seconds 3
+          if ($proc -and -not $proc.HasExited) {
+            Write-Host "Started process ID: $($proc.Id)"
+          } else {
+            Write-Host "Process may have failed to start"
+          }

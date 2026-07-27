@@ -59,6 +59,7 @@ def import_work_reports(filepath):
         "报工时长": "duration",
         "焊点数量": "weld_count",
         "出勤人员备注": "attendance_note",
+        "每（筐/车）容量": "frame_qty",
     }
 
     # Build column index map: db_field -> column_index
@@ -97,7 +98,7 @@ def import_work_reports(filepath):
                 skipped += 1
                 continue
             dur = fget(row, "duration")
-            c.execute("INSERT INTO work_reports (order_no,product_code,product_name,process_name,report_qty,good_qty,bad_qty,report_unit,good_rate,operator,start_time,end_time,approve_status,approver,approve_time,creator,create_time,related_no,equipment,report_hours,weld_count,attendance_note,is_overtime,import_time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO work_reports (order_no,product_code,product_name,process_name,report_qty,good_qty,bad_qty,report_unit,good_rate,operator,start_time,end_time,approve_status,approver,approve_time,creator,create_time,related_no,equipment,report_hours,weld_count,attendance_note,frame_qty,is_overtime,import_time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (won, sget(row,"product_code"), sget(row,"product_name"), pn,
                  fget(row,"quantity"), fget(row,"good_quantity"), fget(row,"bad_quantity"),
                  sget(row,"unit"), fget(row,"good_rate"), rep,
@@ -106,6 +107,7 @@ def import_work_reports(filepath):
                  sget(row,"approval_time"), sget(row,"creator"),
                  rpt, sget(row,"related_doc_no"), sget(row,"equipment"),
                  dur, fget(row,"weld_count"), sget(row,"attendance_note"),
+                 fget(row,"frame_qty"),
                  1 if dur > 9 else 0,
                  datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             inserted += 1

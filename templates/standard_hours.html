@@ -41,7 +41,7 @@
 <div class="card-body">
 <div class="table-wrap" style="max-height:calc(100vh - 320px);overflow-y:auto">
 <table>
-<thead><tr><th>产品名称</th><th>工序</th><th>班组</th><th>标准工时(分)</th><th>焊点</th><th>可用设备</th><th>排班产能(H)</th><th>报工平均产能(H)</th><th>报工最高产能(H)</th><th>报工最低产能(H)</th><th>备注</th><th>操作</th></tr></thead>
+<thead><tr><th>产品名称</th><th>工序</th><th>班组</th><th>标准工时(分)</th><th>焊点</th><th>可用设备</th><th>排班产能(H)</th><th>报工平均产能(H)</th><th>报工最高产能(H)</th><th>报工最低产能(H)</th><th>装框量</th><th>备注</th><th>操作</th></tr></thead>
 <tbody id="tbody"></tbody>
 </table>
 <div id="empty-msg" class="table-empty" style="display:none">暂无数据，点击“从工艺路线初始化”生成基础数据</div>
@@ -273,6 +273,7 @@ function loadData(){
             var avgCap=r.report_avg>0?escHtml(r.report_avg):'<span style="color:#9ca3af">-</span>';
             var maxCap=r.report_max>0?escHtml(r.report_max):'<span style="color:#9ca3af">-</span>';
             var minCap=r.report_min>0?escHtml(r.report_min):'<span style="color:#9ca3af">-</span>';
+            var frameQty=r.frame_qty>0?escHtml(r.frame_qty):'<span style="color:#9ca3af">-</span>';
             var equip=escHtml(r.available_equipment||'');
             if(!equip) equip='<span style="color:#9ca3af">-</span>';
             var weld=escHtml(r.weld_count||'');
@@ -287,6 +288,7 @@ function loadData(){
                 +'<td>'+avgCap+'</td>'
                 +'<td>'+maxCap+'</td>'
                 +'<td>'+minCap+'</td>'
+                +'<td>'+frameQty+'</td>'
                 +'<td>'+escHtml(r.remark||'')+'</td>'
                 +'<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editItem('+r.id+')">编辑</button><button class="btn btn-primary btn-sm" onclick="showReportDetail(\''+escHtml(r.product_code).replace(/'/g,"\\'")+'\',\''+escHtml(r.process_name).replace(/'/g,"\\'")+'\')">明细</button><button class="btn btn-danger btn-sm" onclick="deleteItem('+r.id+')">删除</button></div></td>';
             tb.appendChild(tr);
@@ -322,6 +324,7 @@ function showReportDetail(productCode, processName){
             +'<th style="padding:8px;border:1px solid #e2e8f0">报工数量</th>'
             +'<th style="padding:8px;border:1px solid #e2e8f0">报工工时</th>'
             +'<th style="padding:8px;border:1px solid #e2e8f0">合格/不良</th>'
+            +'<th style="padding:8px;border:1px solid #e2e8f0">装框量</th>'
             +'<th style="padding:8px;border:1px solid #e2e8f0">产能(件/H)</th>'
             +'</tr></thead><tbody>';
         for(var i=0;i<data.length;i++){
@@ -344,6 +347,7 @@ function showReportDetail(productCode, processName){
                 +'<td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:right">'+r.report_qty+'</td>'
                 +'<td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:right">'+r.report_hours+'H</td>'
                 +'<td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:center">'+(r.good_qty||0)+' / '+(r.bad_qty||0)+'</td>'
+                +'<td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:right">'+(r.frame_qty||'-')+'</td>'
                 +'<td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:right;font-weight:700;color:#2563eb">'+r.capacity+'</td>'
                 +'</tr>';
         }

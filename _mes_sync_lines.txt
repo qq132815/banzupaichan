@@ -1,0 +1,39 @@
+21: <button class="btn btn-primary" onclick="saveSyncSettings()" style="margin-top:8px">保存设置</button>
+32: <button class="btn btn-primary" id="btn-sync-orders" onclick="syncWorkOrders()">开始同步工单</button>
+33: <span id="orders-sync-status" style="margin-left:12px;font-size:13px"></span>
+34: <div id="orders-sync-detail" style="margin-top:8px;font-size:12px;color:#6b7280;display:none"></div>
+39: <button class="btn btn-primary" id="btn-sync-reports" onclick="syncReports()">开始同步报工</button>
+40: <span id="reports-sync-status" style="margin-left:12px;font-size:13px"></span>
+41: <div id="reports-sync-detail" style="margin-top:8px;font-size:12px;color:#6b7280;display:none"></div>
+65: <label style="font-size:13px;cursor:pointer"><input type="checkbox" id="att-auto-sync"> 每天 8:30 自动同步前一日考勤数据</label>
+68: <button class="btn btn-primary" onclick="saveAttendanceSettings()" style="margin-top:4px">保存考勤设置</button>
+77: <button class="btn btn-primary" id="btn-sync-attendance" onclick="syncAttendance()" style="height:38px">同步考勤</button>
+79: <span id="att-sync-status" style="font-size:13px"></span>
+80: <div id="att-sync-detail" style="margin-top:8px;font-size:12px;color:#6b7280;display:none"></div>
+81: <button class="btn btn-outline btn-sm" onclick="testAttendanceApi()" style="margin-top:12px;font-size:12px">🧪 测试API连接</button>
+94: <tbody id="sync-log-tbody"></tbody>
+96: <div id="sync-log-empty" class="table-empty" style="display:none">暂无同步记录</div>
+103:     fetch("/api/attendance/settings").then(function(r){return r.json()}).then(function(d){
+106:         document.getElementById("att-auto-sync").checked=d.auto_sync==="1";
+118:         auto_sync:document.getElementById("att-auto-sync").checked?"1":"0"
+120:     fetch("/api/attendance/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)})
+128: function syncWorkOrders(){
+129:     var btn=document.getElementById("btn-sync-orders");
+130:     var status=document.getElementById("orders-sync-status");
+131:     var detail=document.getElementById("orders-sync-detail");
+135:     fetch("/api/mes-sync/work-orders",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+142:             detail.textContent=d.error||"未知错误";
+151: function syncReports(){
+152:     var btn=document.getElementById("btn-sync-reports");
+153:     var status=document.getElementById("reports-sync-status");
+154:     var detail=document.getElementById("reports-sync-detail");
+158:     fetch("/api/mes-sync/reports",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+165:             detail.textContent=d.error||"未知错误";
+174: function syncAttendance(){
+175:     var btn=document.getElementById("btn-sync-attendance");
+176:     var status=document.getElementById("att-sync-status");
+177:     var detail=document.getElementById("att-sync-detail");
+184:     fetch("/api/attendance/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({date_from:dateFrom,date_to:dateTo})})
+192:             detail.textContent=d.error||"\u672a\u77e5\u9519\u8bef";
+205:     fetch("/api/attendance/test",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+209:             status.innerHTML='<span style="color:#dc2626">\u2717 '+(d.error||"\u8fde\u63a5\u5931\u8d25")+'</span>';

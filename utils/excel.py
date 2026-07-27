@@ -590,6 +590,7 @@ def import_work_reports(filepath):
         'report_hours': ['报工时长', '时长'],
         'weld_count': ['焊点数量', '焊点'],
         'attendance_note': ['出勤人员备注', '备注'],
+        'frame_qty': ['每（筐/车）容量', '装框量', '每框数量'],
     })
     conn = get_connection()
     c = conn.cursor()
@@ -647,13 +648,13 @@ def import_work_reports(filepath):
         c.execute("""INSERT INTO work_reports
             (report_qty, good_qty, bad_qty, report_unit, good_rate, operator, start_time, end_time,
              approve_status, approver, approve_time, creator, create_time, process_name, order_no,
-             product_code, product_name, related_no, equipment, report_hours, weld_count, attendance_note)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             product_code, product_name, related_no, equipment, report_hours, weld_count, attendance_note, frame_qty)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (report_qty, gf('good_qty'), gf('bad_qty'), gv('report_unit'), gv('good_rate'),
              gv('operator'), gv('start_time'), gv('end_time'), gv('approve_status'),
              gv('approver'), gv('approve_time'), gv('creator'), gv('create_time'),
              gv('process_name'), gv('order_no'), gv('product_code'), gv('product_name'),
-             gv('related_no'), gv('equipment'), report_hours, gf('weld_count'), gv('attendance_note')))
+             gv('related_no'), gv('equipment'), report_hours, gf('weld_count'), gv('attendance_note'), gf('frame_qty')))
         count += 1
     conn.commit()
     conn.close()
