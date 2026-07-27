@@ -16,11 +16,14 @@ jobs:
         shell: powershell
         run: |
           $git = "D:\Program Files\Git\bin\git.exe"
+          $repo = "http://10.6.201.11:3001/magj/ProductionSchedulingSystem.git"
           Set-Location $env:APP_DIR
 
           if (-not (Test-Path "$env:APP_DIR\.git")) {
             & $git init
-            & $git remote add origin http://10.6.201.11:3001/magj/ProductionSchedulingSystem.git
+            & $git remote add origin $repo
+          } else {
+            & $git remote set-url origin $repo
           }
 
           & $git fetch origin
