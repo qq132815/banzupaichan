@@ -8,27 +8,54 @@ jobs:
   deploy:
     runs-on: [self-hosted, windows]
     env:
+      PORT: 6002
       APP_DIR: D:\OA文件\班组排产系统\班组排产系统
-      APP_PORT: "6002"
-      GIT_REMOTE: http://10.6.201.11:3001/magj/ProductionSchedulingSystem.git
 
     steps:
       - name: Git pull
         shell: powershell
         run: |
-          $git = "git"
-          if (Test-Path "$env:APP_DIR\.git") {
-            Set-Location $env:APP_DIR
-            & $git fetch origin
-            & $git reset --hard origin/main
-          } else {
-            New-Item -ItemType Directory -Force -Path $env:APP_DIR
-            Set-Location $env:APP_DIR
+          $git = "D:\Program Files\Git\bin\git.exe"
+          Set-Location $env:APP_DIR
+
+          if (-not (Test-Path "$env:APP_DIR\.git")) {
             & $git init
-            & $git remote add origin $env:GIT_REMOTE
-            & $git fetch origin
-            & $git reset --hard origin/main
-            & $git branch --set-upstream-to=origin/main main
+            & $git remote add origin http://10.6.201.11:3001/magj/ProductionSchedulingSystem.git
+          }
+
+          & $git fetch origin
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "git fetch failed"
+            exit 1
+          }
+
+          $ErrorActionPreference = "Continue"
+          $localMainExists = $false
+          try {
+            $out = & $git rev-parse --verify main 2>&1
+            if ($LASTEXITCODE -eq 0) { $localMainExists = $true }
+          } catch {
+            $localMainExists = $false
+          }
+
+          if ($localMainExists) {
+            & $git pull origin main --no-edit
+          } else {
+            & $git config user.email "deploy@local"
+            & $git config user.name "Deploy Bot"
+            $status = & $git status --porcelain
+            if ($status) {
+              & $git add -A
+              & $git commit -m "local initial files" --allow-empty
+              & $git branch -M main
+              & $git merge origin/main --allow-unrelated-histories -X theirs --no-edit
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "git merge failed, please resolve conflicts manually"
+                exit 1
+              }
+            } else {
+              & $git checkout -b main origin/main
+            }
           }
 
       - name: Install dependencies
@@ -40,26 +67,27 @@ jobs:
       - name: Stop old process
         shell: powershell
         run: |
-          $port = $env:APP_PORT
+          $port = $env:PORT
           $line = netstat -ano | Select-String ":$port" | Select-String "LISTENING"
           if ($line) {
             $parts = $line -split '\s+' | Where-Object { $_ }
             $procId = $parts[-1]
-            Write-Host "Stopping process $procId on port $port"
             Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
-          } else {
-            Write-Host "No process found on port $port"
           }
 
       - name: Start new process
         shell: powershell
         run: |
-          Set-Location $env:APP_DIR
-          $proc = Start-Process pythonw -WorkingDirectory $env:APP_DIR -ArgumentList "app.py" -PassThru
-          Start-Sleep -Seconds 3
-          if ($proc -and -not $proc.HasExited) {
-            Write-Host "Started process ID: $($proc.Id)"
-          } else {
-            Write-Host "Process may have failed to start"
+          $dir = $env:APP_DIR
+          $port = $env:PORT
+          $logFile = Join-Path $dir "server.log"
+          $proc = Start-Process cmd -WorkingDirectory $dir -WindowStyle Hidden `
+            -ArgumentList "/c python $dir\app.py > $logFile 2>&1" -PassThru
+          Start-Sleep -Seconds 5
+          if ($proc.HasExited) {
+            Write-Error "Server exited with code $($proc.ExitCode)"
+            Get-Content $logFile -ErrorAction SilentlyContinue | Write-Host
+            exit 1
           }
+          Write-Host "Server PID $($proc.Id) started on port $port"
