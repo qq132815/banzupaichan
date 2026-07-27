@@ -10,6 +10,9 @@ exports/
 
 # Database & runtime data
 data/production.db
+data/production.db-shm
+data/production.db-wal
+data/mes.db
 data/production_backup*.db
 data/chroma/
 data/download_progress.json
