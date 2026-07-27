@@ -42,7 +42,9 @@ jobs:
           }
 
           if ($localMainExists) {
-            & $git pull origin main --no-edit
+            & $git checkout main
+            & $git reset --hard origin/main
+            & $git clean -fd
           } else {
             & $git config user.email "deploy@local"
             & $git config user.name "Deploy Bot"
