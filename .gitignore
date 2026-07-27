@@ -45,6 +45,10 @@ imports/*.xlsx
 screenshots/
 screenshot*.png
 debug_*.png
+scripts/screenshots/
+scripts/downloads/
+downloads/
+downloads/**/*
 
 # Cookies / sessions
 cookie.txt
