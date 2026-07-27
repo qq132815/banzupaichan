@@ -3306,9 +3306,13 @@ def _refresh_standard_hours_cache():
         row['report_max'] = max(caps) if caps else 0
         row['report_min'] = min(caps) if caps else 0
         row['report_count'] = len(caps)
-        # 装框量（取平均值）
+        # 装框量（展示所有不同值）
         frames = frame_qty_map.get((pc, pn), [])
-        row['frame_qty'] = round(sum(frames) / len(frames), 1) if frames else 0
+        if frames:
+            unique_frames = sorted(set(frames))
+            row['frame_qty'] = ', '.join(str(int(v)) if v == int(v) else str(v) for v in unique_frames)
+        else:
+            row['frame_qty'] = ''
         # 可用设备
         pn_name = (row.get('product_name') or '').strip()
         proc_name = (row.get('process_name') or '').strip()

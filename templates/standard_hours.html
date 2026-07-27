@@ -273,7 +273,7 @@ function loadData(){
             var avgCap=r.report_avg>0?escHtml(r.report_avg):'<span style="color:#9ca3af">-</span>';
             var maxCap=r.report_max>0?escHtml(r.report_max):'<span style="color:#9ca3af">-</span>';
             var minCap=r.report_min>0?escHtml(r.report_min):'<span style="color:#9ca3af">-</span>';
-            var frameQty=r.frame_qty>0?escHtml(r.frame_qty):'<span style="color:#9ca3af">-</span>';
+            var frameQty=r.frame_qty?escHtml(r.frame_qty):'<span style="color:#9ca3af">-</span>';
             var equip=escHtml(r.available_equipment||'');
             if(!equip) equip='<span style="color:#9ca3af">-</span>';
             var weld=escHtml(r.weld_count||'');
