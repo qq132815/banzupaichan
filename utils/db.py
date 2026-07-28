@@ -263,6 +263,13 @@ def init_database():
     c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('ai_max_context_chunks', '5')")
     c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('ai_max_tool_rows', '50')")
 
+    # ---- Default users (only if users table is empty) ----
+    c.execute("SELECT COUNT(*) FROM users")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT OR IGNORE INTO users (username, password, display_name, role, team_id) VALUES ('admin', 'admin123', '系统管理员', 'admin', NULL)")
+        c.execute("INSERT OR IGNORE INTO users (username, password, display_name, role, team_id) VALUES ('planner', 'planner123', '计划员', 'planner', NULL)")
+        print("Default users created (admin, planner)")
+
     conn.commit()
     conn.close()
     print("Database initialized")
