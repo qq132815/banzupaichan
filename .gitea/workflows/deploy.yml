@@ -12,6 +12,18 @@ jobs:
       APP_DIR: D:\OA文件\班组排产系统\班组排产系统
 
     steps:
+      - name: Stop old process
+        shell: powershell
+        run: |
+          $port = $env:PORT
+          $line = netstat -ano | Select-String ":$port" | Select-String "LISTENING"
+          if ($line) {
+            $parts = $line -split '\s+' | Where-Object { $_ }
+            $procId = $parts[-1]
+            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+          }
+
       - name: Git pull
         shell: powershell
         run: |
@@ -39,7 +51,8 @@ jobs:
           }
 
           if ($localMainExists) {
-            & $git pull origin main --no-edit
+            & $git checkout main
+            & $git reset --hard origin/main
           } else {
             & $git config user.email "deploy@local"
             & $git config user.name "Deploy Bot"
@@ -63,18 +76,6 @@ jobs:
         run: |
           Set-Location $env:APP_DIR
           pip install -r requirements.txt
-
-      - name: Stop old process
-        shell: powershell
-        run: |
-          $port = $env:PORT
-          $line = netstat -ano | Select-String ":$port" | Select-String "LISTENING"
-          if ($line) {
-            $parts = $line -split '\s+' | Where-Object { $_ }
-            $procId = $parts[-1]
-            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 2
-          }
 
       - name: Start new process
         shell: powershell
