@@ -88,7 +88,7 @@ def init_database():
         if "duplicate column" not in str(e).lower():
             raise
 
-    c.execute("CREATE TABLE IF NOT EXISTS work_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, report_qty REAL, good_qty REAL, bad_qty REAL, report_unit TEXT, good_rate TEXT, operator TEXT, start_time TEXT, end_time TEXT, approve_status TEXT, approver TEXT, approve_time TEXT, creator TEXT, create_time TEXT, process_name TEXT, order_no TEXT, product_code TEXT, product_name TEXT, related_no TEXT, equipment TEXT, report_hours REAL, weld_count REAL, attendance_note TEXT, excluded INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now','localtime')))")
+    c.execute("CREATE TABLE IF NOT EXISTS work_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, report_qty REAL, good_qty REAL, bad_qty REAL, report_unit TEXT, good_rate TEXT, operator TEXT, start_time TEXT, end_time TEXT, approve_status TEXT, approver TEXT, approve_time TEXT, creator TEXT, create_time TEXT, process_name TEXT, order_no TEXT, product_code TEXT, product_name TEXT, related_no TEXT, equipment TEXT, report_hours REAL, weld_count REAL, attendance_note TEXT, excluded INTEGER DEFAULT 0, frame_qty REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now','localtime')))")
     try:
         c.execute("ALTER TABLE work_reports ADD COLUMN excluded INTEGER DEFAULT 0")
     except sqlite3.OperationalError as e:
