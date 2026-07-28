@@ -53,6 +53,8 @@ jobs:
           if ($localMainExists) {
             & $git checkout main
             & $git reset --hard origin/main
+            Remove-Item "$env:APP_DIR\data\production.db-shm" -ErrorAction SilentlyContinue
+            Remove-Item "$env:APP_DIR\data\production.db-wal" -ErrorAction SilentlyContinue
           } else {
             & $git config user.email "deploy@local"
             & $git config user.name "Deploy Bot"
