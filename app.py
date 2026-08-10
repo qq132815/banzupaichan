@@ -4303,7 +4303,7 @@ def api_export(data_type):
                         or ql in (r.get('product_name','') or '').lower()
                         or ql in (r.get('process_name','') or '').lower()]
         ws.append(['产品编号','产品名称','工序','班组','标准工时(分)','换线时间(分)','焊点','可用设备',
-                    '排班产能(H)','报工平均产能(H)','报工最高产能(H)','报工最低产能(H)','报工样本数','备注'])
+                    '排班产能(H)','报工平均产能(H)','报工最高产能(H)','报工最低产能(H)','装框量','报工样本数','备注'])
         for row in all_data:
             sched_caps = row.get('schedule_capacities', [])
             if len(sched_caps) == 1: sc = sched_caps[0]
@@ -4314,7 +4314,7 @@ def api_export(data_type):
                         row.get('weld_count',0) or 0,
                         row.get('available_equipment','') or '', sc,
                         row.get('report_avg',0), row.get('report_max',0), row.get('report_min',0),
-                        row.get('report_count',0), row.get('remark','') or ''])
+                        row.get('frame_qty','') or '', row.get('report_count',0), row.get('remark','') or ''])
     elif data_type == 'work_orders':
         ws.title = '工单数据'
         c.execute("SELECT order_no, product_code, product_name, quantity, completed_qty, due_date, priority, status, process_progress, source FROM work_orders ORDER BY order_no")
