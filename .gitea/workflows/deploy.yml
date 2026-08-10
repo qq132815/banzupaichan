@@ -52,7 +52,20 @@ jobs:
 
           if ($localMainExists) {
             & $git checkout main
+            # Backup database before reset (production.db is no longer tracked by git)
+            $dbPath = "$env:APP_DIR\data\production.db"
+            $dbBackup = "$env:APP_DIR\data\production.db.bak"
+            if (Test-Path $dbPath) {
+              Copy-Item $dbPath $dbBackup -Force
+              Write-Host "Database backed up before reset"
+            }
             & $git reset --hard origin/main
+            # Restore database after reset
+            if (Test-Path $dbBackup) {
+              Copy-Item $dbBackup $dbPath -Force
+              Remove-Item $dbBackup -Force
+              Write-Host "Database restored after reset"
+            }
             Remove-Item "$env:APP_DIR\data\production.db-shm" -ErrorAction SilentlyContinue
             Remove-Item "$env:APP_DIR\data\production.db-wal" -ErrorAction SilentlyContinue
           } else {
