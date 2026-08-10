@@ -344,14 +344,29 @@ def import_bom(file_path):
 
 
 def import_process_routes(file_path):
-    wb = openpyxl.load_workbook(file_path)
+    wb = openpyxl.load_workbook(file_path, data_only=True)
     ws = wb.active
     cols, headers = _match_headers(ws, {
         'code': ['工艺路线编号', '路线编码', 'route_code', '编码'],
         'name': ['工艺路线名称', '路线名称', 'route_name', '名称'],
         'processes': ['包含工序列表', '工序列表', 'process_list', '工序'],
-        'product': ['产品编号', '产品编码', '成品件号', 'product_code', '产品'],
     })
+    # product is optional - try to find it manually
+    product_aliases = ['产品编号', '产品编码', '成品件号', 'product_code', '产品']
+    product_col = None
+    for alias in product_aliases:
+        for i, h in enumerate(headers):
+            if alias.lower() in h.lower() or h.lower() in alias.lower():
+                product_col = i
+                break
+        if product_col is not None:
+            break
+    # remark is optional
+    remark_col = None
+    for i, h in enumerate(headers):
+        if '备注' in h.lower() or 'remark' in h.lower():
+            remark_col = i
+            break
     conn = get_connection()
     c = conn.cursor()
     c.execute("DELETE FROM process_routes")
@@ -362,9 +377,10 @@ def import_process_routes(file_path):
         route_code = str(row[cols['code']]).strip() if cols['code'] < len(row) and row[cols['code']] else ''
         route_name = str(row[cols['name']]).strip() if cols['name'] < len(row) and row[cols['name']] else ''
         process_list = str(row[cols['processes']]).strip() if cols['processes'] < len(row) and row[cols['processes']] else ''
-        product_code = str(row[cols['product']]).strip() if 'product' in cols and cols['product'] < len(row) and row[cols['product']] else None
-        c.execute("INSERT INTO process_routes (route_code, route_name, product_code, process_list) VALUES (?, ?, ?, ?)",
-                  (route_code, route_name, product_code, process_list))
+        product_code = str(row[product_col]).strip() if product_col is not None and product_col < len(row) and row[product_col] else None
+        remark = str(row[remark_col]).strip() if remark_col is not None and remark_col < len(row) and row[remark_col] else ''
+        c.execute("INSERT INTO process_routes (route_code, route_name, product_code, process_list, remark) VALUES (?, ?, ?, ?, ?)",
+                  (route_code, route_name, product_code, process_list, remark))
         count += 1
     conn.commit()
     conn.close()
