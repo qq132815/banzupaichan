@@ -7,12 +7,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.db import get_connection
 
 
-def _match_headers(ws, field_map):
+def _match_headers(ws, field_map, optional_fields=None):
     """Match column indices by header names.
     field_map: dict of {field_name: [possible_header_names]}
+    optional_fields: list of field names that are optional (won't raise error if missing)
     Returns: (dict of {field_name: column_index}, headers_list) or raises ValueError
     Auto-detects header row: uses row 1 if it has 2+ non-empty values, else row 2.
     """
+    optional_fields = optional_fields or []
     # Auto-detect header row
     row1_vals = [str(cell.value).strip() if cell.value else '' for cell in ws[1]]
     row1_count = sum(1 for v in row1_vals if v)
@@ -37,7 +39,7 @@ def _match_headers(ws, field_map):
                     break
             if found:
                 break
-        if not found:
+        if not found and field not in optional_fields:
             missing.append(field)
     
     if missing:
@@ -350,17 +352,8 @@ def import_process_routes(file_path):
         'code': ['工艺路线编号', '路线编码', 'route_code', '编码'],
         'name': ['工艺路线名称', '路线名称', 'route_name', '名称'],
         'processes': ['包含工序列表', '工序列表', 'process_list', '工序'],
-    })
-    # product is optional - try to find it manually
-    product_aliases = ['产品编号', '产品编码', '成品件号', 'product_code', '产品']
-    product_col = None
-    for alias in product_aliases:
-        for i, h in enumerate(headers):
-            if alias.lower() in h.lower() or h.lower() in alias.lower():
-                product_col = i
-                break
-        if product_col is not None:
-            break
+        'product': ['产品编号', '产品编码', '成品件号', 'product_code', '产品'],
+    }, optional_fields=['product'])
     # remark is optional
     remark_col = None
     for i, h in enumerate(headers):
@@ -377,7 +370,10 @@ def import_process_routes(file_path):
         route_code = str(row[cols['code']]).strip() if cols['code'] < len(row) and row[cols['code']] else ''
         route_name = str(row[cols['name']]).strip() if cols['name'] < len(row) and row[cols['name']] else ''
         process_list = str(row[cols['processes']]).strip() if cols['processes'] < len(row) and row[cols['processes']] else ''
-        product_code = str(row[product_col]).strip() if product_col is not None and product_col < len(row) and row[product_col] else None
+        product_code = str(row[cols['product']]).strip() if 'product' in cols and cols['product'] < len(row) and row[cols['product']] else None
+        # 如果没有产品编号列，用工艺路线编号作为产品编码
+        if not product_code:
+            product_code = route_code
         remark = str(row[remark_col]).strip() if remark_col is not None and remark_col < len(row) and row[remark_col] else ''
         c.execute("INSERT INTO process_routes (route_code, route_name, product_code, process_list, remark) VALUES (?, ?, ?, ?, ?)",
                   (route_code, route_name, product_code, process_list, remark))
