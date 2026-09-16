@@ -39,6 +39,7 @@ def init_database():
     c.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, product_code TEXT NOT NULL UNIQUE, product_name TEXT, product_type TEXT, safety_stock REAL, unit TEXT)")
 
     c.execute("CREATE TABLE IF NOT EXISTS work_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT, product_code TEXT, product_name TEXT, quantity REAL, completed_qty REAL, due_date TEXT, priority TEXT, status TEXT, source TEXT, parent_order_no TEXT, route_code TEXT, process_progress TEXT, create_time TEXT)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_work_orders_no ON work_orders(order_no)")
 
     c.execute("CREATE TABLE IF NOT EXISTS process_routes (id INTEGER PRIMARY KEY AUTOINCREMENT, route_code TEXT, route_name TEXT, product_code TEXT, process_list TEXT, remark TEXT)")
 
@@ -89,6 +90,7 @@ def init_database():
             raise
 
     c.execute("CREATE TABLE IF NOT EXISTS work_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, report_qty REAL, good_qty REAL, bad_qty REAL, report_unit TEXT, good_rate TEXT, operator TEXT, start_time TEXT, end_time TEXT, approve_status TEXT, approver TEXT, approve_time TEXT, creator TEXT, create_time TEXT, process_name TEXT, order_no TEXT, product_code TEXT, product_name TEXT, related_no TEXT, equipment TEXT, report_hours REAL, weld_count REAL, attendance_note TEXT, excluded INTEGER DEFAULT 0, frame_qty REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now','localtime')))")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_work_reports_dedup ON work_reports(order_no, process_name, operator, create_time)")
     try:
         c.execute("ALTER TABLE work_reports ADD COLUMN excluded INTEGER DEFAULT 0")
     except sqlite3.OperationalError as e:

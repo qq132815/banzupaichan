@@ -64,15 +64,9 @@ def _run_sync_job(sync_type):
         if result.returncode == 0:
             count = 0
             for line in output.split('\n'):
-                if '总计=' in line:
+                if 'IMPORTED:' in line:
                     try:
-                        count = int(line.split('总计=')[1].strip())
-                    except ValueError:
-                        pass
-                    break
-                if '新增:' in line:
-                    try:
-                        count = int(line.split('新增:')[1].split(',')[0].strip())
+                        count = int(line.split('IMPORTED:')[1].strip())
                     except ValueError:
                         pass
                     break
@@ -2938,9 +2932,9 @@ def api_sync_work_orders():
         if result.returncode == 0:
             count = 0
             for line in output.split('\n'):
-                if '总计=' in line:
+                if 'IMPORTED:' in line:
                     try:
-                        count = int(line.split('总计=')[1].strip())
+                        count = int(line.split('IMPORTED:')[1].strip())
                     except ValueError:
                         pass
                     break
@@ -3009,17 +3003,12 @@ def api_sync_reports():
         if result.returncode == 0:
             count = 0
             for line in output.split('\n'):
-                if '总计=' in line:
+                if 'IMPORTED:' in line:
                     try:
-                        count = int(line.split('总计=')[1].strip())
+                        count = int(line.split('IMPORTED:')[1].strip())
                     except ValueError:
                         pass
                     break
-                if '插入=' in line:
-                    try:
-                        count += int(line.split('插入=')[1].split(',')[0].strip())
-                    except ValueError:
-                        pass
             conn = get_connection()
             c = conn.cursor()
             c.execute("UPDATE sync_logs SET status='success', record_count=?, detail=? WHERE id=?", (count, output[-500:], log_id))
