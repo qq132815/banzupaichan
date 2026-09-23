@@ -9,6 +9,7 @@
 <button class="btn btn-outline readonly-hide" onclick="initFromRoutes()">从工艺路线初始化</button>
 <button class="btn btn-danger readonly-hide" onclick="downloadShTpl()">模板</button>
 <button class="btn btn-outline" onclick="doExport()">📤 导出</button>
+<button class="btn btn-primary" onclick="doExportDetail()">导出明细</button>
 <button class="btn btn-outline readonly-hide" onclick="refreshCache()">🔄 刷新缓存</button>
 <button class="btn btn-outline readonly-hide" onclick="showImportModal('/api/import/standard_hours', function(){setTimeout(function(){loadData();}, 500);})">导入</button>
 <button class="btn btn-primary readonly-hide" onclick="showAdd()">新增</button>
@@ -41,7 +42,7 @@
 <div class="card-body">
 <div class="table-wrap" style="max-height:calc(100vh - 320px);overflow-y:auto">
 <table>
-<thead><tr><th>产品名称</th><th>工序</th><th>班组</th><th>标准工时(分)</th><th>焊点</th><th>可用设备</th><th>排班产能(H)</th><th>报工平均产能(H)</th><th>报工最高产能(H)</th><th>报工最低产能(H)</th><th>装框量</th><th>备注</th><th>操作</th></tr></thead>
+<thead><tr><th>产品名称</th><th>工序</th><th>班组</th><th>标准工时(分)</th><th>焊点</th><th>可用设备</th><th>排班产能(H)</th><th>报工平均产能(H)</th><th>报工最高产能(H)</th><th>报工最低产能(H)</th><th>真实产能(H)</th><th>装框量</th><th>备注</th><th>操作</th></tr></thead>
 <tbody id="tbody"></tbody>
 </table>
 <div id="empty-msg" class="table-empty" style="display:none">暂无数据，点击“从工艺路线初始化”生成基础数据</div>
@@ -273,6 +274,7 @@ function loadData(){
             var avgCap=r.report_avg>0?escHtml(r.report_avg):'<span style="color:#9ca3af">-</span>';
             var maxCap=r.report_max>0?escHtml(r.report_max):'<span style="color:#9ca3af">-</span>';
             var minCap=r.report_min>0?escHtml(r.report_min):'<span style="color:#9ca3af">-</span>';
+            var trueCap=r.true_capacity>0?escHtml(r.true_capacity):'<span style="color:#9ca3af">-</span>';
             var frameQty=r.frame_qty?escHtml(r.frame_qty):'<span style="color:#9ca3af">-</span>';
             var equip=escHtml(r.available_equipment||'');
             if(!equip) equip='<span style="color:#9ca3af">-</span>';
@@ -288,6 +290,7 @@ function loadData(){
                 +'<td>'+avgCap+'</td>'
                 +'<td>'+maxCap+'</td>'
                 +'<td>'+minCap+'</td>'
+                +'<td><strong style="color:#2563eb">'+trueCap+'</strong></td>'
                 +'<td>'+frameQty+'</td>'
                 +'<td>'+escHtml(r.remark||'')+'</td>'
                 +'<td><div class="btn-group"><button class="btn btn-outline btn-sm" onclick="editItem('+r.id+')">编辑</button><button class="btn btn-primary btn-sm" onclick="showReportDetail(\''+escHtml(r.product_code).replace(/'/g,"\\'")+'\',\''+escHtml(r.process_name).replace(/'/g,"\\'")+'\')">明细</button><button class="btn btn-danger btn-sm" onclick="deleteItem('+r.id+')">删除</button></div></td>';
@@ -413,6 +416,13 @@ function initFromRoutes(){
 function doExport(){
     var q=document.getElementById('search').value;
     var url='/api/export/standard_hours';
+    if(q) url+='?q='+encodeURIComponent(q);
+    window.location.href=url;
+}
+
+function doExportDetail(){
+    var q=document.getElementById('search').value;
+    var url='/api/export/standard_hours_detail';
     if(q) url+='?q='+encodeURIComponent(q);
     window.location.href=url;
 }

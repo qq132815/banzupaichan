@@ -441,6 +441,11 @@ def molds_page():
 def standard_hours_page():
     return render_template('standard_hours.html')
 
+@app.route('/capacity-analysis-page')
+@login_required
+def capacity_analysis_page():
+    return render_template('capacity_analysis.html')
+
 @app.route('/statistics-page')
 @login_required
 @admin_required
@@ -3230,6 +3235,7 @@ def _refresh_standard_hours_cache():
     # 批量查报工数据
     report_map = {}
     frame_qty_map = {}
+    report_rows_map = {}
     c.execute("SELECT product_code, process_name, report_qty, report_hours, frame_qty FROM work_reports WHERE report_hours > 0 AND (excluded IS NULL OR excluded = 0)")
     for rpt in c.fetchall():
         k = (rpt[0], rpt[1])
@@ -3239,6 +3245,8 @@ def _refresh_standard_hours_cache():
         if rpt[4] and rpt[4] > 0:
             if k not in frame_qty_map: frame_qty_map[k] = []
             frame_qty_map[k].append(rpt[4])
+        if k not in report_rows_map: report_rows_map[k] = []
+        report_rows_map[k].append({'report_qty': rpt[2], 'report_hours': rpt[3], 'excluded': 0})
 
     # 批量查可用设备
     equipment_maps = _build_standard_equipment_maps(c)
@@ -3277,9 +3285,14 @@ def _refresh_standard_hours_cache():
             if k not in weld_by_code: weld_by_code[k] = set()
             weld_by_code[k].add(str(int(wc)) if wc == int(wc) else str(wc))
 
+    cap_max, short_hours = _get_capacity_params()
     enriched = []
     for row in rows:
         pc, pn = row['product_code'], row['process_name']
+        # 真实产能（中位数+IQR 去离群）
+        true_cap, _ = compute_true_capacity(report_rows_map.get((pc, pn), []),
+                                            capacity_physical_max=cap_max, short_hours=short_hours)
+        row['true_capacity'] = true_cap
         # 排班产能
         sched_caps = sched_map.get((pc, pn), [])
         row['schedule_capacities'] = sched_caps
@@ -4319,6 +4332,339 @@ def api_export(data_type):
     from flask import send_file
     return send_file(buf, as_attachment=True, download_name=data_type + '_export.xlsx',
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+# ========== 标准工时明细导出：真实产能算法 ==========
+def _get_capacity_params():
+    """读取真实产能计算参数（system_settings，含默认值）"""
+    capacity_physical_max = 2000.0  # 物理上限(件/H)
+    short_hours = 0.5                # 过短报工阈值(小时)
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT key, value FROM system_settings WHERE key IN ('capacity_physical_max','capacity_short_hours')")
+        for k, v in c.fetchall():
+            try:
+                if k == 'capacity_physical_max':
+                    capacity_physical_max = float(v) or 2000.0
+                elif k == 'capacity_short_hours':
+                    short_hours = float(v) or 0.5
+            except (TypeError, ValueError):
+                pass
+        conn.close()
+    except Exception:
+        pass
+    return capacity_physical_max, short_hours
+
+
+def _percentile(vals, p):
+    s = sorted(vals)
+    n = len(s)
+    if n == 0:
+        return 0
+    pos = p * (n - 1)
+    lo = int(pos)
+    hi = min(lo + 1, n - 1)
+    frac = pos - lo
+    return s[lo] + (s[hi] - s[lo]) * frac
+
+
+def _median_of(vals):
+    return _percentile(vals, 0.5)
+
+
+def compute_true_capacity(report_rows, capacity_physical_max=2000.0, short_hours=0.5):
+    """制造业真实产能：先规则去无效，再中位数+IQR 去离群。
+
+    返回 (true_capacity, report_rows)。
+    report_rows 中每条 dict 会被就地写入 capacity/valid/reason/takt/is_max/is_min。
+    """
+    # Step1 硬性有效性过滤
+    for r in report_rows:
+        r['valid'] = True
+        r['reason'] = ''
+        r['capacity'] = 0
+        r['takt'] = None
+        qty = r.get('report_qty') or 0
+        hours = r.get('report_hours') or 0
+        if r.get('excluded'):
+            r['valid'] = False; r['reason'] = '已排除'; continue
+        if qty <= 0:
+            r['valid'] = False; r['reason'] = '无产量'; continue
+        if hours <= 0:
+            r['valid'] = False; r['reason'] = '无工时'; continue
+        cap = round(qty / hours, 1)
+        r['capacity'] = cap
+        if hours < short_hours:
+            r['valid'] = False; r['reason'] = '工时过短(%.1fh)' % hours; continue
+        if cap > capacity_physical_max:
+            r['valid'] = False; r['reason'] = '超物理上限(%.0f/H)' % cap; continue
+        r['takt'] = round(3600 / cap, 1)
+
+    step1 = [r for r in report_rows if r.get('valid')]
+    caps = [r['capacity'] for r in step1]
+
+    # Step2 IQR 去离群（样本足够时才启用）
+    if len(caps) >= 4:
+        q1 = _percentile(caps, 0.25)
+        q3 = _percentile(caps, 0.75)
+        iqr = q3 - q1
+        lo = q1 - 1.5 * iqr
+        hi = q3 + 1.5 * iqr
+        for r in step1:
+            if r['capacity'] < lo or r['capacity'] > hi:
+                r['valid'] = False
+                r['reason'] = '离群(IQR)'
+
+    kept = [r for r in report_rows if r.get('valid')]
+    kept_caps = [r['capacity'] for r in kept]
+    true_capacity = round(_median_of(kept_caps), 1) if kept_caps else 0
+
+    # 在有效记录中标记最高/最低（用于行高亮）
+    if kept_caps:
+        mx = max(kept_caps)
+        mn = min(kept_caps)
+        for r in kept:
+            r['is_max'] = (r['capacity'] == mx and mx > 0)
+            r['is_min'] = (r['capacity'] == mn and mn > 0)
+    else:
+        for r in report_rows:
+            r['is_max'] = False
+            r['is_min'] = False
+
+    return true_capacity, report_rows
+
+
+@app.route('/api/export/standard_hours_detail')
+@login_required
+def api_export_standard_hours_detail():
+    """导出标准工时 + 报工产能明细（子父级），含真实产能与无效数据过滤标记"""
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+    from openpyxl.utils import get_column_letter
+
+    cap_max, short_hours = _get_capacity_params()
+
+    # 父级汇总数据（复用缓存）
+    cache = _load_standard_hours_cache()
+    all_data = cache['data'] if cache else []
+    q = request.args.get('q', '').strip()
+    if q:
+        ql = q.lower()
+        all_data = [r for r in all_data if ql in (r.get('product_code', '') or '').lower()
+                    or ql in (r.get('product_name', '') or '').lower()
+                    or ql in (r.get('process_name', '') or '').lower()]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "标准工时+报工明细"
+    headers = ["层级", "产品编号", "产品名称", "工序", "班组", "标准工时(分)", "换线(分)", "焊点", "可用设备",
+               "报工平均产能(H)", "报工最高产能(H)", "报工最低产能(H)", "真实产能(件/H)", "装框量", "报工样本数", "备注",
+               "标记", "报工时间", "操作员", "工单号", "设备", "报工数量", "报工工时(H)", "合格", "不良",
+               "明细产能(件/H)", "节拍(秒/件)", "有效/剔除原因"]
+    ws.append(headers)
+
+    thin = Side(style='thin', color='D0D5DD')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    hfill = PatternFill('solid', fgColor='305496')
+    parent_fill = PatternFill('solid', fgColor='E8F0FE')
+    cmax = PatternFill('solid', fgColor='D7F5DD')
+    cmin = PatternFill('solid', fgColor='FDE2E2')
+    cinvalid = PatternFill('solid', fgColor='F5F5F5')
+    hfont = Font(bold=True, color='FFFFFF')
+    parent_font = Font(bold=True, color='1F3864')
+
+    for cell in ws[1]:
+        cell.fill = hfill; cell.font = hfont; cell.border = border
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    conn = get_connection()
+    c = conn.cursor()
+
+    def load_children(pc, proc):
+        rows = c.execute("""SELECT product_code, product_name, process_name, order_no, operator, equipment,
+                            report_qty, report_hours, good_qty, bad_qty, create_time, frame_qty, excluded
+                            FROM work_reports
+                            WHERE product_code = ? AND process_name = ?
+                            ORDER BY create_time DESC""", (pc, proc)).fetchall()
+        return [{
+            'product_code': r[0], 'product_name': r[1], 'process_name': r[2],
+            'order_no': r[3], 'operator': r[4], 'equipment': r[5],
+            'report_qty': r[6], 'report_hours': r[7], 'good_qty': r[8], 'bad_qty': r[9],
+            'create_time': r[10], 'frame_qty': r[11], 'excluded': r[12]
+        } for r in rows]
+
+    for row in all_data:
+        pc = row.get('product_code', '')
+        proc = row.get('process_name', '')
+        kids = load_children(pc, proc)
+        true_cap, kids = compute_true_capacity(kids, capacity_physical_max=cap_max, short_hours=short_hours)
+
+        sched_caps = row.get('schedule_capacities', [])
+        if len(sched_caps) == 1:
+            sc = sched_caps[0]
+        elif len(sched_caps) > 1:
+            sc = ' / '.join(str(x) for x in sched_caps)
+        else:
+            sc = 0
+
+        valid_count = sum(1 for k in kids if k.get('valid') and k.get('capacity') > 0)
+
+        row0 = ws.max_row + 1
+        ws.append(["标准工时汇总", pc, row.get('product_name', ''), proc, row.get('team_name', '') or '',
+                   row.get('standard_hours', 0) or 0, row.get('setup_time', 0) or 0,
+                   row.get('weld_count', 0) or 0, row.get('available_equipment', '') or '',
+                   row.get('report_avg', 0), row.get('report_max', 0), row.get('report_min', 0),
+                   true_cap,
+                   row.get('frame_qty', '') or '', valid_count, row.get('remark', '') or '',
+                   None] + [None] * 11)
+        for cell in ws[row0]:
+            cell.fill = parent_fill; cell.font = parent_font; cell.border = border
+
+        for kid in kids:
+            ws.append(["报工明细", pc, row.get('product_name', ''), proc, row.get('team_name', '') or '',
+                       None] * 1 + [None] * 10 +
+                      (["最高" if kid.get('is_max') else ("最低" if kid.get('is_min') else ""),
+                        kid['create_time'] or '', kid['operator'] or '', kid['order_no'] or '',
+                        kid['equipment'] or '', kid['report_qty'] or 0, kid['report_hours'] or 0,
+                        kid['good_qty'] or 0, kid['bad_qty'] or 0,
+                        kid['capacity'] if kid.get('capacity') else '',
+                        kid.get('takt') if kid.get('takt') else '',
+                        ('有效' if kid.get('valid') else ('剔除·' + kid['reason']))]))
+            r = ws.max_row
+            if kid.get('is_max'):
+                f = cmax; col = '15803D'
+            elif kid.get('is_min'):
+                f = cmin; col = 'B91C1C'
+            elif not kid.get('valid'):
+                f = cinvalid; col = '6B7280'
+            else:
+                f = None; col = '000000'
+            for cell in ws[r]:
+                cell.border = border
+                if f:
+                    cell.fill = f
+                if col != '000000':
+                    cell.font = Font(color=col)
+
+    conn.close()
+
+    widths = [10, 16, 26, 16, 8, 11, 9, 9, 15, 13, 13, 13, 13, 9, 10, 30, 8, 19, 10, 14, 12, 9, 11, 8, 8, 13, 11, 22]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = "A2"
+    ws.row_dimensions[1].height = 26
+    for r in range(2, ws.max_row + 1):
+        if ws.cell(r, 1).value == "报工明细":
+            ws.row_dimensions[r].outline_level = 1
+    ws.sheet_properties.outlinePr.summaryBelow = False
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    from flask import send_file
+    return send_file(buf, as_attachment=True, download_name='标准工时报工明细.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+# ========== Capacity Analysis API ==========
+@app.route('/api/capacity-analysis/products')
+@login_required
+def api_capacity_analysis_products():
+    """搜索有工艺路线的产品列表（按产品编号/名称模糊匹配）"""
+    q = request.args.get('q', '').strip()
+    conn = get_connection()
+    c = conn.cursor()
+    sql = ("SELECT DISTINCT pr.product_code, p.product_name FROM process_routes pr "
+           "LEFT JOIN products p ON pr.product_code = p.product_code "
+           "WHERE pr.process_list IS NOT NULL AND TRIM(pr.process_list) != ''")
+    params = []
+    if q:
+        sql += " AND (pr.product_code LIKE ? OR p.product_name LIKE ?)"
+        like = '%' + q + '%'
+        params = [like, like]
+    sql += " ORDER BY pr.product_code"
+    c.execute(sql, params)
+    data = [{'product_code': r[0], 'product_name': r[1] or ''} for r in c.fetchall()]
+    conn.close()
+    return jsonify({'data': data})
+
+
+@app.route('/api/capacity-analysis/processes')
+@login_required
+def api_capacity_analysis_processes():
+    """获取某产品的工艺路线工序列表"""
+    product_code = request.args.get('product_code', '').strip()
+    if not product_code:
+        return jsonify({'data': []})
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT route_code, route_name, process_list FROM process_routes WHERE product_code = ?",
+              (product_code,))
+    routes = c.fetchall()
+    if not routes:
+        c.execute("SELECT route_code, route_name, process_list FROM process_routes WHERE route_code = ?",
+                  (product_code,))
+        routes = c.fetchall()
+    processes = []
+    seen = set()
+    for r in routes:
+        process_list = r[2]
+        if not process_list:
+            continue
+        for proc_name in process_list.split(','):
+            proc_name = proc_name.strip()
+            if proc_name and proc_name not in seen:
+                seen.add(proc_name)
+                processes.append(proc_name)
+    conn.close()
+    return jsonify({'data': processes})
+
+
+@app.route('/api/capacity-analysis/chart')
+@login_required
+def api_capacity_analysis_chart():
+    """获取某产品+工序的报工明细，用于折线图（X=操作员，Y=节拍s）"""
+    product_code = request.args.get('product_code', '').strip()
+    process = request.args.get('process', '').strip()
+    if not product_code or not process:
+        return jsonify({'data': []})
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""SELECT operator, order_no, product_code, product_name, process_name,
+                 report_qty, good_qty, bad_qty, report_hours, equipment,
+                 start_time, end_time, create_time, frame_qty
+                 FROM work_reports
+                 WHERE product_code = ? AND process_name = ?
+                 AND report_qty > 0 AND report_hours > 0
+                 AND (excluded IS NULL OR excluded = 0)
+                 ORDER BY create_time ASC""", (product_code, process))
+    data = []
+    for r in c.fetchall():
+        qty = r[5] or 0
+        hours = r[8] or 0
+        takt = round(hours * 3600 / qty, 1) if qty and hours else 0
+        data.append({
+            'operator': r[0] or '',
+            'order_no': r[1] or '',
+            'product_code': r[2] or '',
+            'product_name': r[3] or '',
+            'process_name': r[4] or '',
+            'report_qty': r[5] or 0,
+            'good_qty': r[6] or 0,
+            'bad_qty': r[7] or 0,
+            'report_hours': r[8] or 0,
+            'equipment': r[9] or '',
+            'start_time': r[10] or '',
+            'end_time': r[11] or '',
+            'create_time': r[12] or '',
+            'frame_qty': r[13] or '',
+            'takt': takt
+        })
+    conn.close()
+    return jsonify({'data': data})
+
 
 # ========== User Management API ==========
 @app.route('/api/users')
